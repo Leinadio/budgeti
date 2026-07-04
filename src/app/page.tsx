@@ -1,66 +1,76 @@
-import Image from "next/image";
-import styles from "./page.module.css";
+import { db } from "../db/index";
+import { totalBalance } from "../db/repositories/accounts";
+import { listTransactions } from "../db/repositories/transactions";
+import { listBudgets } from "../db/repositories/budgets";
+import { getSetting } from "../db/repositories/settings";
+import { computeEnvelopes } from "../lib/budget";
+import { buildAlerts } from "../lib/alerts";
+import { formatEur, monthKey } from "../lib/money";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+
+export default function Dashboard() {
+  const database = db();
+  const month = monthKey(new Date().toISOString().slice(0, 10));
+  const balance = totalBalance(database);
+  const txns = listTransactions(database).map((t) => ({ date: t.date, amount: t.amount, category: t.category }));
+  const budgets = listBudgets(database).map((b) => ({ category: b.category, month: b.month, limit: b.limit }));
+  const envelopes = computeEnvelopes(txns, budgets, month);
+  const threshold = Number.parseFloat(getSetting(database, "balance_threshold") ?? "0");
+  const alerts = buildAlerts(envelopes, balance, threshold);
+
+  const monthSpend = txns
+    .filter((t) => monthKey(t.date) === month && t.amount < 0)
+    .reduce((s, t) => s + Math.abs(t.amount), 0);
+  const recent = listTransactions(database).slice(0, 10);
+
   return (
-    <div className={styles.page}>
-      <main className={styles.main}>
-        <Image
-          className={styles.logo}
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className={styles.intro}>
-          <h1>To get started, edit the page.tsx file.</h1>
-          <p>
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className={styles.ctas}>
-          <a
-            className={styles.primary}
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className={styles.logo}
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className={styles.secondary}
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+    <div>
+      <div className="card">
+        <div style={{ fontSize: "2rem", fontWeight: 700 }}>{formatEur(balance)}</div>
+        <div>Dépensé ce mois-ci : {formatEur(monthSpend)}</div>
+      </div>
+
+      {alerts.map((a, i) => (
+        <div key={i} className={`alert ${a.level}`}>{a.message}</div>
+      ))}
+
+      <div className="card">
+        <h3>Enveloppes ({month})</h3>
+        {envelopes.length === 0 && <p>Aucun budget défini. Va dans « Budgets ».</p>}
+        {envelopes.map((e) => (
+          <div key={e.category} style={{ marginBottom: ".75rem" }}>
+            <div style={{ display: "flex", justifyContent: "space-between" }}>
+              <span>{e.category}</span>
+              <span>{formatEur(e.spent)} / {formatEur(e.limit)}</span>
+            </div>
+            <div className="bar">
+              <span
+                style={{
+                  width: `${Math.min(100, e.ratio * 100)}%`,
+                  background: e.ratio >= 1 ? "#ef4444" : e.ratio >= 0.8 ? "#f59e0b" : "#22c55e",
+                }}
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="card">
+        <h3>Dernières transactions</h3>
+        <table>
+          <tbody>
+            {recent.map((t) => (
+              <tr key={t.id}>
+                <td>{t.date}</td>
+                <td>{t.label}</td>
+                <td>{t.category ?? "À catégoriser"}</td>
+                <td style={{ textAlign: "right" }}>{formatEur(t.amount)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
