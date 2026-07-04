@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
+import { seed } from "./seed";
 
 const SCHEMA = readFileSync(join(process.cwd(), "src/db/schema.sql"), "utf8");
 
@@ -14,6 +15,9 @@ export function getDb(path = join(process.cwd(), "data/budget.db")): Database.Da
 
 let _db: Database.Database | null = null;
 export function db(): Database.Database {
-  if (!_db) _db = getDb();
+  if (!_db) {
+    _db = getDb();
+    seed(_db);
+  }
   return _db;
 }
