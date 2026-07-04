@@ -57,7 +57,15 @@ Puis :
   ENABLEBANKING_APPLICATION_ID=colle-ton-application-id-ici
   ENABLEBANKING_KEY_PATH=./secrets/private_key.pem
   ENABLEBANKING_REDIRECT_URL=http://localhost:3000/api/callback
+  # Nom de la banque (ASPSP). En Sandbox, le vrai CIC n'existe pas :
+  # utilise une banque de test. En Production, mets "CIC".
+  ENABLEBANKING_ASPSP_NAME=Mock ASPSP
   ```
+
+  > Pour voir la liste exacte des banques disponibles pour ton application (leurs
+  > noms au caractère près), lance : `node scripts/list-aspsps.mjs`. En Sandbox tu
+  > verras des banques de test (« Mock ASPSP », « BBVA ») ; le vrai « CIC »
+  > n'apparaît qu'en Production.
 
 > ⚠️ **Ne partage jamais** `secrets/private_key.pem` ni `.env.local`. Ils restent chez
 > toi ; git est déjà configuré pour les ignorer.
