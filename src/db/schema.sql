@@ -1,0 +1,41 @@
+CREATE TABLE IF NOT EXISTS accounts (
+  id TEXT PRIMARY KEY,             -- Enable Banking account uid
+  name TEXT NOT NULL,
+  iban_masked TEXT,
+  balance REAL NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'EUR',
+  last_synced TEXT                 -- ISO datetime
+);
+
+CREATE TABLE IF NOT EXISTS categories (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS rules (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  keyword TEXT NOT NULL,           -- matched case-insensitively against label
+  category_id INTEGER NOT NULL REFERENCES categories(id)
+);
+
+CREATE TABLE IF NOT EXISTS transactions (
+  id TEXT PRIMARY KEY,             -- Enable Banking entry_reference / transaction id
+  account_id TEXT NOT NULL REFERENCES accounts(id),
+  date TEXT NOT NULL,              -- YYYY-MM-DD
+  amount REAL NOT NULL,            -- signed euros: debit negative, credit positive
+  label TEXT NOT NULL,             -- raw bank label
+  category_id INTEGER REFERENCES categories(id)
+);
+
+CREATE TABLE IF NOT EXISTS budgets (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  category_id INTEGER NOT NULL REFERENCES categories(id),
+  month TEXT NOT NULL,             -- YYYY-MM
+  limit_amount REAL NOT NULL,
+  UNIQUE(category_id, month)
+);
+
+CREATE TABLE IF NOT EXISTS settings (
+  key TEXT PRIMARY KEY,
+  value TEXT
+);
