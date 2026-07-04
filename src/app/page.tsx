@@ -13,7 +13,8 @@ export default function Dashboard() {
   const database = db();
   const month = monthKey(new Date().toISOString().slice(0, 10));
   const balance = totalBalance(database);
-  const txns = listTransactions(database).map((t) => ({ date: t.date, amount: t.amount, category: t.category }));
+  const allTxns = listTransactions(database);
+  const txns = allTxns.map((t) => ({ date: t.date, amount: t.amount, category: t.category }));
   const budgets = listBudgets(database).map((b) => ({ category: b.category, month: b.month, limit: b.limit }));
   const envelopes = computeEnvelopes(txns, budgets, month);
   const threshold = Number.parseFloat(getSetting(database, "balance_threshold") ?? "0");
@@ -22,7 +23,7 @@ export default function Dashboard() {
   const monthSpend = txns
     .filter((t) => monthKey(t.date) === month && t.amount < 0)
     .reduce((s, t) => s + Math.abs(t.amount), 0);
-  const recent = listTransactions(database).slice(0, 10);
+  const recent = allTxns.slice(0, 10);
 
   return (
     <div>
