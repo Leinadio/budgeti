@@ -4,6 +4,7 @@ import { ensureCategory, listCategories } from "../../src/db/repositories/catego
 import { upsertTransaction, listTransactions } from "../../src/db/repositories/transactions";
 import { upsertAccount, totalBalance } from "../../src/db/repositories/accounts";
 import { setSetting, getSetting } from "../../src/db/repositories/settings";
+import { setBudget, listBudgets } from "../../src/db/repositories/budgets";
 
 test("category ensure is idempotent", () => {
   const db = getDb(":memory:");
@@ -28,4 +29,13 @@ test("settings round-trip", () => {
   setSetting(db, "balance_threshold", "200");
   expect(getSetting(db, "balance_threshold")).toBe("200");
   expect(getSetting(db, "missing")).toBeNull();
+});
+
+test("budget set and list round-trip (limit is a reserved word)", () => {
+  const db = getDb(":memory:");
+  setBudget(db, "Courses", "2026-07", 400);
+  setBudget(db, "Courses", "2026-07", 450); // upsert same category+month
+  const budgets = listBudgets(db);
+  expect(budgets).toHaveLength(1);
+  expect(budgets[0]).toEqual({ category: "Courses", month: "2026-07", limit: 450 });
 });

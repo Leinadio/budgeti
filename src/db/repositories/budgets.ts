@@ -6,7 +6,8 @@ export type BudgetRow = { category: string; month: string; limit: number };
 export function listBudgets(db: Database.Database): BudgetRow[] {
   return db
     .prepare(
-      "SELECT c.name AS category, b.month AS month, b.limit_amount AS limit FROM budgets b JOIN categories c ON c.id = b.category_id",
+      // "limit" is a SQL reserved word — the alias must be quoted.
+      `SELECT c.name AS category, b.month AS month, b.limit_amount AS "limit" FROM budgets b JOIN categories c ON c.id = b.category_id`,
     )
     .all() as BudgetRow[];
 }
