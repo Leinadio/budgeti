@@ -11,11 +11,12 @@ export type TxnRow = {
 
 export type TxnView = { date: string; amount: number; category: string | null; label: string; id: string };
 
-export function upsertTransaction(db: Database.Database, t: TxnRow): void {
-  db.prepare(
+export function upsertTransaction(db: Database.Database, t: TxnRow): number {
+  const result = db.prepare(
     `INSERT OR IGNORE INTO transactions (id, account_id, date, amount, label, category_id)
      VALUES (@id, @account_id, @date, @amount, @label, @category_id)`,
   ).run(t);
+  return result.changes;
 }
 
 export function listTransactions(

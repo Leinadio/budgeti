@@ -29,22 +29,22 @@ export async function syncAll(
 
   for (const uid of deps.accountUids) {
     const balances = await deps.ebGet<BalancesResponse>(`/accounts/${uid}/balances`);
-    const balance = Number.parseFloat(balances.balances[0]?.balance_amount.amount ?? "0");
+    const balance = Number.parseFloat((balances.balances ?? [])[0]?.balance_amount.amount ?? "0");
     upsertAccount(db, {
       id: uid,
       name: deps.accountName,
       iban_masked: null,
       balance,
-      currency: balances.balances[0]?.balance_amount.currency ?? "EUR",
+      currency: (balances.balances ?? [])[0]?.balance_amount.currency ?? "EUR",
       last_synced: nowIso,
     });
 
     const txns = await deps.ebGet<TxnResponse>(`/accounts/${uid}/transactions`);
-    for (const t of txns.transactions) {
+    for (const t of (txns.transactions ?? [])) {
       const id = t.entry_reference ?? t.transaction_id;
       if (!id) continue;
       const label = (t.remittance_information ?? []).join(" ").trim() || "(sans libellé)";
-      upsertTransaction(db, {
+      imported += upsertTransaction(db, {
         id,
         account_id: uid,
         date: t.booking_date,
@@ -52,7 +52,6 @@ export async function syncAll(
         label,
         category_id: null,
       });
-      imported++;
     }
   }
 

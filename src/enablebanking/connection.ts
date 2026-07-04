@@ -25,6 +25,7 @@ export async function startAuth(): Promise<{ url: string; authId: string }> {
 
 export async function finishAuth(code: string): Promise<string> {
   const res = await ebPost<{ session_id: string; accounts: { uid: string }[] }>("/sessions", { code });
+  if (!res.session_id || !res.accounts) throw new Error("Enable Banking /sessions returned an unexpected response");
   setSetting(db(), "session_id", res.session_id);
   setSetting(db(), "account_uids", JSON.stringify(res.accounts.map((a) => a.uid)));
   return res.session_id;

@@ -39,3 +39,12 @@ test("sync imports balance + categorized transactions", async () => {
   expect(txns[0].category).toBe("Courses");
   expect(txns[0].amount).toBe(-30);
 });
+
+test("sync deduplicates on re-run (imported === 0 on second call)", async () => {
+  const db = getDb(":memory:");
+  seed(db);
+  await syncAll(db, { ebGet: fakeEbGet, accountUids: ["acc1"], accountName: "CIC" });
+  const second = await syncAll(db, { ebGet: fakeEbGet, accountUids: ["acc1"], accountName: "CIC" });
+  expect(second.imported).toBe(0);
+  expect(listTransactions(db)).toHaveLength(1);
+});
