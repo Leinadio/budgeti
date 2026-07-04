@@ -4,7 +4,9 @@ import { ensureCategory } from "./categories";
 export function listRules(db: Database.Database): { keyword: string; category: string }[] {
   return db
     .prepare(
-      "SELECT r.keyword AS keyword, c.name AS category FROM rules r JOIN categories c ON c.id = r.category_id",
+      // ORDER BY r.id makes rule precedence explicit: categorize() returns the
+      // first match, so insertion order must win (e.g. "UBER EATS" before "UBER").
+      "SELECT r.keyword AS keyword, c.name AS category FROM rules r JOIN categories c ON c.id = r.category_id ORDER BY r.id",
     )
     .all() as { keyword: string; category: string }[];
 }
