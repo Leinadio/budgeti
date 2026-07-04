@@ -9,7 +9,15 @@ export type TxnRow = {
   category_id: number | null;
 };
 
-export type TxnView = { date: string; amount: number; category: string | null; label: string; id: string };
+export type TxnView = {
+  date: string;
+  amount: number;
+  category: string | null;
+  label: string;
+  id: string;
+  accountId: string;
+  accountLabel: string;
+};
 
 export function upsertTransaction(db: Database.Database, t: TxnRow): number {
   const result = db.prepare(
@@ -24,7 +32,12 @@ export function listTransactions(
   filter?: { month?: string; category?: string },
 ): TxnView[] {
   let sql =
-    "SELECT t.id, t.date, t.amount, t.label, c.name AS category FROM transactions t LEFT JOIN categories c ON c.id = t.category_id";
+    `SELECT t.id, t.date, t.amount, t.label, c.name AS category,
+            t.account_id AS accountId,
+            COALESCE(a.name || ' ' || a.iban_masked, a.name) AS accountLabel
+     FROM transactions t
+     LEFT JOIN categories c ON c.id = t.category_id
+     LEFT JOIN accounts a ON a.id = t.account_id`;
   const clauses: string[] = [];
   const params: Record<string, string | number> = {};
   if (filter?.month) {

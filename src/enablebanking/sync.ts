@@ -9,6 +9,11 @@ import { upsertTransaction, uncategorized, setTransactionCategory } from "../db/
 type EbGet = <T>(path: string) => Promise<T>;
 
 type BalancesResponse = { balances: { balance_amount: { amount: string; currency: string } }[] };
+type AccountDetails = {
+  account_id?: { iban?: string };
+  name?: string;
+  product?: string;
+};
 type TxnResponse = {
   transactions: {
     entry_reference?: string;
@@ -30,10 +35,23 @@ export async function syncAll(
   for (const uid of deps.accountUids) {
     const balances = await deps.ebGet<BalancesResponse>(`/accounts/${uid}/balances`);
     const balance = Number.parseFloat((balances.balances ?? [])[0]?.balance_amount.amount ?? "0");
+
+    // Account details (IBAN, name) are optional — never let them break a sync.
+    let ibanMasked: string | null = null;
+    let name = deps.accountName;
+    try {
+      const details = await deps.ebGet<AccountDetails>(`/accounts/${uid}/details`);
+      const iban = details.account_id?.iban;
+      if (iban) ibanMasked = "…" + iban.slice(-4);
+      name = details.name || details.product || deps.accountName;
+    } catch {
+      // keep defaults
+    }
+
     upsertAccount(db, {
       id: uid,
-      name: deps.accountName,
-      iban_masked: null,
+      name,
+      iban_masked: ibanMasked,
       balance,
       currency: (balances.balances ?? [])[0]?.balance_amount.currency ?? "EUR",
       last_synced: nowIso,

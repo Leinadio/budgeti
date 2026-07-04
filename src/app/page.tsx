@@ -1,5 +1,5 @@
 import { db } from "../db/index";
-import { totalBalance } from "../db/repositories/accounts";
+import { totalBalance, listAccounts } from "../db/repositories/accounts";
 import { listTransactions } from "../db/repositories/transactions";
 import { listBudgets } from "../db/repositories/budgets";
 import { getSetting } from "../db/repositories/settings";
@@ -13,6 +13,7 @@ export default function Dashboard() {
   const database = db();
   const month = monthKey(new Date().toISOString().slice(0, 10));
   const balance = totalBalance(database);
+  const accounts = listAccounts(database);
   const allTxns = listTransactions(database);
   const txns = allTxns.map((t) => ({ date: t.date, amount: t.amount, category: t.category }));
   const budgets = listBudgets(database).map((b) => ({ category: b.category, month: b.month, limit: b.limit }));
@@ -23,12 +24,15 @@ export default function Dashboard() {
   const monthSpend = txns
     .filter((t) => monthKey(t.date) === month && t.amount < 0)
     .reduce((s, t) => s + Math.abs(t.amount), 0);
-  const recent = allTxns.slice(0, 10);
+
+  const accountLabel = (a: (typeof accounts)[number]) =>
+    a.iban_masked ? `${a.name} ${a.iban_masked}` : a.name;
 
   return (
     <div>
       <div className="card">
         <div style={{ fontSize: "2rem", fontWeight: 700 }}>{formatEur(balance)}</div>
+        <div>Solde total ({accounts.length} compte{accounts.length > 1 ? "s" : ""})</div>
         <div>Dépensé ce mois-ci : {formatEur(monthSpend)}</div>
       </div>
 
@@ -57,21 +61,34 @@ export default function Dashboard() {
         ))}
       </div>
 
-      <div className="card">
-        <h3>Dernières transactions</h3>
-        <table>
-          <tbody>
-            {recent.map((t) => (
-              <tr key={t.id}>
-                <td>{t.date}</td>
-                <td>{t.label}</td>
-                <td>{t.category ?? "À catégoriser"}</td>
-                <td style={{ textAlign: "right" }}>{formatEur(t.amount)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {accounts.map((a) => {
+        const accountTxns = allTxns.filter((t) => t.accountId === a.id).slice(0, 8);
+        return (
+          <div className="card" key={a.id}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+              <h3 style={{ margin: 0 }}>{accountLabel(a)}</h3>
+              <span style={{ fontSize: "1.25rem", fontWeight: 700 }}>{formatEur(a.balance)}</span>
+            </div>
+            <table>
+              <tbody>
+                {accountTxns.length === 0 && (
+                  <tr>
+                    <td>Aucune transaction.</td>
+                  </tr>
+                )}
+                {accountTxns.map((t) => (
+                  <tr key={t.id}>
+                    <td>{t.date}</td>
+                    <td>{t.label}</td>
+                    <td>{t.category ?? "À catégoriser"}</td>
+                    <td style={{ textAlign: "right" }}>{formatEur(t.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })}
     </div>
   );
 }
