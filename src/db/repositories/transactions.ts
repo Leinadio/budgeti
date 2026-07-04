@@ -25,7 +25,7 @@ export function listTransactions(
   let sql =
     "SELECT t.id, t.date, t.amount, t.label, c.name AS category FROM transactions t LEFT JOIN categories c ON c.id = t.category_id";
   const clauses: string[] = [];
-  const params: Record<string, string> = {};
+  const params: Record<string, string | number> = {};
   if (filter?.month) {
     clauses.push("substr(t.date,1,7) = @month");
     params.month = filter.month;
@@ -36,7 +36,8 @@ export function listTransactions(
   }
   if (clauses.length) sql += " WHERE " + clauses.join(" AND ");
   sql += " ORDER BY t.date DESC";
-  return db.prepare(sql).all(params) as TxnView[];
+  const stmt = db.prepare(sql);
+  return (clauses.length ? stmt.all(params) : stmt.all()) as TxnView[];
 }
 
 export function uncategorized(db: Database.Database): TxnRow[] {
