@@ -6,17 +6,25 @@ export function ConnectButtons() {
 
   async function connect() {
     setMsg("Connexion…");
-    const res = await fetch("/api/connect", { method: "POST" });
-    const data = await res.json();
-    if (data.url) window.location.href = data.url;
-    else setMsg(`Erreur : ${data.error ?? "inconnue"}`);
+    try {
+      const res = await fetch("/api/connect", { method: "POST" });
+      const data = await res.json();
+      if (data.url) window.location.href = data.url;
+      else setMsg(`Erreur : ${data.error ?? "inconnue"}`);
+    } catch {
+      setMsg("Erreur réseau : impossible de contacter le serveur.");
+    }
   }
 
   async function sync() {
     setMsg("Synchronisation…");
-    const res = await fetch("/api/sync", { method: "POST" });
-    const data = await res.json();
-    setMsg(res.ok ? `Importé : ${data.imported} transactions.` : `Erreur : ${data.error}`);
+    try {
+      const res = await fetch("/api/sync", { method: "POST" });
+      const data = await res.json();
+      setMsg(res.ok ? `Importé : ${data.imported} transactions.` : `Erreur : ${data.error}`);
+    } catch {
+      setMsg("Erreur réseau : impossible de contacter le serveur.");
+    }
   }
 
   return (
