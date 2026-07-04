@@ -7,6 +7,7 @@ const SCHEMA = readFileSync(join(process.cwd(), "src/db/schema.sql"), "utf8");
 export function getDb(path = join(process.cwd(), "data/budget.db")): Database.Database {
   const db = new Database(path);
   db.pragma("journal_mode = WAL");
+  db.pragma("foreign_keys = ON");
   db.exec(SCHEMA);
   return db;
 }
