@@ -6,6 +6,10 @@ import { getSetting } from "../db/repositories/settings";
 import { computeEnvelopes } from "../lib/budget";
 import { buildAlerts } from "../lib/alerts";
 import { formatEur, monthKey } from "../lib/money";
+import { cn } from "@/lib/utils";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 
 export const dynamic = "force-dynamic";
 
@@ -29,64 +33,90 @@ export default function Dashboard() {
     a.iban_masked ? `${a.name} ${a.iban_masked}` : a.name;
 
   return (
-    <div>
-      <div className="card">
-        <div style={{ fontSize: "2rem", fontWeight: 700 }}>{formatEur(balance)}</div>
-        <div>Solde total ({accounts.length} compte{accounts.length > 1 ? "s" : ""})</div>
-        <div>Dépensé ce mois-ci : {formatEur(monthSpend)}</div>
-      </div>
+    <div className="flex flex-col gap-4">
+      <Card>
+        <CardContent className="flex flex-col gap-1">
+          <div className="text-3xl font-bold">{formatEur(balance)}</div>
+          <div className="text-muted-foreground text-sm">
+            Solde total ({accounts.length} compte{accounts.length > 1 ? "s" : ""})
+          </div>
+          <div className="text-muted-foreground text-sm">
+            Dépensé ce mois-ci : {formatEur(monthSpend)}
+          </div>
+        </CardContent>
+      </Card>
 
       {alerts.map((a, i) => (
-        <div key={i} className={`alert ${a.level}`}>{a.message}</div>
+        <div
+          key={i}
+          className={cn(
+            "rounded-lg px-4 py-3 text-sm",
+            a.level === "danger"
+              ? "bg-destructive/10 text-destructive"
+              : "bg-amber-500/10 text-amber-700 dark:text-amber-400"
+          )}
+        >
+          {a.message}
+        </div>
       ))}
 
-      <div className="card">
-        <h3>Enveloppes ({month})</h3>
-        {envelopes.length === 0 && <p>Aucun budget défini. Va dans « Budgets ».</p>}
-        {envelopes.map((e) => (
-          <div key={e.category} style={{ marginBottom: ".75rem" }}>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>{e.category}</span>
-              <span>{formatEur(e.spent)} / {formatEur(e.limit)}</span>
-            </div>
-            <div className="bar">
-              <span
-                style={{
-                  width: `${Math.min(100, e.ratio * 100)}%`,
-                  background: e.ratio >= 1 ? "#ef4444" : e.ratio >= 0.8 ? "#f59e0b" : "#22c55e",
-                }}
+      <Card>
+        <CardHeader>
+          <CardTitle>Enveloppes ({month})</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          {envelopes.length === 0 && (
+            <p className="text-muted-foreground text-sm">Aucun budget défini. Va dans « Budgets ».</p>
+          )}
+          {envelopes.map((e) => (
+            <div key={e.category} className="flex flex-col gap-1">
+              <div className="flex justify-between text-sm">
+                <span>{e.category}</span>
+                <span>
+                  {formatEur(e.spent)} / {formatEur(e.limit)}
+                </span>
+              </div>
+              <Progress
+                value={Math.min(100, e.ratio * 100)}
+                indicatorClassName={
+                  e.ratio >= 1 ? "bg-red-500" : e.ratio >= 0.8 ? "bg-amber-500" : "bg-green-500"
+                }
               />
             </div>
-          </div>
-        ))}
-      </div>
+          ))}
+        </CardContent>
+      </Card>
 
       {accounts.map((a) => {
         const accountTxns = allTxns.filter((t) => t.accountId === a.id).slice(0, 8);
         return (
-          <div className="card" key={a.id}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <h3 style={{ margin: 0 }}>{accountLabel(a)}</h3>
-              <span style={{ fontSize: "1.25rem", fontWeight: 700 }}>{formatEur(a.balance)}</span>
-            </div>
-            <table>
-              <tbody>
-                {accountTxns.length === 0 && (
-                  <tr>
-                    <td>Aucune transaction.</td>
-                  </tr>
-                )}
-                {accountTxns.map((t) => (
-                  <tr key={t.id}>
-                    <td>{t.date}</td>
-                    <td>{t.label}</td>
-                    <td>{t.category ?? "À catégoriser"}</td>
-                    <td style={{ textAlign: "right" }}>{formatEur(t.amount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <Card key={a.id}>
+            <CardHeader className="flex-row items-baseline justify-between">
+              <CardTitle>{accountLabel(a)}</CardTitle>
+              <span className="text-xl font-bold">{formatEur(a.balance)}</span>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableBody>
+                  {accountTxns.length === 0 && (
+                    <TableRow>
+                      <TableCell className="text-muted-foreground">Aucune transaction.</TableCell>
+                    </TableRow>
+                  )}
+                  {accountTxns.map((t) => (
+                    <TableRow key={t.id}>
+                      <TableCell className="text-muted-foreground">{t.date}</TableCell>
+                      <TableCell>{t.label}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {t.category ?? "À catégoriser"}
+                      </TableCell>
+                      <TableCell className="text-right font-medium">{formatEur(t.amount)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         );
       })}
     </div>
