@@ -7,6 +7,7 @@ export const metadata = { title: "Budget CIC" };
 const NAV = [
   { href: "/", label: "Tableau de bord" },
   { href: "/transactions", label: "Transactions" },
+  { href: "/recurring", label: "Récurrents" },
   { href: "/budgets", label: "Budgets" },
   { href: "/categories", label: "Catégories" },
   { href: "/settings", label: "Réglages" },
