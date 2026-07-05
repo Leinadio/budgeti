@@ -42,8 +42,8 @@ export default function TransactionsPage() {
           </CardContent>
         </Card>
       )}
-      {[...groups.values()].map((group) => (
-        <Card key={group.label}>
+      {[...groups.entries()].map(([accountId, group]) => (
+        <Card key={accountId}>
           <CardHeader>
             <CardTitle>{group.label}</CardTitle>
           </CardHeader>
