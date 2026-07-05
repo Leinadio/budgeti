@@ -38,3 +38,10 @@ CREATE TABLE IF NOT EXISTS settings (
   key TEXT PRIMARY KEY,
   value TEXT
 );
+
+CREATE TABLE IF NOT EXISTS recurring_payments (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  keyword TEXT NOT NULL,            -- matché insensiblement à la casse contre le libellé
+  expected_amount REAL NOT NULL    -- montant mensuel prévu, euros positifs
+);

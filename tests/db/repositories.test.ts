@@ -5,6 +5,7 @@ import { upsertTransaction, listTransactions } from "../../src/db/repositories/t
 import { upsertAccount, totalBalance } from "../../src/db/repositories/accounts";
 import { setSetting, getSetting } from "../../src/db/repositories/settings";
 import { setBudget, listBudgets, deleteBudget } from "../../src/db/repositories/budgets";
+import { listRecurring, insertRecurring, deleteRecurring } from "../../src/db/repositories/recurring";
 
 test("category ensure is idempotent", () => {
   const db = getDb(":memory:");
@@ -45,4 +46,17 @@ test("budget delete removes the row", () => {
   setBudget(db, "Courses", 400);
   deleteBudget(db, "Courses");
   expect(listBudgets(db)).toHaveLength(0);
+});
+
+test("recurring payment insert, list, delete round-trip", () => {
+  const db = getDb(":memory:");
+  insertRecurring(db, "Spotify", "SPOTIFY", 12.14);
+  insertRecurring(db, "iCloud", "ICLOUD", 9.99);
+  let rows = listRecurring(db);
+  expect(rows).toHaveLength(2);
+  expect(rows[0]).toEqual({ id: rows[0].id, name: "Spotify", keyword: "SPOTIFY", expected: 12.14 });
+  deleteRecurring(db, rows[0].id);
+  rows = listRecurring(db);
+  expect(rows).toHaveLength(1);
+  expect(rows[0].name).toBe("iCloud");
 });
