@@ -3,6 +3,10 @@ import { getSetting } from "../../db/repositories/settings";
 import { listAccounts } from "../../db/repositories/accounts";
 import { saveThreshold } from "./actions";
 import { ConnectButtons } from "./ConnectButtons";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
 
@@ -19,27 +23,50 @@ export default function SettingsPage() {
   const accounts = listAccounts(database);
 
   return (
-    <div>
-      <div className="card">
-        <h2>Connexion bancaire</h2>
-        <ConnectButtons />
-        {days !== null && (
-          <p className={days < 7 ? "alert danger" : ""}>
-            Reconnexion à CIC nécessaire dans {days} jour(s).
-          </p>
-        )}
-        {accounts.length > 0 && (
-          <ul>{accounts.map((a) => <li key={a.id}>{a.name} — dernière synchro : {a.last_synced ?? "jamais"}</li>)}</ul>
-        )}
-      </div>
+    <div className="flex flex-col gap-4">
+      <Card>
+        <CardHeader>
+          <CardTitle>Connexion bancaire</CardTitle>
+        </CardHeader>
+        <CardContent className="flex flex-col gap-3">
+          <ConnectButtons />
+          {days !== null && (
+            <Badge variant={days < 7 ? "destructive" : "secondary"}>
+              Reconnexion à CIC nécessaire dans {days} jour(s).
+            </Badge>
+          )}
+          {accounts.length > 0 && (
+            <ul className="text-muted-foreground list-inside list-disc text-sm">
+              {accounts.map((a) => (
+                <li key={a.id}>
+                  {a.name} — dernière synchro : {a.last_synced ?? "jamais"}
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+      </Card>
 
-      <div className="card">
-        <h2>Seuil d'alerte de solde</h2>
-        <form action={saveThreshold} style={{ display: "flex", gap: ".5rem" }}>
-          <input type="number" name="threshold" step="0.01" defaultValue={threshold} placeholder="ex. 200" />
-          <button type="submit">Enregistrer</button>
-        </form>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Seuil d'alerte de solde</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <form action={saveThreshold} className="flex items-center gap-2">
+            <Input
+              type="number"
+              name="threshold"
+              step="0.01"
+              defaultValue={threshold}
+              placeholder="ex. 200"
+              className="max-w-40"
+            />
+            <Button type="submit" size="sm">
+              Enregistrer
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
     </div>
   );
 }

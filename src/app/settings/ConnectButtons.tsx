@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { Button } from "@/components/ui/button";
 
 export function ConnectButtons() {
   const [msg, setMsg] = useState("");
@@ -28,10 +29,12 @@ export function ConnectButtons() {
   }
 
   return (
-    <div style={{ display: "flex", gap: ".5rem", alignItems: "center" }}>
-      <button onClick={connect}>Connecter ma banque (CIC)</button>
-      <button onClick={sync}>Synchroniser</button>
-      <span>{msg}</span>
+    <div className="flex flex-wrap items-center gap-2">
+      <Button onClick={connect}>Connecter ma banque (CIC)</Button>
+      <Button onClick={sync} variant="secondary">
+        Synchroniser
+      </Button>
+      {msg && <span className="text-muted-foreground text-sm">{msg}</span>}
     </div>
   );
 }
