@@ -4,7 +4,7 @@ import { ensureCategory, listCategories } from "../../src/db/repositories/catego
 import { upsertTransaction, listTransactions } from "../../src/db/repositories/transactions";
 import { upsertAccount, totalBalance } from "../../src/db/repositories/accounts";
 import { setSetting, getSetting } from "../../src/db/repositories/settings";
-import { setBudget, listBudgets } from "../../src/db/repositories/budgets";
+import { setBudget, listBudgets, deleteBudget } from "../../src/db/repositories/budgets";
 
 test("category ensure is idempotent", () => {
   const db = getDb(":memory:");
@@ -33,9 +33,16 @@ test("settings round-trip", () => {
 
 test("budget set and list round-trip (limit is a reserved word)", () => {
   const db = getDb(":memory:");
-  setBudget(db, "Courses", "2026-07", 400);
-  setBudget(db, "Courses", "2026-07", 450); // upsert same category+month
+  setBudget(db, "Courses", 400);
+  setBudget(db, "Courses", 450); // upsert sur la même catégorie
   const budgets = listBudgets(db);
   expect(budgets).toHaveLength(1);
-  expect(budgets[0]).toEqual({ category: "Courses", month: "2026-07", limit: 450 });
+  expect(budgets[0]).toEqual({ category: "Courses", limit: 450 });
+});
+
+test("budget delete removes the row", () => {
+  const db = getDb(":memory:");
+  setBudget(db, "Courses", 400);
+  deleteBudget(db, "Courses");
+  expect(listBudgets(db)).toHaveLength(0);
 });
