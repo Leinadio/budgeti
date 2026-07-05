@@ -3,13 +3,25 @@ import { listTransactions, type TxnView } from "../../db/repositories/transactio
 import { listCategories } from "../../db/repositories/categories";
 import { formatEur } from "../../lib/money";
 import { recategorize } from "./actions";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { CategorySelectField } from "@/components/category-select-field";
+import { RuleCheckboxField } from "@/components/rule-checkbox-field";
 
 export const dynamic = "force-dynamic";
 
 export default function TransactionsPage() {
   const database = db();
   const txns = listTransactions(database);
-  const categories = listCategories(database);
+  const categories = listCategories(database).map((c) => c.name);
 
   // Group transactions by account, preserving date order within each group.
   const groups = new Map<string, { label: string; items: TxnView[] }>();
@@ -20,51 +32,58 @@ export default function TransactionsPage() {
   }
 
   return (
-    <div>
+    <div className="flex flex-col gap-4">
       {groups.size === 0 && (
-        <div className="card">
-          <p>Aucune transaction. Va dans Réglages pour synchroniser.</p>
-        </div>
+        <Card>
+          <CardContent>
+            <p className="text-muted-foreground text-sm">
+              Aucune transaction. Va dans Réglages pour synchroniser.
+            </p>
+          </CardContent>
+        </Card>
       )}
       {[...groups.values()].map((group) => (
-        <div className="card" key={group.label}>
-          <h2>{group.label}</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>Date</th>
-                <th>Libellé</th>
-                <th>Catégorie</th>
-                <th style={{ textAlign: "right" }}>Montant</th>
-              </tr>
-            </thead>
-            <tbody>
-              {group.items.map((t) => (
-                <tr key={t.id}>
-                  <td>{t.date}</td>
-                  <td>{t.label}</td>
-                  <td>
-                    <form action={recategorize} style={{ display: "flex", gap: ".25rem" }}>
-                      <input type="hidden" name="txnId" value={t.id} />
-                      <input type="hidden" name="label" value={t.label} />
-                      <select name="category" defaultValue={t.category ?? ""}>
-                        <option value="" disabled>À catégoriser</option>
-                        {categories.map((c) => (
-                          <option key={c.id} value={c.name}>{c.name}</option>
-                        ))}
-                      </select>
-                      <label style={{ fontSize: ".75rem" }}>
-                        <input type="checkbox" name="createRule" /> règle
-                      </label>
-                      <button type="submit">OK</button>
-                    </form>
-                  </td>
-                  <td style={{ textAlign: "right" }}>{formatEur(t.amount)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <Card key={group.label}>
+          <CardHeader>
+            <CardTitle>{group.label}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Libellé</TableHead>
+                  <TableHead>Catégorie</TableHead>
+                  <TableHead className="text-right">Montant</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {group.items.map((t) => (
+                  <TableRow key={t.id}>
+                    <TableCell className="text-muted-foreground">{t.date}</TableCell>
+                    <TableCell>{t.label}</TableCell>
+                    <TableCell>
+                      <form action={recategorize} className="flex items-center gap-2">
+                        <input type="hidden" name="txnId" value={t.id} />
+                        <input type="hidden" name="label" value={t.label} />
+                        <CategorySelectField
+                          name="category"
+                          categories={categories}
+                          defaultValue={t.category ?? ""}
+                        />
+                        <RuleCheckboxField name="createRule" label="règle" />
+                        <Button type="submit" size="sm" variant="secondary">
+                          OK
+                        </Button>
+                      </form>
+                    </TableCell>
+                    <TableCell className="text-right font-medium">{formatEur(t.amount)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
       ))}
     </div>
   );
