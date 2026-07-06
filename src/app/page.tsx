@@ -2,8 +2,10 @@ import { db } from "../db/index";
 import { totalBalance, listAccounts } from "../db/repositories/accounts";
 import { listTransactions } from "../db/repositories/transactions";
 import { listBudgets } from "../db/repositories/budgets";
+import { listRecurring } from "../db/repositories/recurring";
 import { getSetting } from "../db/repositories/settings";
 import { computeEnvelopes } from "../lib/budget";
+import { computeRecurring } from "../lib/recurring";
 import { buildAlerts } from "../lib/alerts";
 import { formatEur, monthKey } from "../lib/money";
 import { cn } from "@/lib/utils";
@@ -20,10 +22,13 @@ export default function Dashboard() {
   const accounts = listAccounts(database);
   const allTxns = listTransactions(database);
   const txns = allTxns.map((t) => ({ date: t.date, amount: t.amount, category: t.category }));
-  const budgets = listBudgets(database).map((b) => ({ category: b.category, month: b.month, limit: b.limit }));
+  const budgets = listBudgets(database).map((b) => ({ category: b.category, limit: b.limit }));
   const envelopes = computeEnvelopes(txns, budgets, month);
   const threshold = Number.parseFloat(getSetting(database, "balance_threshold") ?? "0");
   const alerts = buildAlerts(envelopes, balance, threshold);
+
+  const recTxns = allTxns.map((t) => ({ date: t.date, amount: t.amount, label: t.label }));
+  const recurring = computeRecurring(listRecurring(database), recTxns, month);
 
   const monthSpend = txns
     .filter((t) => monthKey(t.date) === month && t.amount < 0)
@@ -43,6 +48,20 @@ export default function Dashboard() {
           <div className="text-muted-foreground text-sm">
             Dépensé ce mois-ci : {formatEur(monthSpend)}
           </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="flex-row items-baseline justify-between">
+          <CardTitle>Récurrents ({month})</CardTitle>
+          <span className="text-sm">
+            {formatEur(recurring.totalSpent)} / {formatEur(recurring.totalExpected)}
+          </span>
+        </CardHeader>
+        <CardContent>
+          <p className="text-muted-foreground text-sm">
+            Total courant / prévu des paiements récurrents ce mois-ci.
+          </p>
         </CardContent>
       </Card>
 

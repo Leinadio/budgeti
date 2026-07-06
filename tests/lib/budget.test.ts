@@ -5,13 +5,13 @@ const txns: Txn[] = [
   { date: "2026-07-01", amount: -30, category: "Courses" },
   { date: "2026-07-15", amount: -50, category: "Courses" },
   { date: "2026-07-10", amount: -20, category: "Transport" },
-  { date: "2026-06-30", amount: -999, category: "Courses" }, // other month, ignored
-  { date: "2026-07-20", amount: 100, category: "Courses" },  // credit, ignored in spend
+  { date: "2026-06-30", amount: -999, category: "Courses" }, // autre mois
+  { date: "2026-07-20", amount: 100, category: "Courses" },  // crédit, ignoré
 ];
 
 const budgets: Budget[] = [
-  { category: "Courses", month: "2026-07", limit: 400 },
-  { category: "Transport", month: "2026-07", limit: 100 },
+  { category: "Courses", limit: 400 },
+  { category: "Transport", limit: 100 },
 ];
 
 test("computes spent/remaining/ratio for the month", () => {
@@ -23,6 +23,13 @@ test("computes spent/remaining/ratio for the month", () => {
 });
 
 test("ratio is 0 when limit is 0", () => {
-  const env = computeEnvelopes(txns, [{ category: "X", month: "2026-07", limit: 0 }], "2026-07");
+  const env = computeEnvelopes(txns, [{ category: "X", limit: 0 }], "2026-07");
   expect(env[0].ratio).toBe(0);
+});
+
+test("same budget applies to any month (recurring)", () => {
+  const env = computeEnvelopes(txns, budgets, "2026-06");
+  const courses = env.find((e) => e.category === "Courses")!;
+  expect(courses.spent).toBe(999);
+  expect(courses.limit).toBe(400);
 });
