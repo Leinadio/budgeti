@@ -24,3 +24,11 @@ export function migrateBudgets(db: Database.Database): void {
     `);
   })();
 }
+
+// Ajoute la colonne custom_name (alias utilisateur) aux bases antérieures.
+// Idempotent : no-op si la colonne existe déjà. Ne touche à aucune donnée.
+export function migrateAccountCustomName(db: Database.Database): void {
+  const cols = db.prepare("PRAGMA table_info(accounts)").all() as { name: string }[];
+  if (cols.some((c) => c.name === "custom_name")) return;
+  db.exec(`ALTER TABLE accounts ADD COLUMN custom_name TEXT`);
+}

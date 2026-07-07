@@ -4,7 +4,8 @@ CREATE TABLE IF NOT EXISTS accounts (
   iban_masked TEXT,
   balance REAL NOT NULL DEFAULT 0,
   currency TEXT NOT NULL DEFAULT 'EUR',
-  last_synced TEXT                 -- ISO datetime
+  last_synced TEXT,                -- ISO datetime
+  custom_name TEXT                 -- alias utilisateur ; NULL = utiliser name
 );
 
 CREATE TABLE IF NOT EXISTS categories (
