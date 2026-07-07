@@ -2,6 +2,7 @@ import { db } from "../db/index";
 import { totalBalance, listAccounts } from "../db/repositories/accounts";
 import { listTransactions } from "../db/repositories/transactions";
 import { formatEur, monthKey } from "../lib/money";
+import { accountLabel } from "../lib/account";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 
@@ -17,9 +18,6 @@ export default function Dashboard() {
   const monthSpend = allTxns
     .filter((t) => monthKey(t.date) === month && t.amount < 0)
     .reduce((s, t) => s + Math.abs(t.amount), 0);
-
-  const accountLabel = (a: (typeof accounts)[number]) =>
-    a.iban_masked ? `${a.name} ${a.iban_masked}` : a.name;
 
   return (
     <div className="flex flex-col gap-4">

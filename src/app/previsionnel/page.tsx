@@ -4,6 +4,7 @@ import { listTransactions } from "../../db/repositories/transactions";
 import { listGroups } from "../../db/repositories/groups";
 import { computeForecast, type Group, type Txn } from "../../lib/forecast";
 import { formatEur, monthKey } from "../../lib/money";
+import { accountLabel } from "../../lib/account";
 import { cn } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -21,9 +22,6 @@ export default function PrevisionnelPage() {
     label: t.label,
     accountId: t.accountId,
   }));
-
-  const accountLabel = (a: (typeof accounts)[number]) =>
-    a.iban_masked ? `${a.name} ${a.iban_masked}` : a.name;
 
   return (
     <div className="flex flex-col gap-4">

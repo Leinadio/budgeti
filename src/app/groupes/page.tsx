@@ -2,6 +2,7 @@ import { db } from "../../db/index";
 import { listGroups } from "../../db/repositories/groups";
 import { listAccounts } from "../../db/repositories/accounts";
 import { formatEur } from "../../lib/money";
+import { accountDisplayName } from "../../lib/account";
 import { addGroup, removeGroup, addLine, removeLine } from "./actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -14,7 +15,10 @@ export default function GroupesPage() {
   const database = db();
   const accounts = listAccounts(database);
   const groups = listGroups(database);
-  const accountName = (id: string) => accounts.find((a) => a.id === id)?.name ?? id;
+  const accountName = (id: string) => {
+    const a = accounts.find((acc) => acc.id === id);
+    return a ? accountDisplayName(a) : id;
+  };
 
   return (
     <div className="flex flex-col gap-4">
