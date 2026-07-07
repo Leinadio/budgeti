@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { getSetting, setSetting } from "./settings";
 
 export type Account = {
   id: string;
@@ -32,4 +33,17 @@ export function totalBalance(db: Database.Database): number {
 
 export function setAccountAlias(db: Database.Database, id: string, alias: string | null): void {
   db.prepare("UPDATE accounts SET custom_name = ? WHERE id = ?").run(alias, id);
+}
+
+export function deleteAccount(db: Database.Database, id: string): void {
+  db.transaction(() => {
+    db.prepare("DELETE FROM transactions WHERE account_id = ?").run(id);
+    db.prepare("DELETE FROM groups WHERE account_id = ?").run(id);
+    db.prepare("DELETE FROM accounts WHERE id = ?").run(id);
+    const raw = getSetting(db, "account_uids");
+    if (raw) {
+      const uids = (JSON.parse(raw) as string[]).filter((u) => u !== id);
+      setSetting(db, "account_uids", JSON.stringify(uids));
+    }
+  })();
 }

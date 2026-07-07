@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import { getDb } from "../../src/db/index";
 import { ensureCategory, listCategories } from "../../src/db/repositories/categories";
 import { upsertTransaction, listTransactions } from "../../src/db/repositories/transactions";
-import { upsertAccount, totalBalance, setAccountAlias, listAccounts } from "../../src/db/repositories/accounts";
+import { upsertAccount, totalBalance, setAccountAlias, listAccounts, deleteAccount } from "../../src/db/repositories/accounts";
 import { setSetting, getSetting } from "../../src/db/repositories/settings";
 import {
   listGroups,
@@ -96,4 +96,26 @@ test("upsertAccount preserves a custom alias across a resync", () => {
   const a = listAccounts(db).find((x) => x.id === "a1")!;
   expect(a.custom_name).toBe("Compte joint"); // alias préservé
   expect(a.balance).toBe(250);                 // solde mis à jour
+});
+
+test("deleteAccount removes the account, its transactions, its groups+lines, and its sync uid", () => {
+  const db = getDb(":memory:");
+  upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 100, currency: "EUR", last_synced: null });
+  upsertAccount(db, { id: "a2", name: "CIC", iban_masked: null, balance: 50, currency: "EUR", last_synced: null });
+  upsertTransaction(db, { id: "t1", account_id: "a1", date: "2026-07-01", amount: -10, label: "X", category_id: null });
+  upsertTransaction(db, { id: "t2", account_id: "a2", date: "2026-07-01", amount: -20, label: "Y", category_id: null });
+  const g1 = insertGroup(db, "a1", "Abonnements", "out");
+  insertLine(db, g1, "Spotify", 10, 3, "SPOTIFY");
+  const g2 = insertGroup(db, "a2", "Courses", "out");
+  setSetting(db, "account_uids", JSON.stringify(["a1", "a2"]));
+
+  deleteAccount(db, "a1");
+
+  expect(listAccounts(db).map((a) => a.id)).toEqual(["a2"]);
+  expect(listTransactions(db).map((t) => t.id)).toEqual(["t2"]);
+  expect(listGroups(db).map((g) => g.id)).toEqual([g2]);
+  // la ligne de g1 (Spotify) a été supprimée en cascade ; g2 n'avait pas de ligne
+  expect(db.prepare("SELECT COUNT(*) AS n FROM group_lines").get()).toEqual({ n: 0 });
+  // l'uid a1 est retiré de la liste de synchro
+  expect(JSON.parse(getSetting(db, "account_uids")!)).toEqual(["a2"]);
 });
