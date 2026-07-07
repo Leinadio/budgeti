@@ -1,6 +1,7 @@
 import { db } from "../../db/index";
 import { getSetting } from "../../db/repositories/settings";
 import { listAccounts } from "../../db/repositories/accounts";
+import { accountDisplayName } from "../../lib/account";
 import { saveThreshold, renameAccount } from "./actions";
 import { ConnectButtons } from "./ConnectButtons";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -39,7 +40,7 @@ export default function SettingsPage() {
             <ul className="text-muted-foreground list-inside list-disc text-sm">
               {accounts.map((a) => (
                 <li key={a.id}>
-                  {a.name} — dernière synchro : {a.last_synced ?? "jamais"}
+                  {accountDisplayName(a)} — dernière synchro : {a.last_synced ?? "jamais"}
                 </li>
               ))}
             </ul>

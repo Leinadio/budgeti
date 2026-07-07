@@ -45,7 +45,7 @@ export default function GroupesPage() {
                   className="border-input bg-background h-9 rounded-md border px-3 text-sm"
                 >
                   {accounts.map((a) => (
-                    <option key={a.id} value={a.id}>{a.name}</option>
+                    <option key={a.id} value={a.id}>{accountDisplayName(a)}</option>
                   ))}
                 </select>
               </div>
