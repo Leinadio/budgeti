@@ -9,8 +9,6 @@ const NAV = [
   { href: "/transactions", label: "Transactions" },
   { href: "/previsionnel", label: "Prévisionnel" },
   { href: "/groupes", label: "Groupes" },
-  { href: "/recurring", label: "Récurrents" },
-  { href: "/budgets", label: "Budgets" },
   { href: "/categories", label: "Catégories" },
   { href: "/settings", label: "Réglages" },
 ];

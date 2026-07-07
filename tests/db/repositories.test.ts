@@ -4,8 +4,6 @@ import { ensureCategory, listCategories } from "../../src/db/repositories/catego
 import { upsertTransaction, listTransactions } from "../../src/db/repositories/transactions";
 import { upsertAccount, totalBalance } from "../../src/db/repositories/accounts";
 import { setSetting, getSetting } from "../../src/db/repositories/settings";
-import { setBudget, listBudgets, deleteBudget } from "../../src/db/repositories/budgets";
-import { listRecurring, insertRecurring, deleteRecurring } from "../../src/db/repositories/recurring";
 import {
   listGroups,
   insertGroup,
@@ -37,35 +35,6 @@ test("settings round-trip", () => {
   setSetting(db, "balance_threshold", "200");
   expect(getSetting(db, "balance_threshold")).toBe("200");
   expect(getSetting(db, "missing")).toBeNull();
-});
-
-test("budget set and list round-trip (limit is a reserved word)", () => {
-  const db = getDb(":memory:");
-  setBudget(db, "Courses", 400);
-  setBudget(db, "Courses", 450); // upsert sur la même catégorie
-  const budgets = listBudgets(db);
-  expect(budgets).toHaveLength(1);
-  expect(budgets[0]).toEqual({ category: "Courses", limit: 450 });
-});
-
-test("budget delete removes the row", () => {
-  const db = getDb(":memory:");
-  setBudget(db, "Courses", 400);
-  deleteBudget(db, "Courses");
-  expect(listBudgets(db)).toHaveLength(0);
-});
-
-test("recurring payment insert, list, delete round-trip", () => {
-  const db = getDb(":memory:");
-  insertRecurring(db, "Spotify", "SPOTIFY", 12.14);
-  insertRecurring(db, "iCloud", "ICLOUD", 9.99);
-  let rows = listRecurring(db);
-  expect(rows).toHaveLength(2);
-  expect(rows[0]).toEqual({ id: rows[0].id, name: "Spotify", keyword: "SPOTIFY", expected: 12.14 });
-  deleteRecurring(db, rows[0].id);
-  rows = listRecurring(db);
-  expect(rows).toHaveLength(1);
-  expect(rows[0].name).toBe("iCloud");
 });
 
 test("group + lines insert, list nested, delete line", () => {
