@@ -4,6 +4,7 @@ import { listAccounts } from "../../db/repositories/accounts";
 import { accountDisplayName } from "../../lib/account";
 import { saveThreshold, renameAccount } from "./actions";
 import { ConnectButtons } from "./ConnectButtons";
+import { DeleteAccountButton } from "./DeleteAccountButton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -76,18 +77,21 @@ export default function SettingsPage() {
           </CardHeader>
           <CardContent className="flex flex-col gap-2">
             {accounts.map((a) => (
-              <form key={a.id} action={renameAccount} className="flex items-center gap-2">
-                <input type="hidden" name="id" value={a.id} />
-                <Input
-                  name="alias"
-                  defaultValue={a.custom_name ?? ""}
-                  placeholder={a.name}
-                  className="max-w-60"
-                />
-                <Button type="submit" size="sm">
-                  Enregistrer
-                </Button>
-              </form>
+              <div key={a.id} className="flex items-center gap-2">
+                <form action={renameAccount} className="flex items-center gap-2">
+                  <input type="hidden" name="id" value={a.id} />
+                  <Input
+                    name="alias"
+                    defaultValue={a.custom_name ?? ""}
+                    placeholder={a.name}
+                    className="max-w-60"
+                  />
+                  <Button type="submit" size="sm">
+                    Enregistrer
+                  </Button>
+                </form>
+                <DeleteAccountButton accountId={a.id} />
+              </div>
             ))}
             <p className="text-muted-foreground text-xs">
               Videz le champ pour revenir au nom de la banque.
