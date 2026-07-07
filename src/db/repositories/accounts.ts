@@ -7,9 +7,10 @@ export type Account = {
   balance: number;
   currency: string;
   last_synced: string | null;
+  custom_name: string | null;
 };
 
-export function upsertAccount(db: Database.Database, a: Account): void {
+export function upsertAccount(db: Database.Database, a: Omit<Account, "custom_name">): void {
   db.prepare(
     `INSERT INTO accounts (id, name, iban_masked, balance, currency, last_synced)
      VALUES (@id, @name, @iban_masked, @balance, @currency, @last_synced)
@@ -27,4 +28,8 @@ export function listAccounts(db: Database.Database): Account[] {
 export function totalBalance(db: Database.Database): number {
   const row = db.prepare("SELECT COALESCE(SUM(balance), 0) AS total FROM accounts").get() as { total: number };
   return row.total;
+}
+
+export function setAccountAlias(db: Database.Database, id: string, alias: string | null): void {
+  db.prepare("UPDATE accounts SET custom_name = ? WHERE id = ?").run(alias, id);
 }
