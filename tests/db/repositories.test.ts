@@ -6,6 +6,13 @@ import { upsertAccount, totalBalance } from "../../src/db/repositories/accounts"
 import { setSetting, getSetting } from "../../src/db/repositories/settings";
 import { setBudget, listBudgets, deleteBudget } from "../../src/db/repositories/budgets";
 import { listRecurring, insertRecurring, deleteRecurring } from "../../src/db/repositories/recurring";
+import {
+  listGroups,
+  insertGroup,
+  deleteGroup,
+  insertLine,
+  deleteLine,
+} from "../../src/db/repositories/groups";
 
 test("category ensure is idempotent", () => {
   const db = getDb(":memory:");
@@ -59,4 +66,33 @@ test("recurring payment insert, list, delete round-trip", () => {
   rows = listRecurring(db);
   expect(rows).toHaveLength(1);
   expect(rows[0].name).toBe("iCloud");
+});
+
+test("group + lines insert, list nested, delete line", () => {
+  const db = getDb(":memory:");
+  upsertAccount(db, { id: "acc1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
+  const gid = insertGroup(db, "acc1", "Abonnements", "out");
+  insertLine(db, gid, "Spotify", 10, 3, "SPOTIFY");
+  insertLine(db, gid, "Courses", 300, null, "CARREFOUR");
+
+  const groups = listGroups(db);
+  expect(groups).toHaveLength(1);
+  expect(groups[0]).toMatchObject({ id: gid, accountId: "acc1", name: "Abonnements", direction: "out" });
+  expect(groups[0].lines).toHaveLength(2);
+  expect(groups[0].lines[0]).toMatchObject({ name: "Spotify", amount: 10, day: 3, keyword: "SPOTIFY" });
+  expect(groups[0].lines[1]).toMatchObject({ name: "Courses", amount: 300, day: null, keyword: "CARREFOUR" });
+
+  deleteLine(db, groups[0].lines[0].id);
+  expect(listGroups(db)[0].lines).toHaveLength(1);
+});
+
+test("deleteGroup cascades to its lines", () => {
+  const db = getDb(":memory:");
+  upsertAccount(db, { id: "acc1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
+  const gid = insertGroup(db, "acc1", "Abonnements", "out");
+  insertLine(db, gid, "Spotify", 10, 3, "SPOTIFY");
+  deleteGroup(db, gid);
+  expect(listGroups(db)).toHaveLength(0);
+  const orphans = db.prepare("SELECT COUNT(*) AS n FROM group_lines").get() as { n: number };
+  expect(orphans.n).toBe(0);
 });
