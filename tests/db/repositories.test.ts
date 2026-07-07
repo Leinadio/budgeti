@@ -10,6 +10,7 @@ import {
   deleteGroup,
   insertLine,
   deleteLine,
+  getGroupDirection,
 } from "../../src/db/repositories/groups";
 
 test("category ensure is idempotent", () => {
@@ -64,4 +65,15 @@ test("deleteGroup cascades to its lines", () => {
   expect(listGroups(db)).toHaveLength(0);
   const orphans = db.prepare("SELECT COUNT(*) AS n FROM group_lines").get() as { n: number };
   expect(orphans.n).toBe(0);
+});
+
+test("getGroupDirection returns the direction or null if unknown", () => {
+  const db = getDb(":memory:");
+  upsertAccount(db, { id: "acc1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
+  const inId = insertGroup(db, "acc1", "Salaire", "in");
+  const outId = insertGroup(db, "acc1", "Abonnements", "out");
+
+  expect(getGroupDirection(db, inId)).toBe("in");
+  expect(getGroupDirection(db, outId)).toBe("out");
+  expect(getGroupDirection(db, 9999)).toBeNull();
 });

@@ -63,3 +63,13 @@ export function insertLine(
 export function deleteLine(db: Database.Database, id: number): void {
   db.prepare(`DELETE FROM group_lines WHERE id = ?`).run(id);
 }
+
+export function getGroupDirection(
+  db: Database.Database,
+  id: number,
+): "in" | "out" | null {
+  const row = db
+    .prepare(`SELECT direction FROM groups WHERE id = ?`)
+    .get(id) as { direction: "in" | "out" } | undefined;
+  return row ? row.direction : null;
+}
