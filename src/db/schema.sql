@@ -45,3 +45,19 @@ CREATE TABLE IF NOT EXISTS recurring_payments (
   keyword TEXT NOT NULL,            -- matché insensiblement à la casse contre le libellé
   expected_amount REAL NOT NULL    -- montant mensuel prévu, euros positifs
 );
+
+CREATE TABLE IF NOT EXISTS groups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id TEXT NOT NULL REFERENCES accounts(id),
+  name TEXT NOT NULL,
+  direction TEXT NOT NULL CHECK (direction IN ('in', 'out'))
+);
+
+CREATE TABLE IF NOT EXISTS group_lines (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  amount REAL NOT NULL,
+  day INTEGER,
+  keyword TEXT NOT NULL
+);
