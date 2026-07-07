@@ -34,7 +34,7 @@ export function listTransactions(
   let sql =
     `SELECT t.id, t.date, t.amount, t.label, c.name AS category,
             t.account_id AS accountId,
-            COALESCE(a.name || ' ' || a.iban_masked, a.name) AS accountLabel
+            COALESCE(COALESCE(a.custom_name, a.name) || ' ' || a.iban_masked, COALESCE(a.custom_name, a.name)) AS accountLabel
      FROM transactions t
      LEFT JOIN categories c ON c.id = t.category_id
      LEFT JOIN accounts a ON a.id = t.account_id`;

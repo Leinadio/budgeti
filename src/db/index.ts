@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { seed } from "./seed";
-import { migrateBudgets } from "./migrations";
+import { migrateBudgets, migrateAccountCustomName } from "./migrations";
 
 const SCHEMA = readFileSync(join(process.cwd(), "src/db/schema.sql"), "utf8");
 
@@ -15,6 +15,7 @@ export function getDb(path = join(process.cwd(), "data/budget.db")): Database.Da
   db.pragma("foreign_keys = ON");
   db.exec(SCHEMA);
   migrateBudgets(db);
+  migrateAccountCustomName(db);
   return db;
 }
 

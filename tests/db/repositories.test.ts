@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import { getDb } from "../../src/db/index";
 import { ensureCategory, listCategories } from "../../src/db/repositories/categories";
 import { upsertTransaction, listTransactions } from "../../src/db/repositories/transactions";
-import { upsertAccount, totalBalance } from "../../src/db/repositories/accounts";
+import { upsertAccount, totalBalance, setAccountAlias, listAccounts } from "../../src/db/repositories/accounts";
 import { setSetting, getSetting } from "../../src/db/repositories/settings";
 import {
   listGroups,
@@ -76,4 +76,24 @@ test("getGroupDirection returns the direction or null if unknown", () => {
   expect(getGroupDirection(db, inId)).toBe("in");
   expect(getGroupDirection(db, outId)).toBe("out");
   expect(getGroupDirection(db, 9999)).toBeNull();
+});
+
+test("setAccountAlias sets and resets the alias", () => {
+  const db = getDb(":memory:");
+  upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
+  setAccountAlias(db, "a1", "Perso");
+  expect(listAccounts(db)[0].custom_name).toBe("Perso");
+  setAccountAlias(db, "a1", null);
+  expect(listAccounts(db)[0].custom_name).toBeNull();
+});
+
+test("upsertAccount preserves a custom alias across a resync", () => {
+  const db = getDb(":memory:");
+  upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 100, currency: "EUR", last_synced: null });
+  setAccountAlias(db, "a1", "Compte joint");
+  // resynchro : même id, name/balance mis à jour
+  upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 250, currency: "EUR", last_synced: "2026-07-07" });
+  const a = listAccounts(db).find((x) => x.id === "a1")!;
+  expect(a.custom_name).toBe("Compte joint"); // alias préservé
+  expect(a.balance).toBe(250);                 // solde mis à jour
 });
