@@ -186,6 +186,7 @@ export type AccountForecast = {
 };
 
 export function computeForecast(
+  accountId: string,        // compte concerné (utile même sans groupe)
   balance: number,
   groups: Group[],          // groupes d'UN compte
   txns: Txn[],              // transactions du compte (tous mois confondus)
@@ -267,15 +268,23 @@ Toutes les requêtes paramétrées. `deleteGroup` s'appuie sur `ON DELETE CASCAD
 - Retirer les cartes Récurrents et Enveloppes (portées désormais par
   Prévisionnel). Conserver le solde total, le dépensé du mois, et les cartes par
   compte avec leurs dernières transactions.
+- Retirer aussi le bloc d'alertes : `buildAlerts` dépend du modèle d'enveloppes
+  supprimé, et les alertes sont redessinées en étape 2 (dépassement +
+  suggestion). Le réglage `balance_threshold` reste stocké ; son affichage
+  revient en étape 2.
 
 ### Nettoyage
 
 - Supprimer les pages `src/app/recurring/` et `src/app/budgets/` et leurs
   `actions.ts`.
 - Supprimer le code mort une fois non référencé : `src/lib/recurring.ts`,
-  `src/lib/budget.ts`, `src/db/repositories/recurring.ts`,
-  `src/db/repositories/budgets.ts`, et les tests associés. Les tables SQL
-  correspondantes restent en place (dormantes).
+  `src/lib/budget.ts`, `src/lib/alerts.ts`, `src/db/repositories/recurring.ts`,
+  `src/db/repositories/budgets.ts`, et les tests associés
+  (`tests/lib/recurring.test.ts`, `tests/lib/budget.test.ts`,
+  `tests/lib/alerts.test.ts`, et les cas budgets/récurrents de
+  `tests/db/repositories.test.ts`). Les tables SQL correspondantes restent en
+  place (dormantes). `src/db/migrations.ts` et son test restent inchangés (la
+  table `budgets` demeure).
 
 ## Tests
 
