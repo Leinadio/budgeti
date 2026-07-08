@@ -6,11 +6,12 @@ import { upsertAccount, totalBalance, setAccountAlias, listAccounts, deleteAccou
 import { setSetting, getSetting } from "../../src/db/repositories/settings";
 import {
   listGroups,
-  insertGroup,
+  insertEnvelopeGroup,
+  insertRecurringGroup,
   deleteGroup,
+  addKeyword,
   insertLine,
   deleteLine,
-  getGroupDirection,
 } from "../../src/db/repositories/groups";
 
 test("category ensure is idempotent", () => {
@@ -38,44 +39,37 @@ test("settings round-trip", () => {
   expect(getSetting(db, "missing")).toBeNull();
 });
 
-test("group + lines insert, list nested, delete line", () => {
+test("envelope group: keywords add/list/remove", () => {
   const db = getDb(":memory:");
-  upsertAccount(db, { id: "acc1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  const gid = insertGroup(db, "acc1", "Abonnements", "out");
-  insertLine(db, gid, "Spotify", 10, 3, "SPOTIFY");
-  insertLine(db, gid, "Courses", 300, null, "CARREFOUR");
-
-  const groups = listGroups(db);
-  expect(groups).toHaveLength(1);
-  expect(groups[0]).toMatchObject({ id: gid, accountId: "acc1", name: "Abonnements", direction: "out" });
-  expect(groups[0].lines).toHaveLength(2);
-  expect(groups[0].lines[0]).toMatchObject({ name: "Spotify", amount: 10, day: 3, keyword: "SPOTIFY" });
-  expect(groups[0].lines[1]).toMatchObject({ name: "Courses", amount: 300, day: null, keyword: "CARREFOUR" });
-
-  deleteLine(db, groups[0].lines[0].id);
-  expect(listGroups(db)[0].lines).toHaveLength(1);
+  upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
+  const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300);
+  addKeyword(db, gid, "CARREFOUR");
+  addKeyword(db, gid, "LECLERC");
+  const g = listGroups(db)[0];
+  expect(g).toMatchObject({ id: gid, accountId: "a1", name: "Courses", direction: "out", kind: "envelope", monthlyAmount: 300 });
+  expect(g.keywords.sort()).toEqual(["CARREFOUR", "LECLERC"]);
+  expect(g.lines).toEqual([]);
+  // la suppression d'un groupe emporte ses mots-clés (cascade)
+  deleteGroup(db, gid);
+  expect(db.prepare("SELECT COUNT(*) AS n FROM group_keywords").get()).toEqual({ n: 0 });
 });
 
-test("deleteGroup cascades to its lines", () => {
+test("recurring group: dated lines summed, delete cascades", () => {
   const db = getDb(":memory:");
-  upsertAccount(db, { id: "acc1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  const gid = insertGroup(db, "acc1", "Abonnements", "out");
+  upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
+  const gid = insertRecurringGroup(db, "a1", "Abonnements", "out");
   insertLine(db, gid, "Spotify", 10, 3, "SPOTIFY");
+  insertLine(db, gid, "Netflix", 15, 8, "NETFLIX");
+  const g = listGroups(db)[0];
+  expect(g).toMatchObject({ id: gid, name: "Abonnements", kind: "recurring", monthlyAmount: null });
+  expect(g.keywords).toEqual([]);
+  expect(g.lines.map((l) => [l.name, l.amount, l.day, l.keyword])).toEqual([
+    ["Spotify", 10, 3, "SPOTIFY"],
+    ["Netflix", 15, 8, "NETFLIX"],
+  ]);
   deleteGroup(db, gid);
   expect(listGroups(db)).toHaveLength(0);
-  const orphans = db.prepare("SELECT COUNT(*) AS n FROM group_lines").get() as { n: number };
-  expect(orphans.n).toBe(0);
-});
-
-test("getGroupDirection returns the direction or null if unknown", () => {
-  const db = getDb(":memory:");
-  upsertAccount(db, { id: "acc1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  const inId = insertGroup(db, "acc1", "Salaire", "in");
-  const outId = insertGroup(db, "acc1", "Abonnements", "out");
-
-  expect(getGroupDirection(db, inId)).toBe("in");
-  expect(getGroupDirection(db, outId)).toBe("out");
-  expect(getGroupDirection(db, 9999)).toBeNull();
+  expect(db.prepare("SELECT COUNT(*) AS n FROM group_lines").get()).toEqual({ n: 0 });
 });
 
 test("setAccountAlias sets and resets the alias", () => {
@@ -104,9 +98,9 @@ test("deleteAccount removes the account, its transactions, its groups+lines, and
   upsertAccount(db, { id: "a2", name: "CIC", iban_masked: null, balance: 50, currency: "EUR", last_synced: null });
   upsertTransaction(db, { id: "t1", account_id: "a1", date: "2026-07-01", amount: -10, label: "X", category_id: null });
   upsertTransaction(db, { id: "t2", account_id: "a2", date: "2026-07-01", amount: -20, label: "Y", category_id: null });
-  const g1 = insertGroup(db, "a1", "Abonnements", "out");
+  const g1 = insertRecurringGroup(db, "a1", "Abonnements", "out");
   insertLine(db, g1, "Spotify", 10, 3, "SPOTIFY");
-  const g2 = insertGroup(db, "a2", "Courses", "out");
+  const g2 = insertRecurringGroup(db, "a2", "Courses", "out");
   setSetting(db, "account_uids", JSON.stringify(["a1", "a2"]));
 
   deleteAccount(db, "a1");
