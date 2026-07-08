@@ -1,10 +1,7 @@
 import type Database from "better-sqlite3";
 import { parseAmount } from "../lib/money";
-import { categorize } from "../lib/categorize";
-import { listRules } from "../db/repositories/rules";
-import { ensureCategory } from "../db/repositories/categories";
 import { upsertAccount } from "../db/repositories/accounts";
-import { upsertTransaction, uncategorized, setTransactionCategory } from "../db/repositories/transactions";
+import { upsertTransaction } from "../db/repositories/transactions";
 
 type EbGet = <T>(path: string) => Promise<T>;
 
@@ -71,13 +68,6 @@ export async function syncAll(
         category_id: null,
       });
     }
-  }
-
-  // Categorize everything still uncategorized.
-  const rules = listRules(db);
-  for (const t of uncategorized(db)) {
-    const category = categorize(t.label, rules);
-    if (category) setTransactionCategory(db, t.id, ensureCategory(db, category));
   }
 
   return { imported };
