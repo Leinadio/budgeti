@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { getDb } from "../../src/db/index";
 import { ensureCategory, listCategories } from "../../src/db/repositories/categories";
-import { upsertTransaction, listTransactions } from "../../src/db/repositories/transactions";
+import { upsertTransaction, listTransactions, setTransactionGroup } from "../../src/db/repositories/transactions";
 import { upsertAccount, totalBalance, setAccountAlias, listAccounts, deleteAccount } from "../../src/db/repositories/accounts";
 import { setSetting, getSetting } from "../../src/db/repositories/settings";
 import {
@@ -112,4 +112,15 @@ test("deleteAccount removes the account, its transactions, its groups+lines, and
   expect(db.prepare("SELECT COUNT(*) AS n FROM group_lines").get()).toEqual({ n: 0 });
   // l'uid a1 est retiré de la liste de synchro
   expect(JSON.parse(getSetting(db, "account_uids")!)).toEqual(["a2"]);
+});
+
+test("setTransactionGroup attaches and detaches", () => {
+  const db = getDb(":memory:");
+  upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
+  const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300);
+  upsertTransaction(db, { id: "t1", account_id: "a1", date: "2026-07-01", amount: -30, label: "X", category_id: null });
+  setTransactionGroup(db, "t1", gid);
+  expect(listTransactions(db)[0].groupId).toBe(gid);
+  setTransactionGroup(db, "t1", null);
+  expect(listTransactions(db)[0].groupId).toBeNull();
 });
