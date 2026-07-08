@@ -9,7 +9,6 @@ const NAV = [
   { href: "/transactions", label: "Transactions" },
   { href: "/previsionnel", label: "Prévisionnel" },
   { href: "/groupes", label: "Groupes" },
-  { href: "/settings", label: "Réglages" },
 ];
 
 const themeScript =
@@ -29,7 +28,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </Button>
           ))}
         </nav>
-        <main className="mx-auto max-w-3xl px-6 py-6">{children}</main>
+        <div className="flex">
+          <aside className="w-48 shrink-0 border-r p-3">
+            <Button asChild variant="ghost" size="sm">
+              <Link href="/settings">Réglages</Link>
+            </Button>
+          </aside>
+          <main className="flex-1 px-6 py-6">{children}</main>
+        </div>
       </body>
     </html>
   );
