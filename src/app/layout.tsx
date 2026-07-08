@@ -1,6 +1,17 @@
 import "./globals.css";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import {
+  SidebarProvider,
+  Sidebar,
+  SidebarHeader,
+  SidebarContent,
+  SidebarMenu,
+  SidebarMenuItem,
+  SidebarMenuButton,
+  SidebarInset,
+  SidebarTrigger,
+} from "@/components/ui/sidebar";
 
 export const metadata = { title: "Budget CIC" };
 
@@ -21,21 +32,31 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>
       <body>
-        <nav className="flex flex-wrap gap-1 border-b bg-card px-4 py-2">
-          {NAV.map((n) => (
-            <Button key={n.href} asChild variant="ghost" size="sm">
-              <Link href={n.href}>{n.label}</Link>
-            </Button>
-          ))}
-        </nav>
-        <div className="flex">
-          <aside className="w-48 shrink-0 border-r p-3">
-            <Button asChild variant="ghost" size="sm">
-              <Link href="/settings">Réglages</Link>
-            </Button>
-          </aside>
-          <main className="flex-1 px-6 py-6">{children}</main>
-        </div>
+        <SidebarProvider>
+          <Sidebar>
+            <SidebarHeader className="px-3 py-2 text-sm font-semibold">Budget CIC</SidebarHeader>
+            <SidebarContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <Link href="/settings">Réglages</Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarContent>
+          </Sidebar>
+          <SidebarInset>
+            <nav className="flex flex-wrap items-center gap-1 border-b bg-card px-4 py-2">
+              <SidebarTrigger />
+              {NAV.map((n) => (
+                <Button key={n.href} asChild variant="ghost" size="sm">
+                  <Link href={n.href}>{n.label}</Link>
+                </Button>
+              ))}
+            </nav>
+            <div className="px-6 py-6">{children}</div>
+          </SidebarInset>
+        </SidebarProvider>
       </body>
     </html>
   );
