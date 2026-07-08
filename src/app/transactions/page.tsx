@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { db } from "../../db/index";
 import { listTransactions, type TxnView } from "../../db/repositories/transactions";
 import { listGroups } from "../../db/repositories/groups";
@@ -5,6 +6,7 @@ import { resolveOwnership, type OwnableGroup } from "../../lib/ownership";
 import { formatEur } from "../../lib/money";
 import { groupByMonth } from "../../lib/transactions-view";
 import { setGroup } from "./actions";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { GroupSelectField } from "@/components/group-select-field";
 
@@ -40,31 +42,45 @@ export default function TransactionsPage() {
     g.items.push(t);
     byAccount.set(t.accountId, g);
   }
+  const accounts = [...byAccount.entries()];
+
+  if (accounts.length === 0) {
+    return (
+      <p className="text-muted-foreground text-sm">
+        Aucune transaction. Va dans Réglages pour synchroniser.
+      </p>
+    );
+  }
 
   return (
-    <div className="flex flex-col gap-8">
-      {byAccount.size === 0 && (
-        <p className="text-muted-foreground text-sm">
-          Aucune transaction. Va dans Réglages pour synchroniser.
-        </p>
-      )}
-      {[...byAccount.entries()].map(([accountId, group]) => (
-        <section key={accountId} className="flex flex-col gap-4">
-          <h2 className="text-lg font-semibold">{group.label}</h2>
-          {groupByMonth(group.items).map((m) => (
-            <div key={m.month} className="flex flex-col gap-2">
-              <h3 className="text-muted-foreground text-sm font-medium">{m.label}</h3>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Libellé</TableHead>
-                    <TableHead>Groupe</TableHead>
-                    <TableHead>Appartenance</TableHead>
-                    <TableHead className="text-right">Montant</TableHead>
+    <Tabs defaultValue={accounts[0][0]}>
+      <TabsList>
+        {accounts.map(([accountId, group]) => (
+          <TabsTrigger key={accountId} value={accountId}>
+            {group.label}
+          </TabsTrigger>
+        ))}
+      </TabsList>
+      {accounts.map(([accountId, group]) => (
+        <TabsContent key={accountId} value={accountId}>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Date</TableHead>
+                <TableHead>Libellé</TableHead>
+                <TableHead>Groupe</TableHead>
+                <TableHead>Appartenance</TableHead>
+                <TableHead className="text-right">Montant</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {groupByMonth(group.items).map((m) => (
+                <Fragment key={m.month}>
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={5} className="text-muted-foreground text-sm font-medium">
+                      {m.label}
+                    </TableCell>
                   </TableRow>
-                </TableHeader>
-                <TableBody>
                   {m.items.map((t) => (
                     <TableRow key={t.id}>
                       <TableCell className="text-muted-foreground">{t.date}</TableCell>
@@ -79,12 +95,12 @@ export default function TransactionsPage() {
                       <TableCell className="text-right font-medium">{formatEur(t.amount)}</TableCell>
                     </TableRow>
                   ))}
-                </TableBody>
-              </Table>
-            </div>
-          ))}
-        </section>
+                </Fragment>
+              ))}
+            </TableBody>
+          </Table>
+        </TabsContent>
       ))}
-    </div>
+    </Tabs>
   );
 }
