@@ -32,3 +32,44 @@ export function migrateAccountCustomName(db: Database.Database): void {
   if (cols.some((c) => c.name === "custom_name")) return;
   db.exec(`ALTER TABLE accounts ADD COLUMN custom_name TEXT`);
 }
+
+// Refonte des groupes : type (enveloppe/recurring) + montant mensuel + mots-clés,
+// et rattachement manuel des transactions (group_id). Clean slate sur les groupes
+// (comptes/transactions conservés). Idempotent.
+export function migrateGroupsV2(db: Database.Database): void {
+  const gcols = db.prepare("PRAGMA table_info(groups)").all() as { name: string }[];
+  if (!gcols.some((c) => c.name === "kind")) {
+    db.transaction(() => {
+      db.exec(`
+        DROP TABLE IF EXISTS group_keywords;
+        DROP TABLE IF EXISTS group_lines;
+        DROP TABLE IF EXISTS groups;
+        CREATE TABLE groups (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          account_id TEXT NOT NULL REFERENCES accounts(id),
+          name TEXT NOT NULL,
+          direction TEXT NOT NULL CHECK (direction IN ('in', 'out')),
+          kind TEXT NOT NULL CHECK (kind IN ('envelope', 'recurring')),
+          monthly_amount REAL
+        );
+        CREATE TABLE group_lines (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          amount REAL NOT NULL,
+          day INTEGER,
+          keyword TEXT NOT NULL
+        );
+        CREATE TABLE group_keywords (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+          keyword TEXT NOT NULL
+        );
+      `);
+    })();
+  }
+  const tcols = db.prepare("PRAGMA table_info(transactions)").all() as { name: string }[];
+  if (!tcols.some((c) => c.name === "group_id")) {
+    db.exec(`ALTER TABLE transactions ADD COLUMN group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL`);
+  }
+}

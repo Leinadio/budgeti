@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS transactions (
   date TEXT NOT NULL,              -- YYYY-MM-DD
   amount REAL NOT NULL,            -- signed euros: debit negative, credit positive
   label TEXT NOT NULL,             -- raw bank label
-  category_id INTEGER REFERENCES categories(id)
+  category_id INTEGER REFERENCES categories(id),
+  group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS budgets (
@@ -51,7 +52,9 @@ CREATE TABLE IF NOT EXISTS groups (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   account_id TEXT NOT NULL REFERENCES accounts(id),
   name TEXT NOT NULL,
-  direction TEXT NOT NULL CHECK (direction IN ('in', 'out'))
+  direction TEXT NOT NULL CHECK (direction IN ('in', 'out')),
+  kind TEXT NOT NULL CHECK (kind IN ('envelope', 'recurring')),
+  monthly_amount REAL
 );
 
 CREATE TABLE IF NOT EXISTS group_lines (
@@ -60,5 +63,11 @@ CREATE TABLE IF NOT EXISTS group_lines (
   name TEXT NOT NULL,
   amount REAL NOT NULL,
   day INTEGER,
+  keyword TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS group_keywords (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
   keyword TEXT NOT NULL
 );
