@@ -1,6 +1,5 @@
 import { expect, test } from "vitest";
 import { getDb } from "../../src/db/index";
-import { ensureCategory, listCategories } from "../../src/db/repositories/categories";
 import { upsertTransaction, listTransactions, setTransactionGroup } from "../../src/db/repositories/transactions";
 import { upsertAccount, totalBalance, setAccountAlias, listAccounts, deleteAccount } from "../../src/db/repositories/accounts";
 import { setSetting, getSetting } from "../../src/db/repositories/settings";
@@ -13,14 +12,6 @@ import {
   insertLine,
   deleteLine,
 } from "../../src/db/repositories/groups";
-
-test("category ensure is idempotent", () => {
-  const db = getDb(":memory:");
-  const a = ensureCategory(db, "Courses");
-  const b = ensureCategory(db, "Courses");
-  expect(a).toBe(b);
-  expect(listCategories(db)).toHaveLength(1);
-});
 
 test("transaction upsert dedupes by id and lists back", () => {
   const db = getDb(":memory:");

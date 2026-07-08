@@ -1,6 +1,5 @@
 import { expect, test } from "vitest";
 import { getDb } from "../../src/db/index";
-import { seed } from "../../src/db/seed";
 import { syncAll } from "../../src/enablebanking/sync";
 import { listTransactions } from "../../src/db/repositories/transactions";
 import { totalBalance, listAccounts } from "../../src/db/repositories/accounts";
@@ -30,7 +29,6 @@ const fakeEbGet = async (path: string): Promise<any> => {
 
 test("sync imports balance + transactions", async () => {
   const db = getDb(":memory:");
-  seed(db);
   const result = await syncAll(db, {
     ebGet: fakeEbGet,
     accountUids: ["acc1"],
@@ -65,7 +63,6 @@ test("keeps two accounts separate with their own balance, label and transactions
   };
 
   const db = getDb(":memory:");
-  seed(db);
   await syncAll(db, { ebGet: perAccount, accountUids: ["accA", "accB"], accountName: "CIC" });
 
   const accounts = listAccounts(db);
@@ -85,7 +82,6 @@ test("keeps two accounts separate with their own balance, label and transactions
 
 test("sync deduplicates on re-run (imported === 0 on second call)", async () => {
   const db = getDb(":memory:");
-  seed(db);
   await syncAll(db, { ebGet: fakeEbGet, accountUids: ["acc1"], accountName: "CIC" });
   const second = await syncAll(db, { ebGet: fakeEbGet, accountUids: ["acc1"], accountName: "CIC" });
   expect(second.imported).toBe(0);

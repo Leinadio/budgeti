@@ -1,7 +1,6 @@
 import Database from "better-sqlite3";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { seed } from "./seed";
 import { migrateBudgets, migrateAccountCustomName, migrateGroupsV2 } from "./migrations";
 
 const SCHEMA = readFileSync(join(process.cwd(), "src/db/schema.sql"), "utf8");
@@ -24,7 +23,6 @@ let _db: Database.Database | null = null;
 export function db(): Database.Database {
   if (!_db) {
     _db = getDb();
-    seed(_db);
   }
   return _db;
 }
