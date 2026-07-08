@@ -28,7 +28,7 @@ const fakeEbGet = async (path: string): Promise<any> => {
   return {};
 };
 
-test("sync imports balance + categorized transactions", async () => {
+test("sync imports balance + transactions", async () => {
   const db = getDb(":memory:");
   seed(db);
   const result = await syncAll(db, {
@@ -39,7 +39,6 @@ test("sync imports balance + categorized transactions", async () => {
   expect(result.imported).toBe(1);
   expect(totalBalance(db)).toBe(500);
   const txns = listTransactions(db);
-  expect(txns[0].category).toBe("Courses");
   expect(txns[0].amount).toBe(-30);
 });
 

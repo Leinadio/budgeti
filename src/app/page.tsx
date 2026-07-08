@@ -1,6 +1,8 @@
 import { db } from "../db/index";
 import { totalBalance, listAccounts } from "../db/repositories/accounts";
 import { listTransactions } from "../db/repositories/transactions";
+import { listGroups } from "../db/repositories/groups";
+import { resolveOwnership } from "../lib/ownership";
 import { formatEur, monthKey } from "../lib/money";
 import { accountLabel } from "../lib/account";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +16,20 @@ export default function Dashboard() {
   const balance = totalBalance(database);
   const accounts = listAccounts(database);
   const allTxns = listTransactions(database);
+  const groups = listGroups(database);
+  const ownable = groups.map((g) => ({
+    id: g.id, accountId: g.accountId, direction: g.direction, kind: g.kind,
+    keywords: g.kind === "envelope" ? g.keywords : g.lines.map((l) => l.keyword),
+  }));
+  const groupCell = (t: (typeof allTxns)[number]) => {
+    const res = resolveOwnership(
+      { id: t.id, date: t.date, amount: t.amount, label: t.label, accountId: t.accountId, groupId: t.groupId },
+      ownable,
+    );
+    if (res.status === "manual" || res.status === "auto") return groups.find((g) => g.id === res.groupId)?.name ?? "";
+    if (res.status === "ambiguous") return "à répartir";
+    return "";
+  };
 
   const monthSpend = allTxns
     .filter((t) => monthKey(t.date) === month && t.amount < 0)
@@ -54,7 +70,7 @@ export default function Dashboard() {
                       <TableCell className="text-muted-foreground">{t.date}</TableCell>
                       <TableCell>{t.label}</TableCell>
                       <TableCell className="text-muted-foreground">
-                        {t.category ?? "À catégoriser"}
+                        {groupCell(t)}
                       </TableCell>
                       <TableCell className="text-right font-medium">{formatEur(t.amount)}</TableCell>
                     </TableRow>

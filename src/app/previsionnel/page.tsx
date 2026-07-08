@@ -17,10 +17,12 @@ export default function PrevisionnelPage() {
   const accounts = listAccounts(database);
   const allGroups = listGroups(database);
   const allTxns: Txn[] = listTransactions(database).map((t) => ({
+    id: t.id,
     date: t.date,
     amount: t.amount,
     label: t.label,
     accountId: t.accountId,
+    groupId: t.groupId,
   }));
 
   return (

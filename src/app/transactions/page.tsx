@@ -1,48 +1,56 @@
 import { db } from "../../db/index";
 import { listTransactions, type TxnView } from "../../db/repositories/transactions";
-import { listCategories } from "../../db/repositories/categories";
+import { listGroups } from "../../db/repositories/groups";
+import { resolveOwnership, type OwnableGroup } from "../../lib/ownership";
 import { formatEur } from "../../lib/money";
-import { recategorize } from "./actions";
+import { setGroup } from "./actions";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
-import { CategorySelectField } from "@/components/category-select-field";
-import { RuleCheckboxField } from "@/components/rule-checkbox-field";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { GroupSelectField } from "@/components/group-select-field";
 
 export const dynamic = "force-dynamic";
 
 export default function TransactionsPage() {
   const database = db();
   const txns = listTransactions(database);
-  const categories = listCategories(database).map((c) => c.name);
+  const groups = listGroups(database);
+  const ownable: OwnableGroup[] = groups.map((g) => ({
+    id: g.id, accountId: g.accountId, direction: g.direction, kind: g.kind,
+    keywords: g.kind === "envelope" ? g.keywords : g.lines.map((l) => l.keyword),
+  }));
+  const groupName = (id: number) => groups.find((g) => g.id === id)?.name ?? "?";
 
-  // Group transactions by account, preserving date order within each group.
-  const groups = new Map<string, { label: string; items: TxnView[] }>();
+  const statusLabel = (t: TxnView): string => {
+    const res = resolveOwnership(
+      { id: t.id, date: t.date, amount: t.amount, label: t.label, accountId: t.accountId, groupId: t.groupId },
+      ownable,
+    );
+    if (res.status === "manual") return `${groupName(res.groupId)} (manuel)`;
+    if (res.status === "auto") return `${groupName(res.groupId)} (auto)`;
+    if (res.status === "ambiguous") return "à répartir";
+    return "non budgétée";
+  };
+
+  const groupsOfAccount = (accountId: string) =>
+    groups.filter((g) => g.accountId === accountId).map((g) => ({ id: g.id, name: g.name }));
+
+  const byAccount = new Map<string, { label: string; items: TxnView[] }>();
   for (const t of txns) {
-    const g = groups.get(t.accountId) ?? { label: t.accountLabel ?? "Compte", items: [] };
+    const g = byAccount.get(t.accountId) ?? { label: t.accountLabel ?? "Compte", items: [] };
     g.items.push(t);
-    groups.set(t.accountId, g);
+    byAccount.set(t.accountId, g);
   }
 
   return (
     <div className="flex flex-col gap-4">
-      {groups.size === 0 && (
+      {byAccount.size === 0 && (
         <Card>
           <CardContent>
-            <p className="text-muted-foreground text-sm">
-              Aucune transaction. Va dans Réglages pour synchroniser.
-            </p>
+            <p className="text-muted-foreground text-sm">Aucune transaction. Va dans Réglages pour synchroniser.</p>
           </CardContent>
         </Card>
       )}
-      {[...groups.entries()].map(([accountId, group]) => (
+      {[...byAccount.entries()].map(([accountId, group]) => (
         <Card key={accountId}>
           <CardHeader>
             <CardTitle>{group.label}</CardTitle>
@@ -53,7 +61,8 @@ export default function TransactionsPage() {
                 <TableRow>
                   <TableHead>Date</TableHead>
                   <TableHead>Libellé</TableHead>
-                  <TableHead>Catégorie</TableHead>
+                  <TableHead>Groupe</TableHead>
+                  <TableHead>Appartenance</TableHead>
                   <TableHead className="text-right">Montant</TableHead>
                 </TableRow>
               </TableHeader>
@@ -63,20 +72,12 @@ export default function TransactionsPage() {
                     <TableCell className="text-muted-foreground">{t.date}</TableCell>
                     <TableCell>{t.label}</TableCell>
                     <TableCell>
-                      <form action={recategorize} className="flex items-center gap-2">
+                      <form action={setGroup}>
                         <input type="hidden" name="txnId" value={t.id} />
-                        <input type="hidden" name="label" value={t.label} />
-                        <CategorySelectField
-                          name="category"
-                          categories={categories}
-                          defaultValue={t.category ?? ""}
-                        />
-                        <RuleCheckboxField name="createRule" label="règle" />
-                        <Button type="submit" size="sm" variant="secondary">
-                          OK
-                        </Button>
+                        <GroupSelectField name="group" options={groupsOfAccount(t.accountId)} defaultValue={t.groupId} />
                       </form>
                     </TableCell>
+                    <TableCell className="text-muted-foreground">{statusLabel(t)}</TableCell>
                     <TableCell className="text-right font-medium">{formatEur(t.amount)}</TableCell>
                   </TableRow>
                 ))}
