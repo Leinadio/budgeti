@@ -9,6 +9,7 @@ import { setGroup } from "./actions";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { GroupSelectField } from "@/components/group-select-field";
+import { TruncatedText } from "@/components/truncated-text";
 
 export const dynamic = "force-dynamic";
 
@@ -84,14 +85,18 @@ export default function TransactionsPage() {
                   {m.items.map((t) => (
                     <TableRow key={t.id}>
                       <TableCell className="text-muted-foreground">{t.date}</TableCell>
-                      <TableCell>{t.label}</TableCell>
+                      <TableCell>
+                        <TruncatedText text={t.label} className="max-w-[460px]" />
+                      </TableCell>
                       <TableCell>
                         <form action={setGroup}>
                           <input type="hidden" name="txnId" value={t.id} />
                           <GroupSelectField name="group" options={groupsOfAccount(t.accountId)} defaultValue={t.groupId} />
                         </form>
                       </TableCell>
-                      <TableCell className="text-muted-foreground">{statusLabel(t)}</TableCell>
+                      <TableCell className="text-muted-foreground">
+                        <TruncatedText text={statusLabel(t)} className="max-w-[200px]" />
+                      </TableCell>
                       <TableCell className="text-right font-medium">{formatEur(t.amount)}</TableCell>
                     </TableRow>
                   ))}
