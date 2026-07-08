@@ -3,8 +3,8 @@ import { listTransactions, type TxnView } from "../../db/repositories/transactio
 import { listGroups } from "../../db/repositories/groups";
 import { resolveOwnership, type OwnableGroup } from "../../lib/ownership";
 import { formatEur } from "../../lib/money";
+import { groupByMonth } from "../../lib/transactions-view";
 import { setGroup } from "./actions";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { GroupSelectField } from "@/components/group-select-field";
 
@@ -42,49 +42,48 @@ export default function TransactionsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-8">
       {byAccount.size === 0 && (
-        <Card>
-          <CardContent>
-            <p className="text-muted-foreground text-sm">Aucune transaction. Va dans Réglages pour synchroniser.</p>
-          </CardContent>
-        </Card>
+        <p className="text-muted-foreground text-sm">
+          Aucune transaction. Va dans Réglages pour synchroniser.
+        </p>
       )}
       {[...byAccount.entries()].map(([accountId, group]) => (
-        <Card key={accountId}>
-          <CardHeader>
-            <CardTitle>{group.label}</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Libellé</TableHead>
-                  <TableHead>Groupe</TableHead>
-                  <TableHead>Appartenance</TableHead>
-                  <TableHead className="text-right">Montant</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {group.items.map((t) => (
-                  <TableRow key={t.id}>
-                    <TableCell className="text-muted-foreground">{t.date}</TableCell>
-                    <TableCell>{t.label}</TableCell>
-                    <TableCell>
-                      <form action={setGroup}>
-                        <input type="hidden" name="txnId" value={t.id} />
-                        <GroupSelectField name="group" options={groupsOfAccount(t.accountId)} defaultValue={t.groupId} />
-                      </form>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{statusLabel(t)}</TableCell>
-                    <TableCell className="text-right font-medium">{formatEur(t.amount)}</TableCell>
+        <section key={accountId} className="flex flex-col gap-4">
+          <h2 className="text-lg font-semibold">{group.label}</h2>
+          {groupByMonth(group.items).map((m) => (
+            <div key={m.month} className="flex flex-col gap-2">
+              <h3 className="text-muted-foreground text-sm font-medium">{m.label}</h3>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Libellé</TableHead>
+                    <TableHead>Groupe</TableHead>
+                    <TableHead>Appartenance</TableHead>
+                    <TableHead className="text-right">Montant</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                </TableHeader>
+                <TableBody>
+                  {m.items.map((t) => (
+                    <TableRow key={t.id}>
+                      <TableCell className="text-muted-foreground">{t.date}</TableCell>
+                      <TableCell>{t.label}</TableCell>
+                      <TableCell>
+                        <form action={setGroup}>
+                          <input type="hidden" name="txnId" value={t.id} />
+                          <GroupSelectField name="group" options={groupsOfAccount(t.accountId)} defaultValue={t.groupId} />
+                        </form>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">{statusLabel(t)}</TableCell>
+                      <TableCell className="text-right font-medium">{formatEur(t.amount)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ))}
+        </section>
       ))}
     </div>
   );
