@@ -71,7 +71,12 @@ export function deleteGroup(db: Database.Database, id: number): void {
 }
 
 export function addKeyword(db: Database.Database, groupId: number, keyword: string): void {
-  db.prepare(`INSERT INTO group_keywords (group_id, keyword) VALUES (?, ?)`).run(groupId, keyword);
+  db.prepare(
+    `INSERT INTO group_keywords (group_id, keyword)
+     SELECT ?, ? WHERE NOT EXISTS (
+       SELECT 1 FROM group_keywords WHERE group_id = ? AND keyword = ?
+     )`,
+  ).run(groupId, keyword, groupId, keyword);
 }
 
 export function insertLine(

@@ -40,6 +40,9 @@ test("envelope group: keywords add/list/remove", () => {
   expect(g).toMatchObject({ id: gid, accountId: "a1", name: "Courses", direction: "out", kind: "envelope", monthlyAmount: 300 });
   expect(g.keywords.sort()).toEqual(["CARREFOUR", "LECLERC"]);
   expect(g.lines).toEqual([]);
+  // rajouter le même mot-clé ne crée pas de doublon
+  addKeyword(db, gid, "CARREFOUR");
+  expect(listGroups(db)[0].keywords.filter((k) => k === "CARREFOUR")).toHaveLength(1);
   // la suppression d'un groupe emporte ses mots-clés (cascade)
   deleteGroup(db, gid);
   expect(db.prepare("SELECT COUNT(*) AS n FROM group_keywords").get()).toEqual({ n: 0 });
