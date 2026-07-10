@@ -118,6 +118,50 @@ test("manual attachment overrides keyword", () => {
   expect(f.groups.find((g) => g.id === 1)!.spent).toBe(0);  // pas dans Courses
 });
 
+test("income envelope adds to estimates instead of subtracting", () => {
+  const salaireEnv: Group = {
+    id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "envelope",
+    monthlyAmount: 2000, keywords: ["REMU"], lines: [],
+  };
+  const f = computeForecast("a1", 1000, [salaireEnv], [], "2026-07");
+  // rien reçu -> reste à recevoir 2000 : current 1000 + 2000 = 3000
+  expect(f.currentEstimate).toBe(3000);
+  // mois prochain : + 2000 -> 5000
+  expect(f.nextEstimate).toBe(5000);
+  // pas de dépassement sur une entrée
+  expect(f.groups[0].overspend).toBe(0);
+  expect(f.nextSteps.find((s) => s.label.includes("Salaire"))?.amount).toBe(2000);
+});
+
+test("overspend projection: next month keeps the overspend", () => {
+  const txns = [tx({ id: "t1", amount: -450, label: "CARREFOUR" })]; // 450 pour 300 de budget
+  const f = computeForecast("a1", 1000, [courses], txns, "2026-07");
+  // nextEstimate normal : 1000 - 300 (budget) = 700
+  expect(f.nextEstimate).toBe(700);
+  expect(f.overspendTotal).toBe(150); // 450 - 300
+  // avec dépassement maintenu : 700 - 150 = 550
+  expect(f.nextEstimateWithOverspend).toBe(550);
+  expect(f.overspendSteps).toEqual([{ label: "Courses — dépassement maintenu", amount: -150 }]);
+});
+
+test("no overspend: with-overspend estimate equals next estimate", () => {
+  const f = computeForecast("a1", 1000, [courses], [], "2026-07");
+  expect(f.overspendTotal).toBe(0);
+  expect(f.nextEstimateWithOverspend).toBe(f.nextEstimate);
+  expect(f.overspendSteps).toEqual([]);
+});
+
+test("breakdown steps reconstruct both estimates exactly", () => {
+  const txns = [tx({ id: "t1", amount: -120, label: "CARREFOUR" }), tx({ id: "t2", amount: -10, label: "PRLV SPOTIFY" })];
+  const f = computeForecast("a1", 1000, [courses, abo, salaire], txns, "2026-07");
+  const sumCurrent = f.currentSteps.reduce((s, x) => s + x.amount, 0);
+  const sumNext = f.nextSteps.reduce((s, x) => s + x.amount, 0);
+  expect(f.balance + sumCurrent).toBe(f.currentEstimate);
+  expect(f.currentEstimate + sumNext).toBe(f.nextEstimate);
+  // Spotify déjà vue -> pas d'étape "pas encore passé" pour elle ce mois-ci.
+  expect(f.currentSteps.some((s) => s.label.includes("Spotify"))).toBe(false);
+});
+
 test("next month starts from current estimate and applies full amounts", () => {
   const f = computeForecast("a1", 1000, [courses, abo, salaire], [], "2026-07");
   // courant : -300 (courses reste plein) -10 -15 (abo) +2000 (salaire) = 2675
