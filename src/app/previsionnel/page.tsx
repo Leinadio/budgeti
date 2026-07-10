@@ -131,14 +131,12 @@ export default function PrevisionnelPage() {
                     {formatEur(f.nextEstimate)}
                   </span>
                 </div>
-                {f.overspendTotal > 0 && (
-                  <div className="flex flex-col">
-                    <span className="text-muted-foreground text-xs">Mois prochain, dépassements maintenus</span>
-                    <span className={cn("text-xl font-bold tabular-nums", f.nextEstimateWithOverspend < 0 && "text-red-600")}>
-                      {formatEur(f.nextEstimateWithOverspend)}
-                    </span>
-                  </div>
-                )}
+                <div className="flex flex-col">
+                  <span className="text-muted-foreground text-xs">Mois prochain, dépassements maintenus</span>
+                  <span className={cn("text-xl font-bold tabular-nums", f.nextEstimateWithOverspend < 0 && "text-red-600")}>
+                    {formatEur(f.nextEstimateWithOverspend)}
+                  </span>
+                </div>
               </div>
               <ForecastDetailSheet label={accountLabel(a)} forecast={f} />
             </div>
