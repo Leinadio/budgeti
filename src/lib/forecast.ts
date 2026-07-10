@@ -39,6 +39,9 @@ export type GroupView = {
   direction: Direction;
   total: number;
   spent: number;
+  overspend: number;
+  prevSpent: number;
+  prevOverspend: number;
 };
 
 export type AccountForecast = {
@@ -49,6 +52,13 @@ export type AccountForecast = {
   timeline: TimelineItem[];
   groups: GroupView[];
 };
+
+function prevMonthKey(m: string): string {
+  const [y, mo] = m.split("-").map(Number);
+  const d = new Date(Date.UTC(y, mo - 1, 1));
+  d.setUTCMonth(d.getUTCMonth() - 1);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
 
 function toOwnable(g: Group): OwnableGroup {
   return {
@@ -68,9 +78,10 @@ export function computeForecast(
   month: string,
 ): AccountForecast {
   const ownable = groups.map(toOwnable);
-  // Transactions du mois de ce compte, avec leur groupe propriétaire résolu.
+  const prevMonth = prevMonthKey(month);
+  // Transactions de ce compte, avec leur groupe propriétaire résolu (indépendant du mois).
   const owned = txns
-    .filter((t) => t.accountId === accountId && monthKey(t.date) === month)
+    .filter((t) => t.accountId === accountId)
     .map((t) => {
       const o: OwnedTxn = { id: t.id, date: t.date, amount: t.amount, label: t.label, accountId: t.accountId, groupId: t.groupId };
       const res = resolveOwnership(o, ownable);
@@ -78,7 +89,10 @@ export function computeForecast(
       return { t, ownerId };
     });
 
-  const ownedBy = (gid: number) => owned.filter((o) => o.ownerId === gid).map((o) => o.t);
+  const ownedBy = (gid: number, m: string = month) =>
+    owned.filter((o) => o.ownerId === gid && monthKey(o.t.date) === m).map((o) => o.t);
+  const spentIn = (gid: number, m: string) =>
+    ownedBy(gid, m).reduce((s, t) => s + Math.abs(t.amount), 0);
 
   let current = balance;
   let nextDelta = 0;
@@ -90,11 +104,14 @@ export function computeForecast(
 
     if (g.kind === "envelope") {
       const amount = g.monthlyAmount ?? 0;
-      const spent = ownedBy(g.id).reduce((s, t) => s + Math.abs(t.amount), 0);
+      const spent = spentIn(g.id, month);
       const remaining = Math.max(0, amount - spent);
       current -= remaining;
       nextDelta -= amount;
-      groupViews.push({ id: g.id, name: g.name, direction: g.direction, total: amount, spent: Math.min(spent, amount) });
+      const overspend = Math.max(0, spent - amount);
+      const prevSpent = spentIn(g.id, prevMonth);
+      const prevOverspend = Math.max(0, prevSpent - amount);
+      groupViews.push({ id: g.id, name: g.name, direction: g.direction, total: amount, spent, overspend, prevSpent, prevOverspend });
     } else {
       const mine = ownedBy(g.id);
       let total = 0;
@@ -108,7 +125,7 @@ export function computeForecast(
         if (seen) seenSum += line.amount;
         timeline.push({ day: line.day, name: line.name, amount: sign * line.amount, seen });
       }
-      groupViews.push({ id: g.id, name: g.name, direction: g.direction, total, spent: seenSum });
+      groupViews.push({ id: g.id, name: g.name, direction: g.direction, total, spent: seenSum, overspend: 0, prevSpent: 0, prevOverspend: 0 });
     }
   }
 
