@@ -18,6 +18,11 @@ test("single keyword match -> auto", () => {
   expect(resolveOwnership(txn({ label: "PAIEMENT CARREFOUR CITY" }), groups)).toEqual({ status: "auto", groupId: 1 });
 });
 
+test("excluded forces none, overriding keyword match and manual group", () => {
+  expect(resolveOwnership(txn({ label: "CARREFOUR", excluded: true }), groups)).toEqual({ status: "none" });
+  expect(resolveOwnership(txn({ groupId: 1, excluded: true }), groups)).toEqual({ status: "none" });
+});
+
 test("multiple matches -> ambiguous", () => {
   const dup: OwnableGroup = { id: 4, accountId: "a1", direction: "out", kind: "envelope", keywords: ["CARREFOUR"] };
   expect(resolveOwnership(txn({ label: "CARREFOUR" }), [...groups, dup])).toEqual({ status: "ambiguous" });

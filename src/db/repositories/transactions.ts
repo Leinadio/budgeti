@@ -17,6 +17,7 @@ export type TxnView = {
   accountId: string;
   accountLabel: string;
   groupId: number | null;
+  excluded: boolean;
 };
 
 export function upsertTransaction(db: Database.Database, t: TxnRow): number {
@@ -32,7 +33,7 @@ export function listTransactions(
   filter?: { month?: string },
 ): TxnView[] {
   let sql =
-    `SELECT t.id, t.date, t.amount, t.label, t.group_id AS groupId,
+    `SELECT t.id, t.date, t.amount, t.label, t.group_id AS groupId, t.excluded AS excluded,
             t.account_id AS accountId,
             COALESCE(COALESCE(a.custom_name, a.name) || ' ' || a.iban_masked, COALESCE(a.custom_name, a.name)) AS accountLabel
      FROM transactions t
@@ -46,9 +47,17 @@ export function listTransactions(
   if (clauses.length) sql += " WHERE " + clauses.join(" AND ");
   sql += " ORDER BY t.date DESC";
   const stmt = db.prepare(sql);
-  return (clauses.length ? stmt.all(params) : stmt.all()) as TxnView[];
+  const rows = (clauses.length ? stmt.all(params) : stmt.all()) as (Omit<TxnView, "excluded"> & { excluded: number })[];
+  return rows.map((r) => ({ ...r, excluded: r.excluded === 1 }));
 }
 
-export function setTransactionGroup(db: Database.Database, id: string, groupId: number | null): void {
-  db.prepare("UPDATE transactions SET group_id = ? WHERE id = ?").run(groupId, id);
+// groupId non nul => rattachement manuel ; excluded => forcé « non catégorisé ».
+// Les deux sont mutuellement exclusifs : un groupe explicite lève l'exclusion.
+export function setTransactionGroup(
+  db: Database.Database,
+  id: string,
+  groupId: number | null,
+  excluded = false,
+): void {
+  db.prepare("UPDATE transactions SET group_id = ?, excluded = ? WHERE id = ?").run(groupId, excluded ? 1 : 0, id);
 }

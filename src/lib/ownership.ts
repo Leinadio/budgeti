@@ -15,6 +15,7 @@ export type OwnedTxn = {
   label: string;
   accountId: string;
   groupId: number | null;
+  excluded?: boolean;
 };
 
 export type Ownership =
@@ -24,6 +25,8 @@ export type Ownership =
   | { status: "none" };
 
 export function resolveOwnership(txn: OwnedTxn, groups: OwnableGroup[]): Ownership {
+  // Forcé « non catégorisé » : hors de toute catégorie, même si un mot-clé matcherait.
+  if (txn.excluded) return { status: "none" };
   if (txn.groupId !== null) {
     const g = groups.find((x) => x.id === txn.groupId && x.accountId === txn.accountId);
     if (g) return { status: "manual", groupId: g.id };

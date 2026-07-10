@@ -88,6 +88,7 @@ export default function PrevisionnelPage() {
     label: t.label,
     accountId: t.accountId,
     groupId: t.groupId,
+    excluded: t.excluded,
   }));
 
   if (accounts.length === 0) {

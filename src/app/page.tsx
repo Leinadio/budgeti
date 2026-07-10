@@ -23,7 +23,7 @@ export default function Dashboard() {
   }));
   const groupCell = (t: (typeof allTxns)[number]) => {
     const res = resolveOwnership(
-      { id: t.id, date: t.date, amount: t.amount, label: t.label, accountId: t.accountId, groupId: t.groupId },
+      { id: t.id, date: t.date, amount: t.amount, label: t.label, accountId: t.accountId, groupId: t.groupId, excluded: t.excluded },
       ownable,
     );
     if (res.status === "manual" || res.status === "auto") return groups.find((g) => g.id === res.groupId)?.name ?? "";

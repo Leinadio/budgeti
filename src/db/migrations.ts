@@ -73,3 +73,11 @@ export function migrateGroupsV2(db: Database.Database): void {
     db.exec(`ALTER TABLE transactions ADD COLUMN group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL`);
   }
 }
+
+// Ajoute la colonne excluded : une transaction forcée « non catégorisé » est
+// exclue de toute catégorisation (même si un mot-clé matcherait). Idempotent.
+export function migrateTransactionExcluded(db: Database.Database): void {
+  const cols = db.prepare("PRAGMA table_info(transactions)").all() as { name: string }[];
+  if (cols.some((c) => c.name === "excluded")) return;
+  db.exec(`ALTER TABLE transactions ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0`);
+}

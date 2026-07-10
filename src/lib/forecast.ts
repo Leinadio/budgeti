@@ -29,6 +29,7 @@ export type Txn = {
   label: string;
   accountId: string;
   groupId: number | null;
+  excluded?: boolean;
 };
 
 export type TimelineItem = { day: number; name: string; amount: number; seen: boolean };
@@ -93,7 +94,7 @@ export function computeForecast(
   const owned = txns
     .filter((t) => t.accountId === accountId)
     .map((t) => {
-      const o: OwnedTxn = { id: t.id, date: t.date, amount: t.amount, label: t.label, accountId: t.accountId, groupId: t.groupId };
+      const o: OwnedTxn = { id: t.id, date: t.date, amount: t.amount, label: t.label, accountId: t.accountId, groupId: t.groupId, excluded: t.excluded };
       const res = resolveOwnership(o, ownable);
       const ownerId = res.status === "manual" || res.status === "auto" ? res.groupId : null;
       return { t, ownerId };

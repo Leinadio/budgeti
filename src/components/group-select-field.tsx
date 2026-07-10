@@ -5,20 +5,25 @@ import { setGroup } from "@/app/transactions/actions";
 
 type Opt = { id: number; name: string };
 
-const norm = (v: number | null) => (v === null ? "" : String(v));
+// Trois états : "" = Automatique, "none" = forcé non catégorisé, sinon l'id du groupe.
+function stateOf(defaultValue: number | null, excluded: boolean): string {
+  if (excluded) return "none";
+  return defaultValue === null ? "" : String(defaultValue);
+}
 
 export function GroupSelectField({
-  txnId, options, defaultValue,
-}: { txnId: string; options: Opt[]; defaultValue: number | null }) {
+  txnId, options, defaultValue, excluded = false,
+}: { txnId: string; options: Opt[]; defaultValue: number | null; excluded?: boolean }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   // Affiche tout de suite le choix (valeur optimiste), puis suit la vérité
-  // serveur : quand defaultValue change après le refresh, l'état se resynchronise.
-  const [value, setValue] = useState(norm(defaultValue));
-  const [prevDefault, setPrevDefault] = useState(defaultValue);
-  if (defaultValue !== prevDefault) {
-    setPrevDefault(defaultValue);
-    setValue(norm(defaultValue));
+  // serveur : quand l'état serveur change après le refresh, on se resynchronise.
+  const server = stateOf(defaultValue, excluded);
+  const [value, setValue] = useState(server);
+  const [prevServer, setPrevServer] = useState(server);
+  if (server !== prevServer) {
+    setPrevServer(server);
+    setValue(server);
   }
 
   return (
@@ -29,16 +34,18 @@ export function GroupSelectField({
       onChange={(e) => {
         const v = e.currentTarget.value;
         setValue(v);
-        const groupId = v === "" ? null : Number.parseInt(v, 10);
+        const groupId = v === "" || v === "none" ? null : Number.parseInt(v, 10);
+        const isExcluded = v === "none";
         startTransition(async () => {
           // revalidatePath seul ne rafraîchit pas la vue courante après l'action ;
           // router.refresh() re-télécharge le rendu serveur de façon fiable.
-          await setGroup(txnId, groupId);
+          await setGroup(txnId, groupId, isExcluded);
           router.refresh();
         });
       }}
     >
       <option value="">Automatique</option>
+      <option value="none">Non catégorisé</option>
       {options.map((o) => (
         <option key={o.id} value={o.id}>{o.name}</option>
       ))}

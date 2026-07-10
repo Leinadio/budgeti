@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS transactions (
   amount REAL NOT NULL,            -- signed euros: debit negative, credit positive
   label TEXT NOT NULL,             -- raw bank label
   category_id INTEGER REFERENCES categories(id),
-  group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL
+  group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL,
+  excluded INTEGER NOT NULL DEFAULT 0   -- 1 = forcé « non catégorisé » (hors auto-catégorisation)
 );
 
 CREATE TABLE IF NOT EXISTS budgets (
