@@ -5,7 +5,6 @@ import { listGroups } from "../../db/repositories/groups";
 import { resolveOwnership, type OwnableGroup } from "../../lib/ownership";
 import { formatEur } from "../../lib/money";
 import { groupByMonth } from "../../lib/transactions-view";
-import { setGroup } from "./actions";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { GroupSelectField } from "@/components/group-select-field";
@@ -89,10 +88,7 @@ export default function TransactionsPage() {
                         <TruncatedText text={t.label} className="max-w-[460px]" />
                       </TableCell>
                       <TableCell>
-                        <form action={setGroup}>
-                          <input type="hidden" name="txnId" value={t.id} />
-                          <GroupSelectField name="group" options={groupsOfAccount(t.accountId)} defaultValue={t.groupId} />
-                        </form>
+                        <GroupSelectField txnId={t.id} options={groupsOfAccount(t.accountId)} defaultValue={t.groupId} />
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         <TruncatedText text={statusLabel(t)} className="max-w-[200px]" />

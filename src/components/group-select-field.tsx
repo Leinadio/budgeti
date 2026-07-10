@@ -1,24 +1,41 @@
 "use client";
-import { useState } from "react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { setGroup } from "@/app/transactions/actions";
 
 type Opt = { id: number; name: string };
 
+const norm = (v: number | null) => (v === null ? "" : String(v));
+
 export function GroupSelectField({
-  name, options, defaultValue,
-}: { name: string; options: Opt[]; defaultValue: number | null }) {
-  // Contrôlé : sans état local, la soumission de la server action réinitialise
-  // le <select> non contrôlé à son defaultValue (la valeur choisie clignotait
-  // vers « Automatique » jusqu'au rafraîchissement). L'état conserve le choix.
-  const [value, setValue] = useState(defaultValue === null ? "" : String(defaultValue));
+  txnId, options, defaultValue,
+}: { txnId: string; options: Opt[]; defaultValue: number | null }) {
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+  // Affiche tout de suite le choix (valeur optimiste), puis suit la vérité
+  // serveur : quand defaultValue change après le refresh, l'état se resynchronise.
+  const [value, setValue] = useState(norm(defaultValue));
+  const [prevDefault, setPrevDefault] = useState(defaultValue);
+  if (defaultValue !== prevDefault) {
+    setPrevDefault(defaultValue);
+    setValue(norm(defaultValue));
+  }
+
   return (
     <select
-      name={name}
       value={value}
-      className="border-input bg-background h-9 rounded-md border px-3 text-sm"
+      disabled={isPending}
+      className="border-input bg-background h-9 rounded-md border px-3 text-sm disabled:opacity-60"
       onChange={(e) => {
-        const form = e.currentTarget.form;
-        setValue(e.currentTarget.value);
-        form?.requestSubmit();
+        const v = e.currentTarget.value;
+        setValue(v);
+        const groupId = v === "" ? null : Number.parseInt(v, 10);
+        startTransition(async () => {
+          // revalidatePath seul ne rafraîchit pas la vue courante après l'action ;
+          // router.refresh() re-télécharge le rendu serveur de façon fiable.
+          await setGroup(txnId, groupId);
+          router.refresh();
+        });
       }}
     >
       <option value="">Automatique</option>
