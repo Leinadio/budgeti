@@ -99,6 +99,16 @@ export default function PrevisionnelPage() {
                             }
                           />
                         )}
+                        {g.overspend > 0 && (
+                          <p className="text-red-500 text-xs">
+                            Dépassement de {formatEur(g.overspend)}. Le mois prochain, pense à monter ce budget à {formatEur(g.spent)}.
+                          </p>
+                        )}
+                        {g.prevOverspend > 0 && (
+                          <p className="text-red-500 text-xs">
+                            Le mois dernier : {formatEur(g.prevSpent)} dépensés sur {formatEur(g.total)} de budget. Budget conseillé : {formatEur(g.prevSpent)}.
+                          </p>
+                        )}
                       </div>
                     );
                   })}

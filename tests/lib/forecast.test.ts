@@ -33,11 +33,58 @@ test("envelope: spent via ownership, remaining floored, subtracted from current"
   expect(gv.spent).toBe(150);
 });
 
-test("envelope overspend floored at 0", () => {
+test("envelope overspend: remaining floored at 0 but spent kept real", () => {
   const txns = [tx({ id: "t1", amount: -450, label: "CARREFOUR" })];
   const f = computeForecast("a1", 1000, [courses], txns, "2026-07");
   expect(f.currentEstimate).toBe(1000);
-  expect(f.groups[0].spent).toBe(300);
+  const gv = f.groups[0];
+  expect(gv.spent).toBe(450); // dépense réelle, non plafonnée
+  expect(gv.overspend).toBe(150); // 450 - 300
+});
+
+test("no overspend: overspend and prevOverspend are 0", () => {
+  const txns = [tx({ id: "t1", amount: -120, label: "CARREFOUR" })];
+  const f = computeForecast("a1", 1000, [courses], txns, "2026-07");
+  const gv = f.groups[0];
+  expect(gv.overspend).toBe(0);
+  expect(gv.prevOverspend).toBe(0);
+});
+
+test("overspend this month only: current overspend set, previous month clean", () => {
+  const txns = [tx({ id: "t1", date: "2026-07-05", amount: -500, label: "CARREFOUR" })];
+  const f = computeForecast("a1", 1000, [courses], txns, "2026-07");
+  const gv = f.groups[0];
+  expect(gv.overspend).toBe(200); // 500 - 300
+  expect(gv.prevSpent).toBe(0);
+  expect(gv.prevOverspend).toBe(0);
+});
+
+test("overspend last month only: prev recap set, current month clean", () => {
+  const txns = [tx({ id: "t1", date: "2026-06-10", amount: -500, label: "CARREFOUR" })];
+  const f = computeForecast("a1", 1000, [courses], txns, "2026-07");
+  const gv = f.groups[0];
+  expect(gv.overspend).toBe(0);
+  expect(gv.spent).toBe(0);
+  expect(gv.prevSpent).toBe(500);
+  expect(gv.prevOverspend).toBe(200); // 500 - 300
+});
+
+test("overspend both months: current and previous both set", () => {
+  const txns = [
+    tx({ id: "t1", date: "2026-07-05", amount: -450, label: "CARREFOUR" }),
+    tx({ id: "t2", date: "2026-06-10", amount: -520, label: "LECLERC" }),
+  ];
+  const f = computeForecast("a1", 1000, [courses], txns, "2026-07");
+  const gv = f.groups[0];
+  expect(gv.overspend).toBe(150); // 450 - 300
+  expect(gv.prevOverspend).toBe(220); // 520 - 300
+});
+
+test("prevMonthKey handles year boundary (january -> previous december)", () => {
+  const txns = [tx({ id: "t1", date: "2025-12-15", amount: -500, label: "CARREFOUR" })];
+  const f = computeForecast("a1", 1000, [courses], txns, "2026-01");
+  expect(f.groups[0].prevSpent).toBe(500);
+  expect(f.groups[0].prevOverspend).toBe(200);
 });
 
 test("recurring line unseen subtracted; seen ignored; timeline sorted", () => {
