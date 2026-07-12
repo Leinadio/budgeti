@@ -96,7 +96,6 @@ export default async function HistoriquePage({
                   <HistoryGrid
                     months={months}
                     currentMonth={currentMonth}
-                    nextMonth={nextMonth}
                     forecast={forecast}
                     sections={sections}
                     overspend={overspend}

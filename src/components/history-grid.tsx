@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { formatEur } from "@/lib/money";
 import { monthLabel } from "@/lib/transactions-view";
 import type { AccountForecast } from "@/lib/forecast";
-import type { MonthCell, HistorySection, HistoryRow, HistorySubRow, HistoryTxn } from "@/lib/history";
+import { monthsDiff, type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn } from "@/lib/history";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TruncatedText } from "@/components/truncated-text";
 
@@ -70,20 +70,24 @@ function TxnCells({ txn, months, direction }: { txn: HistoryTxn; months: string[
 }
 
 // Estimés du forecast rattachés à leur mois : le mois courant reçoit le solde et
-// l'estimé fin de mois ; le mois prochain reçoit les deux estimés de projection.
-function ForecastCard({ month, currentMonth, nextMonth, f, overspend }: {
+// l'estimé fin de mois ; chaque mois futur reçoit une projection linéaire
+// (le net mensuel du forecast répété), avec sa variante « dépassements maintenus ».
+function ForecastCard({ month, currentMonth, f, overspend }: {
   month: string;
   currentMonth: string;
-  nextMonth: string;
   f: AccountForecast;
   overspend: number;
 }) {
-  const estimates: [string, number][] =
-    month === currentMonth
-      ? [["Solde actuel", f.balance], ["Estimé fin de mois", f.currentEstimate]]
-      : month === nextMonth
-        ? [["Estimé mois prochain", f.nextEstimate], ["Dépassements maintenus", f.nextEstimateWithOverspend]]
-        : [];
+  let estimates: [string, number][] = [];
+  if (month === currentMonth) {
+    estimates = [["Solde actuel", f.balance], ["Estimé fin de mois", f.currentEstimate]];
+  } else if (month > currentMonth) {
+    const k = monthsDiff(currentMonth, month); // nombre de mois après le mois courant (>=1)
+    const monthlyNet = f.nextEstimate - f.currentEstimate; // net d'un mois de budgets
+    const estime = f.currentEstimate + k * monthlyNet;
+    const maintenu = estime - k * f.overspendTotal; // dépassements répétés chaque mois
+    estimates = [["Estimé", estime], ["Dépassements maintenus", maintenu]];
+  }
   return (
     <div className="flex flex-col gap-0.5 py-1 text-xs font-normal normal-case">
       {estimates.map(([label, value]) => (
@@ -143,10 +147,9 @@ function TxnRow({ txn, months, direction, indent }: {
   );
 }
 
-export function HistoryGrid({ months, currentMonth, nextMonth, forecast, sections, overspend, grand }: {
+export function HistoryGrid({ months, currentMonth, forecast, sections, overspend, grand }: {
   months: string[];
   currentMonth: string;
-  nextMonth: string;
   forecast: AccountForecast;
   sections: HistorySection[];
   overspend: number[];
@@ -217,7 +220,7 @@ export function HistoryGrid({ months, currentMonth, nextMonth, forecast, section
           </TableHead>
           {months.map((m, i) => (
             <TableHead key={m} colSpan={4} className="border-l align-bottom font-normal">
-              <ForecastCard month={m} currentMonth={currentMonth} nextMonth={nextMonth} f={forecast} overspend={overspend[i]} />
+              <ForecastCard month={m} currentMonth={currentMonth} f={forecast} overspend={overspend[i]} />
             </TableHead>
           ))}
         </TableRow>

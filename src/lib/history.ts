@@ -62,6 +62,13 @@ export function monthRange(from: string, to: string): string[] {
   return out;
 }
 
+// Nombre de mois de a vers b (positif si b est après a).
+export function monthsDiff(a: string, b: string): number {
+  const [ya, ma] = a.split("-").map(Number);
+  const [yb, mb] = b.split("-").map(Number);
+  return yb * 12 + (mb - 1) - (ya * 12 + (ma - 1));
+}
+
 // Valide un « YYYY-MM » (ex. venant de l'URL).
 export function isMonthKey(v: unknown): v is string {
   return typeof v === "string" && /^\d{4}-\d{2}$/.test(v) && Number(v.slice(5, 7)) >= 1 && Number(v.slice(5, 7)) <= 12;

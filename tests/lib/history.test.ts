@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth } from "../../src/lib/history";
+import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff } from "../../src/lib/history";
 import type { Group, Txn } from "../../src/lib/forecast";
 
 const courses: Group = {
@@ -108,6 +108,14 @@ test("isMonthKey validates YYYY-MM and month bounds", () => {
   expect(isMonthKey("2026-00")).toBe(false);
   expect(isMonthKey("2026-7")).toBe(false);
   expect(isMonthKey(undefined)).toBe(false);
+});
+
+test("monthsDiff counts months between keys, across years, signed", () => {
+  expect(monthsDiff("2026-07", "2026-08")).toBe(1);
+  expect(monthsDiff("2026-07", "2026-12")).toBe(5);
+  expect(monthsDiff("2026-07", "2027-01")).toBe(6);
+  expect(monthsDiff("2026-07", "2026-07")).toBe(0);
+  expect(monthsDiff("2026-07", "2026-05")).toBe(-2);
 });
 
 test("clampMonth bounds within [min, max]", () => {
