@@ -118,6 +118,18 @@ test("manual attachment overrides keyword", () => {
   expect(f.groups.find((g) => g.id === 1)!.spent).toBe(0);  // pas dans Courses
 });
 
+test("manual line attachment marks the line seen even without keyword match", () => {
+  // Prélèvement Netflix dont le libellé ne contient pas "NETFLIX", mais rattaché
+  // à la main à la ligne Netflix (id 12) : la ligne doit être considérée vue.
+  const txns = [tx({ id: "t1", amount: -15, label: "PRLV DIVERS 4821", groupId: 2, lineId: 12 })];
+  const f = computeForecast("a1", 1000, [abo], txns, "2026-07");
+  // Netflix vue (rattachée) -> ignorée ; Spotify non vue -> -10
+  expect(f.currentEstimate).toBe(990);
+  expect(f.timeline.map((i) => [i.name, i.seen])).toEqual([["Spotify", false], ["Netflix", true]]);
+  // la ligne rattachée compte dans le dépensé "vu" du groupe
+  expect(f.groups.find((g) => g.id === 2)!.spent).toBe(15);
+});
+
 test("income envelope adds to estimates instead of subtracting", () => {
   const salaireEnv: Group = {
     id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "envelope",

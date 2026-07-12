@@ -17,6 +17,7 @@ export type TxnView = {
   accountId: string;
   accountLabel: string;
   groupId: number | null;
+  lineId: number | null;
   excluded: boolean;
 };
 
@@ -33,7 +34,7 @@ export function listTransactions(
   filter?: { month?: string },
 ): TxnView[] {
   let sql =
-    `SELECT t.id, t.date, t.amount, t.label, t.group_id AS groupId, t.excluded AS excluded,
+    `SELECT t.id, t.date, t.amount, t.label, t.group_id AS groupId, t.line_id AS lineId, t.excluded AS excluded,
             t.account_id AS accountId,
             COALESCE(COALESCE(a.custom_name, a.name) || ' ' || a.iban_masked, COALESCE(a.custom_name, a.name)) AS accountLabel
      FROM transactions t
@@ -51,13 +52,21 @@ export function listTransactions(
   return rows.map((r) => ({ ...r, excluded: r.excluded === 1 }));
 }
 
-// groupId non nul => rattachement manuel ; excluded => forcé « non catégorisé ».
-// Les deux sont mutuellement exclusifs : un groupe explicite lève l'exclusion.
+// groupId non nul => rattachement manuel ; lineId => ligne récurrente précise
+// (implique son groupe parent) ; excluded => forcé « non catégorisé ».
+// Les cas sont mutuellement exclusifs : un groupe explicite lève l'exclusion,
+// et choisir un groupe sans ligne remet line_id à NULL.
 export function setTransactionGroup(
   db: Database.Database,
   id: string,
   groupId: number | null,
   excluded = false,
+  lineId: number | null = null,
 ): void {
-  db.prepare("UPDATE transactions SET group_id = ?, excluded = ? WHERE id = ?").run(groupId, excluded ? 1 : 0, id);
+  db.prepare("UPDATE transactions SET group_id = ?, line_id = ?, excluded = ? WHERE id = ?").run(
+    groupId,
+    lineId,
+    excluded ? 1 : 0,
+    id,
+  );
 }

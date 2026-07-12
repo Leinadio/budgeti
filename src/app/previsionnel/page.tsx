@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Wallet, Repeat, ArrowUpRight, ArrowDownRight, type LucideIcon } from "lucide-react";
-import { ForecastDetailSheet } from "@/components/forecast-detail-sheet";
+import { ForecastSummary } from "@/components/forecast-summary";
 
 export const dynamic = "force-dynamic";
 
@@ -88,6 +88,7 @@ export default function PrevisionnelPage() {
     label: t.label,
     accountId: t.accountId,
     groupId: t.groupId,
+    lineId: t.lineId,
     excluded: t.excluded,
   }));
 
@@ -114,33 +115,7 @@ export default function PrevisionnelPage() {
         const f = computeForecast(a.id, a.balance, groups, txns, month);
         return (
           <TabsContent key={a.id} value={a.id} className="flex flex-col gap-6">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex flex-wrap gap-8">
-                <div className="flex flex-col">
-                  <span className="text-muted-foreground text-xs">Solde actuel</span>
-                  <span className="text-xl font-bold tabular-nums">{formatEur(f.balance)}</span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-muted-foreground text-xs">Estimé fin de mois</span>
-                  <span className={cn("text-xl font-bold tabular-nums", f.currentEstimate < 0 && "text-red-600")}>
-                    {formatEur(f.currentEstimate)}
-                  </span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-muted-foreground text-xs">Estimé mois prochain</span>
-                  <span className={cn("text-xl font-bold tabular-nums", f.nextEstimate < 0 && "text-red-600")}>
-                    {formatEur(f.nextEstimate)}
-                  </span>
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-muted-foreground text-xs">Mois prochain, dépassements maintenus</span>
-                  <span className={cn("text-xl font-bold tabular-nums", f.nextEstimateWithOverspend < 0 && "text-red-600")}>
-                    {formatEur(f.nextEstimateWithOverspend)}
-                  </span>
-                </div>
-              </div>
-              <ForecastDetailSheet label={accountLabel(a)} forecast={f} />
-            </div>
+            <ForecastSummary label={accountLabel(a)} forecast={f} />
 
             {f.groups.length > 0 ? (
               <Table>

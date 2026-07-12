@@ -29,6 +29,7 @@ export type Txn = {
   label: string;
   accountId: string;
   groupId: number | null;
+  lineId?: number | null;
   excluded?: boolean;
 };
 
@@ -145,7 +146,9 @@ export function computeForecast(
         total += line.amount;
         nextDelta += sign * line.amount;
         const kw = line.keyword.toLowerCase();
-        const seen = mine.some((t) => t.label.toLowerCase().includes(kw));
+        // « Vue » si le mot-clé matche, ou si une transaction a été rattachée
+        // manuellement à cette ligne précise (corrige la détection automatique).
+        const seen = mine.some((t) => t.lineId === line.id || t.label.toLowerCase().includes(kw));
         if (!seen) {
           current += sign * line.amount;
           currentSteps.push({ label: `${g.name} · ${line.name} — pas encore passé (le ${line.day})`, amount: sign * line.amount });

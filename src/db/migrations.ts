@@ -81,3 +81,11 @@ export function migrateTransactionExcluded(db: Database.Database): void {
   if (cols.some((c) => c.name === "excluded")) return;
   db.exec(`ALTER TABLE transactions ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0`);
 }
+
+// Ajoute la colonne line_id : rattachement manuel d'une transaction à une ligne
+// précise d'un groupe récurrent (ex. « Direct Assurance voiture »). Idempotent.
+export function migrateTransactionLineId(db: Database.Database): void {
+  const cols = db.prepare("PRAGMA table_info(transactions)").all() as { name: string }[];
+  if (cols.some((c) => c.name === "line_id")) return;
+  db.exec(`ALTER TABLE transactions ADD COLUMN line_id INTEGER REFERENCES group_lines(id) ON DELETE SET NULL`);
+}

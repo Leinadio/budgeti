@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   label TEXT NOT NULL,             -- raw bank label
   category_id INTEGER REFERENCES categories(id),
   group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL,
+  line_id INTEGER REFERENCES group_lines(id) ON DELETE SET NULL,  -- ligne récurrente visée (rattachement manuel fin)
   excluded INTEGER NOT NULL DEFAULT 0   -- 1 = forcé « non catégorisé » (hors auto-catégorisation)
 );
 

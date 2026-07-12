@@ -1,6 +1,6 @@
 "use client";
 import { Fragment, useMemo, useState } from "react";
-import { X } from "lucide-react";
+import { X, ChevronDown, ChevronRight } from "lucide-react";
 import { resolveOwnership, type OwnableGroup } from "@/lib/ownership";
 import type { TxnView } from "@/db/repositories/transactions";
 import { formatEur } from "@/lib/money";
@@ -19,22 +19,43 @@ import { Button } from "@/components/ui/button";
 import { GroupSelectField } from "@/components/group-select-field";
 import { TruncatedText } from "@/components/truncated-text";
 
-type ClientGroup = OwnableGroup & { name: string };
+type ClientGroup = OwnableGroup & { name: string; lines: { id: number; name: string }[] };
 
 export function TransactionsBrowser({ transactions, groups }: { transactions: TxnView[]; groups: ClientGroup[] }) {
   const [filters, setFilters] = useState<TxnFilters>(EMPTY_FILTERS);
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggleMonth = (key: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   const ownable: OwnableGroup[] = groups;
 
   const groupName = (id: number) => groups.find((g) => g.id === id)?.name ?? "?";
   const groupsOfAccount = (accountId: string) =>
-    groups.filter((g) => g.accountId === accountId).map((g) => ({ id: g.id, name: g.name }));
+    groups
+      .filter((g) => g.accountId === accountId)
+      .map((g) => ({ id: g.id, name: g.name, lines: g.lines }));
+  const lineName = (id: number) => {
+    for (const g of groups) {
+      const l = g.lines.find((x) => x.id === id);
+      if (l) return l.name;
+    }
+    return null;
+  };
 
   const statusLabel = (t: TxnView): string => {
     const res = resolveOwnership(
       { id: t.id, date: t.date, amount: t.amount, label: t.label, accountId: t.accountId, groupId: t.groupId, excluded: t.excluded },
       ownable,
     );
-    if (res.status === "manual") return `${groupName(res.groupId)} (manuel)`;
+    if (res.status === "manual") {
+      const base = groupName(res.groupId);
+      const ln = t.lineId !== null ? lineName(t.lineId) : null;
+      return ln ? `${base} › ${ln} (manuel)` : `${base} (manuel)`;
+    }
     if (res.status === "auto") return `${groupName(res.groupId)} (auto)`;
     if (res.status === "ambiguous") return "à répartir";
     return "non budgétée";
@@ -161,7 +182,7 @@ export function TransactionsBrowser({ transactions, groups }: { transactions: Tx
                       <TruncatedText text={t.label} className="max-w-[380px]" />
                     </TableCell>
                     <TableCell>
-                      <GroupSelectField txnId={t.id} options={groupsOfAccount(t.accountId)} defaultValue={t.groupId} excluded={t.excluded} />
+                      <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} excluded={t.excluded} />
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       <TruncatedText text={statusLabel(t)} className="max-w-[200px]" />
@@ -195,21 +216,28 @@ export function TransactionsBrowser({ transactions, groups }: { transactions: Tx
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {groupByMonth(group.items).map((m) => (
+                  {groupByMonth(group.items).map((m) => {
+                    const key = `${accountId}:${m.month}`;
+                    const isCollapsed = collapsed.has(key);
+                    return (
                     <Fragment key={m.month}>
-                      <TableRow className="hover:bg-transparent">
+                      <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => toggleMonth(key)}>
                         <TableCell colSpan={5} className="text-muted-foreground text-sm font-medium">
-                          {m.label}
+                          <span className="flex items-center gap-1.5">
+                            {isCollapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
+                            {m.label}
+                            <span className="text-xs font-normal">({m.items.length})</span>
+                          </span>
                         </TableCell>
                       </TableRow>
-                      {m.items.map((t) => (
+                      {!isCollapsed && m.items.map((t) => (
                         <TableRow key={t.id}>
                           <TableCell className="text-muted-foreground">{t.date}</TableCell>
                           <TableCell>
                             <TruncatedText text={t.label} className="max-w-[460px]" />
                           </TableCell>
                           <TableCell>
-                            <GroupSelectField txnId={t.id} options={groupsOfAccount(t.accountId)} defaultValue={t.groupId} excluded={t.excluded} />
+                            <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} excluded={t.excluded} />
                           </TableCell>
                           <TableCell className="text-muted-foreground">
                             <TruncatedText text={statusLabel(t)} className="max-w-[200px]" />
@@ -218,7 +246,8 @@ export function TransactionsBrowser({ transactions, groups }: { transactions: Tx
                         </TableRow>
                       ))}
                     </Fragment>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </TabsContent>

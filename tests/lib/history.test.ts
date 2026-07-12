@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { computeHistory, monthsWithData, nextMonthKey, grandTotals } from "../../src/lib/history";
+import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend } from "../../src/lib/history";
 import type { Group, Txn } from "../../src/lib/forecast";
 
 const courses: Group = {
@@ -98,6 +98,18 @@ test("grandTotals sum all sections per month (expenses and income)", () => {
   const sections = computeHistory([courses, salaire], txns, ["2026-07"], "2026-07");
   const grand = grandTotals(sections, 1);
   expect(grand[0]).toEqual({ budgeted: 2300, depense: 120, recu: 2000, balance: 180 });
+});
+
+test("monthlyOverspend sums out-group overspends per month, ignores under-budget and income", () => {
+  const c2: Group = { ...courses, id: 3, name: "C2", monthlyAmount: 50, keywords: ["LECLERC"] };
+  const salaire: Group = { id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "envelope", monthlyAmount: 2000, keywords: ["REMU"], lines: [] };
+  const txns = [
+    tx({ id: "1", date: "2026-07-10", amount: -450, label: "CARREFOUR" }), // budget 300 -> dépassement 150
+    tx({ id: "2", date: "2026-07-10", amount: -20, label: "LECLERC" }), // budget 50 -> sous budget, 0
+    tx({ id: "3", date: "2026-07-01", amount: 2500, label: "VIR REMU" }), // entrée, ignorée
+  ];
+  const sections = computeHistory([courses, c2, salaire], txns, ["2026-07"], "2026-07");
+  expect(monthlyOverspend(sections, 1)).toEqual([150]);
 });
 
 test("empty sections are omitted", () => {

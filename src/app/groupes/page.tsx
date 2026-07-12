@@ -2,18 +2,15 @@ import { db } from "../../db/index";
 import { listGroups } from "../../db/repositories/groups";
 import { listAccounts } from "../../db/repositories/accounts";
 import { accountDisplayName } from "../../lib/account";
-import { formatEur } from "../../lib/money";
-import {
-  addGroup, removeGroup, addGroupKeyword, addLine, removeLine,
-} from "./actions";
+import { addGroupKeyword, addLine } from "./actions";
+import { NewGroupForm } from "@/components/new-group-form";
+import { EditableGroupHeader, EditableKeyword, EditableLine } from "@/components/group-editors";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 
 export const dynamic = "force-dynamic";
-
-const selectClass = "border-input bg-background h-9 rounded-md border px-3 text-sm";
 
 export default function GroupesPage() {
   const database = db();
@@ -36,39 +33,7 @@ export default function GroupesPage() {
               Aucun compte. Synchronise d&apos;abord dans Réglages.
             </p>
           ) : (
-            <form action={addGroup} className="flex flex-wrap items-end gap-2">
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="grp-name" className="font-normal">Nom</Label>
-                <Input id="grp-name" name="name" placeholder="Ex: Courses" required />
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="grp-account" className="font-normal">Compte</Label>
-                <select id="grp-account" name="accountId" className={selectClass}>
-                  {accounts.map((a) => (
-                    <option key={a.id} value={a.id}>{accountDisplayName(a)}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="grp-kind" className="font-normal">Type</Label>
-                <select id="grp-kind" name="kind" className={selectClass}>
-                  <option value="envelope">Enveloppe</option>
-                  <option value="recurring">Récurrents</option>
-                </select>
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="grp-direction" className="font-normal">Sens</Label>
-                <select id="grp-direction" name="direction" className={selectClass}>
-                  <option value="out">Sortie</option>
-                  <option value="in">Entrée</option>
-                </select>
-              </div>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="grp-amount" className="font-normal">Montant € (enveloppe)</Label>
-                <Input id="grp-amount" type="number" name="monthlyAmount" step="0.01" placeholder="0.00" className="max-w-32" />
-              </div>
-              <Button type="submit" size="sm">Ajouter</Button>
-            </form>
+            <NewGroupForm accounts={accounts.map((a) => ({ id: a.id, name: accountDisplayName(a) }))} />
           )}
         </CardContent>
       </Card>
@@ -85,20 +50,12 @@ export default function GroupesPage() {
         const total = g.kind === "envelope" ? (g.monthlyAmount ?? 0) : g.lines.reduce((s, l) => s + l.amount, 0);
         return (
           <Card key={g.id}>
-            <CardHeader className="flex-row items-baseline justify-between">
-              <CardTitle>
-                {g.name}{" "}
-                <span className="text-muted-foreground text-sm font-normal">
-                  {accountName(g.accountId)} · {g.direction === "in" ? "Entrée" : "Sortie"} · {g.kind === "envelope" ? "Enveloppe" : "Récurrents"}
-                </span>
-              </CardTitle>
-              <span className="flex items-center gap-2">
-                <span className="text-sm font-medium">{formatEur(total)}</span>
-                <form action={removeGroup}>
-                  <input type="hidden" name="id" value={g.id} />
-                  <Button type="submit" size="sm" variant="ghost">Supprimer</Button>
-                </form>
-              </span>
+            <CardHeader>
+              <EditableGroupHeader
+                group={{ id: g.id, name: g.name, direction: g.direction, kind: g.kind, monthlyAmount: g.monthlyAmount }}
+                accountName={accountName(g.accountId)}
+                total={total}
+              />
             </CardHeader>
             <CardContent className="flex flex-col gap-2">
               {g.kind === "envelope" ? (
@@ -108,7 +65,7 @@ export default function GroupesPage() {
                       <span className="text-muted-foreground text-sm">Aucun mot-clé.</span>
                     )}
                     {g.keywords.map((kw) => (
-                      <span key={kw} className="text-sm">{kw}</span>
+                      <EditableKeyword key={kw} groupId={g.id} keyword={kw} />
                     ))}
                   </div>
                   <form action={addGroupKeyword} className="flex items-end gap-2">
@@ -123,19 +80,7 @@ export default function GroupesPage() {
               ) : (
                 <>
                   {g.lines.map((l) => (
-                    <div key={l.id} className="flex items-center justify-between text-sm">
-                      <span>
-                        {l.name}
-                        <span className="text-muted-foreground"> · {l.keyword} · le {l.day}</span>
-                      </span>
-                      <span className="flex items-center gap-2">
-                        <span>{formatEur(l.amount)}</span>
-                        <form action={removeLine}>
-                          <input type="hidden" name="id" value={l.id} />
-                          <Button type="submit" size="sm" variant="ghost">×</Button>
-                        </form>
-                      </span>
-                    </div>
+                    <EditableLine key={l.id} line={l} />
                   ))}
                   <form action={addLine} className="flex flex-wrap items-end gap-2 pt-2">
                     <input type="hidden" name="groupId" value={g.id} />

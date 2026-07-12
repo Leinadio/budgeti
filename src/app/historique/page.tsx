@@ -3,10 +3,11 @@ import { db } from "../../db/index";
 import { listAccounts } from "../../db/repositories/accounts";
 import { listTransactions } from "../../db/repositories/transactions";
 import { listGroups } from "../../db/repositories/groups";
-import { computeHistory, grandTotals, monthsWithData, nextMonthKey, type MonthCell } from "../../lib/history";
-import type { Group, Txn } from "../../lib/forecast";
+import { computeHistory, grandTotals, monthlyOverspend, monthsWithData, nextMonthKey, type MonthCell } from "../../lib/history";
+import { computeForecast, type AccountForecast, type Group, type Txn } from "../../lib/forecast";
+import { ForecastDetailSheet } from "@/components/forecast-detail-sheet";
 import { monthLabel } from "../../lib/transactions-view";
-import { monthKey } from "../../lib/money";
+import { formatEur, monthKey } from "../../lib/money";
 import { accountLabel } from "../../lib/account";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -37,6 +38,37 @@ function AmountCells({ cells, mode }: { cells: MonthCell[]; mode: "out" | "in" |
   );
 }
 
+// Estimés du forecast rattachés à leur mois : le mois courant reçoit le solde et
+// l'estimé fin de mois ; le mois prochain reçoit les deux estimés de projection.
+function ForecastCard({ month, currentMonth, nextMonth, f, overspend }: {
+  month: string;
+  currentMonth: string;
+  nextMonth: string;
+  f: AccountForecast;
+  overspend: number;
+}) {
+  const estimates: [string, number][] =
+    month === currentMonth
+      ? [["Solde actuel", f.balance], ["Estimé fin de mois", f.currentEstimate]]
+      : month === nextMonth
+        ? [["Estimé mois prochain", f.nextEstimate], ["Dépassements maintenus", f.nextEstimateWithOverspend]]
+        : [];
+  return (
+    <div className="flex flex-col gap-0.5 py-1 text-xs font-normal normal-case">
+      {estimates.map(([label, value]) => (
+        <div key={label} className="flex justify-between gap-3">
+          <span className="text-muted-foreground">{label}</span>
+          <span className={cn("font-semibold tabular-nums", value < 0 && "text-red-600")}>{formatEur(value)}</span>
+        </div>
+      ))}
+      <div className="flex justify-between gap-3">
+        <span className="text-muted-foreground">Dépassement</span>
+        <span className="font-semibold tabular-nums text-red-600">{overspend > 0 ? formatEur(overspend) : "—"}</span>
+      </div>
+    </div>
+  );
+}
+
 export default function HistoriquePage() {
   const database = db();
   const currentMonth = monthKey(new Date().toISOString().slice(0, 10));
@@ -50,6 +82,7 @@ export default function HistoriquePage() {
     label: t.label,
     accountId: t.accountId,
     groupId: t.groupId,
+    lineId: t.lineId,
     excluded: t.excluded,
   }));
 
@@ -76,22 +109,29 @@ export default function HistoriquePage() {
         // Toujours le mois courant et le mois prochain (projection), en plus des mois avec données.
         const months = [...new Set([...monthsWithData(txns), currentMonth, nextMonth])].sort();
         const sections = computeHistory(groups, txns, months, currentMonth);
-
-        if (sections.length === 0) {
-          return (
-            <TabsContent key={a.id} value={a.id}>
-              <p className="text-muted-foreground text-sm">Aucune donnée pour ce compte.</p>
-            </TabsContent>
-          );
-        }
+        const forecast = computeForecast(a.id, a.balance, groups, txns, currentMonth);
+        const overspend = monthlyOverspend(sections, months.length);
 
         return (
-          <TabsContent key={a.id} value={a.id}>
+          <TabsContent key={a.id} value={a.id} className="flex flex-col gap-4">
+            <div className="flex justify-end">
+              <ForecastDetailSheet label={accountLabel(a)} forecast={forecast} />
+            </div>
+            {sections.length === 0 ? (
+              <p className="text-muted-foreground text-sm">Aucune donnée pour ce compte.</p>
+            ) : (
             <CenterScroll>
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead rowSpan={2} className="bg-background sticky left-0 z-10">Catégorie</TableHead>
+                    <TableHead rowSpan={3} className="bg-background sticky left-0 z-10 align-bottom">Catégorie</TableHead>
+                    {months.map((m, i) => (
+                      <TableHead key={m} colSpan={4} className="border-l align-bottom font-normal">
+                        <ForecastCard month={m} currentMonth={currentMonth} nextMonth={nextMonth} f={forecast} overspend={overspend[i]} />
+                      </TableHead>
+                    ))}
+                  </TableRow>
+                  <TableRow>
                     {months.map((m) => (
                       <TableHead
                         key={m}
@@ -152,6 +192,7 @@ export default function HistoriquePage() {
                 </TableBody>
               </Table>
             </CenterScroll>
+            )}
           </TabsContent>
         );
       })}

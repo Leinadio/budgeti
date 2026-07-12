@@ -107,6 +107,15 @@ export function computeHistory(
   return [section("envelope"), section("recurring")].filter((s): s is HistorySection => s !== null);
 }
 
+// Dépassement total par mois : somme des dépassements des groupes de sortie
+// (part dépensée au-delà du budget). Les entrées ne comptent pas.
+export function monthlyOverspend(sections: HistorySection[], monthCount: number): number[] {
+  const rows = sections.flatMap((s) => s.rows);
+  return Array.from({ length: monthCount }, (_, i) =>
+    rows.reduce((acc, r) => (r.direction === "out" ? acc + Math.max(0, -r.cells[i].balance) : acc), 0),
+  );
+}
+
 // Totaux tous groupes confondus, par mois (somme des sous-totaux de section).
 export function grandTotals(sections: HistorySection[], monthCount: number): MonthCell[] {
   return Array.from({ length: monthCount }, (_, i) =>

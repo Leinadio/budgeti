@@ -9,7 +9,7 @@ const ownable: OwnableGroup[] = [
 ];
 
 function tx(p: Partial<TxnView>): TxnView {
-  return { id: "t", date: "2026-07-05", amount: -10, label: "", accountId: "a1", accountLabel: "A1", groupId: null, excluded: false, ...p };
+  return { id: "t", date: "2026-07-05", amount: -10, label: "", accountId: "a1", accountLabel: "A1", groupId: null, lineId: null, excluded: false, ...p };
 }
 
 const filters = (p: Partial<TxnFilters>): TxnFilters => ({ ...EMPTY_FILTERS, ...p });
