@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend } from "../../src/lib/history";
+import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth } from "../../src/lib/history";
 import type { Group, Txn } from "../../src/lib/forecast";
 
 const courses: Group = {
@@ -87,6 +87,33 @@ test("future projection carries the current-month overspend (like Previsionnel)"
 test("nextMonthKey advances one month, handles year boundary", () => {
   expect(nextMonthKey("2026-07")).toBe("2026-08");
   expect(nextMonthKey("2026-12")).toBe("2027-01");
+});
+
+test("addMonthsKey shifts by n months, forward and backward, across years", () => {
+  expect(addMonthsKey("2026-07", 3)).toBe("2026-10");
+  expect(addMonthsKey("2026-07", -1)).toBe("2026-06");
+  expect(addMonthsKey("2026-01", -1)).toBe("2025-12");
+  expect(addMonthsKey("2026-07", 12)).toBe("2027-07");
+});
+
+test("monthRange lists inclusive months, and sorts swapped bounds", () => {
+  expect(monthRange("2026-05", "2026-08")).toEqual(["2026-05", "2026-06", "2026-07", "2026-08"]);
+  expect(monthRange("2026-08", "2026-05")).toEqual(["2026-05", "2026-06", "2026-07", "2026-08"]);
+  expect(monthRange("2026-07", "2026-07")).toEqual(["2026-07"]);
+});
+
+test("isMonthKey validates YYYY-MM and month bounds", () => {
+  expect(isMonthKey("2026-07")).toBe(true);
+  expect(isMonthKey("2026-13")).toBe(false);
+  expect(isMonthKey("2026-00")).toBe(false);
+  expect(isMonthKey("2026-7")).toBe(false);
+  expect(isMonthKey(undefined)).toBe(false);
+});
+
+test("clampMonth bounds within [min, max]", () => {
+  expect(clampMonth("2026-01", "2026-05", "2026-09")).toBe("2026-05");
+  expect(clampMonth("2026-12", "2026-05", "2026-09")).toBe("2026-09");
+  expect(clampMonth("2026-07", "2026-05", "2026-09")).toBe("2026-07");
 });
 
 test("grandTotals sum all sections per month (expenses and income)", () => {

@@ -41,11 +41,37 @@ export function monthsWithData(txns: Txn[]): string[] {
   return [...set].sort();
 }
 
-export function nextMonthKey(m: string): string {
+// Décale une clé « YYYY-MM » de n mois (n peut être négatif).
+export function addMonthsKey(m: string, n: number): string {
   const [y, mo] = m.split("-").map(Number);
   const d = new Date(Date.UTC(y, mo - 1, 1));
-  d.setUTCMonth(d.getUTCMonth() + 1);
+  d.setUTCMonth(d.getUTCMonth() + n);
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+export function nextMonthKey(m: string): string {
+  return addMonthsKey(m, 1);
+}
+
+// Liste des clés « YYYY-MM » de from à to inclus (ordre croissant, bornes triées).
+export function monthRange(from: string, to: string): string[] {
+  const lo = from <= to ? from : to;
+  const hi = from <= to ? to : from;
+  const out: string[] = [];
+  for (let cur = lo; cur <= hi; cur = addMonthsKey(cur, 1)) out.push(cur);
+  return out;
+}
+
+// Valide un « YYYY-MM » (ex. venant de l'URL).
+export function isMonthKey(v: unknown): v is string {
+  return typeof v === "string" && /^\d{4}-\d{2}$/.test(v) && Number(v.slice(5, 7)) >= 1 && Number(v.slice(5, 7)) <= 12;
+}
+
+// Borne une clé de mois dans [min, max].
+export function clampMonth(m: string, min: string, max: string): string {
+  if (m < min) return min;
+  if (m > max) return max;
+  return m;
 }
 
 function budgetOf(g: Group): number {
