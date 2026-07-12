@@ -251,7 +251,7 @@ export function HistoryGrid({ months, currentMonth, nextMonth, forecast, section
       </TableHeader>
       <TableBody>
         <TableRow className="bg-muted/60 hover:bg-muted/60 font-semibold">
-          <TableCell className="bg-muted/60 sticky left-0 z-10 p-0">
+          <TableCell className="sticky left-0 z-10 bg-[color-mix(in_oklab,var(--muted)_60%,var(--background))] p-0">
             <FirstColBox>Total</FirstColBox>
           </TableCell>
           <AmountCells cells={grand} mode="total" />
@@ -259,7 +259,7 @@ export function HistoryGrid({ months, currentMonth, nextMonth, forecast, section
         {sections.map((sec) => (
           <Fragment key={sec.kind}>
             <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
-              <TableCell className="bg-muted/40 sticky left-0 z-10 p-0">
+              <TableCell className="sticky left-0 z-10 bg-[color-mix(in_oklab,var(--muted)_40%,var(--background))] p-0">
                 <FirstColBox>{sec.kind === "envelope" ? "Enveloppes" : "Récurrents"}</FirstColBox>
               </TableCell>
               <AmountCells cells={sec.totals} mode="total" />
