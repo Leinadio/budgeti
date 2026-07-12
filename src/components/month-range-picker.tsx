@@ -21,15 +21,18 @@ export function MonthRangePicker({ min, max, from, to, current }: {
   const router = useRouter();
   const pathname = usePathname();
   const scroller = useRef<HTMLDivElement>(null);
-  const currentRef = useRef<HTMLButtonElement>(null);
+  const midRef = useRef<HTMLButtonElement>(null);
   const [anchor, setAnchor] = useState<string | null>(null);
 
   const months = monthRange(min, max);
+  // Milieu de la plage sélectionnée, centré à l'ouverture.
+  const selected = monthRange(from, to);
+  const mid = selected[Math.floor((selected.length - 1) / 2)];
 
-  // Centre le mois courant à l'ouverture.
+  // Centre la sélection à l'ouverture.
   useEffect(() => {
-    currentRef.current?.scrollIntoView({ block: "nearest", inline: "center" });
-  }, []);
+    midRef.current?.scrollIntoView({ block: "nearest", inline: "center" });
+  }, [mid]);
 
   const onPick = (m: string) => {
     if (anchor === null) {
@@ -55,7 +58,9 @@ export function MonthRangePicker({ min, max, from, to, current }: {
         <ChevronLeft className="size-4" />
       </button>
 
-      <div ref={scroller} className="flex gap-0.5 overflow-x-auto scroll-px-2 px-1 py-1">
+      <div ref={scroller} className="min-w-0 flex-1 overflow-x-auto scroll-px-2 py-1">
+        {/* mx-auto : centre la frise quand elle tient, défile sans rognage quand elle déborde. */}
+        <div className="mx-auto flex w-fit gap-0.5 px-1">
         {months.map((m) => {
           const selected = m >= from && m <= to;
           const isAnchor = m === anchor;
@@ -66,7 +71,7 @@ export function MonthRangePicker({ min, max, from, to, current }: {
                 {showYear ? yearOf(m) : ""}
               </span>
               <button
-                ref={m === current ? currentRef : undefined}
+                ref={m === mid ? midRef : undefined}
                 type="button"
                 onClick={() => onPick(m)}
                 className={cn(
@@ -81,6 +86,7 @@ export function MonthRangePicker({ min, max, from, to, current }: {
             </div>
           );
         })}
+        </div>
       </div>
 
       <button
