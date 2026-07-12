@@ -4,12 +4,29 @@ import type { Group, Txn } from "./forecast";
 // depense et recu séparés selon le sens du groupe (une seule des deux est non nulle
 // pour une ligne ; les sous-totaux additionnent les deux). balance = budgeted - réalisé.
 export type MonthCell = { budgeted: number; depense: number; recu: number; balance: number };
+// Une transaction détaillée, rattachée à un groupe ou à un sous-groupe (ligne).
+export type HistoryTxn = {
+  id: string;
+  date: string; // YYYY-MM-DD
+  label: string;
+  amount: number; // signé (négatif = sortie)
+  month: string; // YYYY-MM
+};
+// Un sous-groupe = une ligne d'un récurrent (Spotify, Direct Assurance…).
+export type HistorySubRow = {
+  id: number;
+  name: string;
+  cells: MonthCell[]; // alignées sur les mois
+  txns: HistoryTxn[]; // transactions rattachées à cette ligne
+};
 export type HistoryRow = {
   id: number;
   name: string;
   kind: "envelope" | "recurring";
   direction: "in" | "out";
   cells: MonthCell[]; // alignées sur la liste des mois passée à computeHistory
+  subRows: HistorySubRow[]; // lignes des récurrents (vide pour une enveloppe)
+  txns: HistoryTxn[]; // transactions directement sous le groupe (enveloppe, ou récurrent sans ligne)
 };
 export type HistorySection = {
   kind: "envelope" | "recurring";
@@ -70,13 +87,23 @@ export function computeHistory(
   const spent = (gid: number, m: string) =>
     owned.filter((o) => o.ownerId === gid && o.month === m).reduce((s, o) => s + Math.abs(o.t.amount), 0);
 
-  const rowFor = (g: Group): HistoryRow => {
-    const budgeted = budgetOf(g);
-    const isOut = g.direction === "out";
-    // Dépassement du mois courant, reporté sur les projections (comme le Prévisionnel).
-    const overspend = isOut ? Math.max(0, spent(g.id, currentMonth) - budgeted) : 0;
-    const cells = months.map((m) => {
-      const realized = m > currentMonth ? budgeted + overspend : spent(g.id, m);
+  // Rattache une transaction d'un récurrent à une de ses lignes : d'abord le
+  // line_id manuel, sinon la première ligne dont le mot-clé matche le libellé,
+  // sinon null (elle reste directement sous le groupe).
+  const lineOf = (g: Group, t: Txn): number | null => {
+    if (t.lineId != null && g.lines.some((l) => l.id === t.lineId)) return t.lineId;
+    const lbl = t.label.toLowerCase();
+    const m = g.lines.find((l) => lbl.includes(l.keyword.toLowerCase()));
+    return m ? m.id : null;
+  };
+
+  const toHistoryTxn = (t: Txn): HistoryTxn => ({
+    id: t.id, date: t.date, label: t.label, amount: t.amount, month: t.date.slice(0, 7),
+  });
+
+  const cellsFor = (budgeted: number, isOut: boolean, overspend: number, realizedOf: (m: string) => number): MonthCell[] =>
+    months.map((m) => {
+      const realized = m > currentMonth ? budgeted + overspend : realizedOf(m);
       return {
         budgeted,
         depense: isOut ? realized : 0,
@@ -84,7 +111,38 @@ export function computeHistory(
         balance: budgeted - realized,
       };
     });
-    return { id: g.id, name: g.name, kind: g.kind, direction: g.direction, cells };
+
+  const rowFor = (g: Group): HistoryRow => {
+    const budgeted = budgetOf(g);
+    const isOut = g.direction === "out";
+    // Transactions du groupe (possédées, non exclues), récentes d'abord.
+    const mine = owned
+      .filter((o) => o.ownerId === g.id)
+      .map((o) => o.t)
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    // Dépassement du mois courant, reporté sur les projections (comme le Prévisionnel).
+    const overspend = isOut ? Math.max(0, spent(g.id, currentMonth) - budgeted) : 0;
+    const cells = cellsFor(budgeted, isOut, overspend, (m) => spent(g.id, m));
+
+    // Sous-groupes : une ligne par poste du récurrent ; les projections gardent
+    // juste le budget de la ligne (pas de dépassement au niveau ligne).
+    const subRows: HistorySubRow[] = g.lines.map((l) => {
+      const lineTxns = mine.filter((t) => lineOf(g, t) === l.id);
+      const realizedOf = (m: string) =>
+        lineTxns.filter((t) => t.date.slice(0, 7) === m).reduce((s, t) => s + Math.abs(t.amount), 0);
+      return {
+        id: l.id,
+        name: l.name,
+        cells: cellsFor(l.amount, isOut, 0, realizedOf),
+        txns: lineTxns.map(toHistoryTxn),
+      };
+    });
+
+    // Transactions directement sous le groupe : enveloppe (pas de lignes) ou
+    // récurrent dont la transaction ne matche aucune ligne.
+    const groupTxns = mine.filter((t) => lineOf(g, t) === null).map(toHistoryTxn);
+
+    return { id: g.id, name: g.name, kind: g.kind, direction: g.direction, cells, subRows, txns: groupTxns };
   };
 
   const section = (kind: "envelope" | "recurring"): HistorySection | null => {

@@ -112,6 +112,45 @@ test("monthlyOverspend sums out-group overspends per month, ignores under-budget
   expect(monthlyOverspend(sections, 1)).toEqual([150]);
 });
 
+test("recurring: transactions attributed to sub-groups by keyword", () => {
+  const txns = [
+    tx({ id: "1", date: "2026-07-03", amount: -10, label: "PRLV SPOTIFY" }),
+    tx({ id: "2", date: "2026-07-08", amount: -15, label: "NETFLIX.COM" }),
+  ];
+  const sections = computeHistory([abo], txns, ["2026-07"], "2026-07");
+  const rec = sections.find((s) => s.kind === "recurring")!.rows[0];
+  const spotify = rec.subRows.find((s) => s.id === 11)!;
+  const netflix = rec.subRows.find((s) => s.id === 12)!;
+  expect(spotify.cells[0].depense).toBe(10);
+  expect(spotify.txns.map((t) => t.id)).toEqual(["1"]);
+  expect(netflix.txns.map((t) => t.id)).toEqual(["2"]);
+  expect(rec.txns).toEqual([]); // toutes rattachées à une ligne
+});
+
+test("manual line_id attaches a transaction to a sub-group even without keyword", () => {
+  const txns = [tx({ id: "1", date: "2026-07-05", amount: -15, label: "PRLV DIVERS 4821", groupId: 2, lineId: 12 })];
+  const sections = computeHistory([abo], txns, ["2026-07"], "2026-07");
+  const netflix = sections.find((s) => s.kind === "recurring")!.rows[0].subRows.find((s) => s.id === 12)!;
+  expect(netflix.txns.map((t) => t.id)).toEqual(["1"]);
+  expect(netflix.cells[0].depense).toBe(15);
+});
+
+test("envelope transactions are listed directly under the group (no sub-rows)", () => {
+  const txns = [tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR" })];
+  const sections = computeHistory([courses], txns, ["2026-07"], "2026-07");
+  const env = sections[0].rows[0];
+  expect(env.subRows).toEqual([]);
+  expect(env.txns.map((t) => t.id)).toEqual(["1"]);
+});
+
+test("recurring transaction matching no line stays directly under the group", () => {
+  const txns = [tx({ id: "1", date: "2026-07-10", amount: -40, label: "ACHAT INCONNU", groupId: 2 })];
+  const sections = computeHistory([abo], txns, ["2026-07"], "2026-07");
+  const rec = sections.find((s) => s.kind === "recurring")!.rows[0];
+  expect(rec.txns.map((t) => t.id)).toEqual(["1"]);
+  expect(rec.subRows.every((s) => s.txns.length === 0)).toBe(true);
+});
+
 test("empty sections are omitted", () => {
   const txns = [tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR" })];
   const sections = computeHistory([courses], txns, ["2026-07"], "2026-07");
