@@ -12,6 +12,10 @@ import {
   SheetTitle,
   SheetDescription,
 } from "@/components/ui/sheet";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
+const NUM = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtNum = (n: number) => NUM.format(n);
 
 function Amount({ n }: { n: number }) {
   return (
@@ -81,7 +85,7 @@ export function ForecastDetailSheet({ label, forecast: f }: { label: string; for
 
           <section className="flex flex-col gap-2">
             <h3 className={cn("font-semibold", f.currentEstimate < 0 && "text-red-600")}>
-              Estimé fin de mois · {formatEur(f.currentEstimate)}
+              Solde estimé fin de mois · {formatEur(f.currentEstimate)}
             </h3>
             <p className="text-muted-foreground text-sm">
               On part du solde actuel et on retire ce qui doit encore sortir d&apos;ici la fin du mois : la part non encore
@@ -98,8 +102,56 @@ export function ForecastDetailSheet({ label, forecast: f }: { label: string; for
           </section>
 
           <section className="flex flex-col gap-2">
+            <h3 className={cn("font-semibold", f.overspendTotal > 0 && "text-red-600")}>
+              Dépassement du solde · {f.overspendTotal > 0 ? formatEur(f.overspendTotal) : "aucun"}
+            </h3>
+            <p className="text-muted-foreground text-sm">
+              L&apos;argent dépensé en trop, au-delà de ce que tu avais prévu. Exemple : si tu avais mis 200&nbsp;€ pour
+              les courses et que tu en as dépensé 250&nbsp;€, le dépassement est de 50&nbsp;€. On additionne comme ça tous
+              tes budgets qui ont explosé ce mois-ci. Ce montant sert ensuite à imaginer le pire pour le solde de ton
+              compte : si tu continues à dépenser autant les mois suivants, c&apos;est ce qui serait retiré en plus du
+              solde estimé (les «&nbsp;dépassements maintenus&nbsp;»).
+            </p>
+            {f.overspendTotal > 0 && (() => {
+              const rows = f.groups.filter((g) => g.overspend > 0);
+              const totBudg = rows.reduce((s, g) => s + g.total, 0);
+              const totDep = rows.reduce((s, g) => s + g.spent, 0);
+              return (
+                <div className="overflow-hidden rounded-lg border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Groupe</TableHead>
+                        <TableHead className="text-right">Budg.</TableHead>
+                        <TableHead className="text-right">Dép.</TableHead>
+                        <TableHead className="text-right">Solde</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {rows.map((g) => (
+                        <TableRow key={g.id}>
+                          <TableCell>{g.name}</TableCell>
+                          <TableCell className="text-right tabular-nums text-muted-foreground">{fmtNum(g.total)}</TableCell>
+                          <TableCell className="text-right tabular-nums">{fmtNum(g.spent)}</TableCell>
+                          <TableCell className="text-right tabular-nums text-red-600">{fmtNum(g.total - g.spent)}</TableCell>
+                        </TableRow>
+                      ))}
+                      <TableRow className="font-semibold">
+                        <TableCell>Total</TableCell>
+                        <TableCell className="text-right tabular-nums text-muted-foreground">{fmtNum(totBudg)}</TableCell>
+                        <TableCell className="text-right tabular-nums">{fmtNum(totDep)}</TableCell>
+                        <TableCell className="text-right tabular-nums text-red-600">{fmtNum(-f.overspendTotal)}</TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </div>
+              );
+            })()}
+          </section>
+
+          <section className="flex flex-col gap-2">
             <h3 className={cn("font-semibold", f.nextEstimate < 0 && "text-red-600")}>
-              Estimé mois prochain · {formatEur(f.nextEstimate)}
+              Solde estimé mois prochain · {formatEur(f.nextEstimate)}
             </h3>
             <p className="text-muted-foreground text-sm">
               On repart de l&apos;estimé de fin de mois et on applique un mois complet de tous tes groupes : budgets
@@ -117,7 +169,7 @@ export function ForecastDetailSheet({ label, forecast: f }: { label: string; for
           {f.overspendTotal > 0 && (
             <section className="flex flex-col gap-2">
               <h3 className={cn("font-semibold", f.nextEstimateWithOverspend < 0 && "text-red-600")}>
-                Mois prochain, dépassements maintenus · {formatEur(f.nextEstimateWithOverspend)}
+                Solde mois prochain, dépassements maintenus · {formatEur(f.nextEstimateWithOverspend)}
               </h3>
               <p className="text-muted-foreground text-sm">
                 L&apos;estimé mois prochain suppose que chaque enveloppe coûte pile son budget. Si les groupes qui ont
