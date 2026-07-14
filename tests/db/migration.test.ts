@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import Database from "better-sqlite3";
-import { migrateBudgets, migrateAccountCustomName, migrateGroupsV2 } from "../../src/db/migrations";
+import { migrateBudgets, migrateAccountCustomName, migrateGroupsV2, migrateTransactionManualFields, migrateReconcileIgnored } from "../../src/db/migrations";
 
 test("migrateBudgets converts old month-keyed table, keeping latest month per category", () => {
   const db = new Database(":memory:");
@@ -88,4 +88,34 @@ test("migrateGroupsV2 resets groups to the new schema and adds transactions.grou
   // idempotent
   migrateGroupsV2(db);
   expect((db.prepare("PRAGMA table_info(transactions)").all() as { name: string }[]).filter((c) => c.name === "group_id")).toHaveLength(1);
+});
+
+test("migrateTransactionManualFields adds manual/income_kind/note idempotently", () => {
+  const db = new Database(":memory:");
+  db.exec(`
+    CREATE TABLE transactions (
+      id TEXT PRIMARY KEY, account_id TEXT NOT NULL, date TEXT NOT NULL,
+      amount REAL NOT NULL, label TEXT NOT NULL, category_id INTEGER
+    );
+    INSERT INTO transactions (id, account_id, date, amount, label, category_id)
+      VALUES ('t1', 'a1', '2026-07-01', -10, 'CARREFOUR', NULL);
+  `);
+  migrateTransactionManualFields(db);
+  const cols = db.prepare("PRAGMA table_info(transactions)").all() as { name: string }[];
+  expect(cols.some((c) => c.name === "manual")).toBe(true);
+  expect(cols.some((c) => c.name === "income_kind")).toBe(true);
+  expect(cols.some((c) => c.name === "note")).toBe(true);
+  // valeur par défaut appliquée à la ligne existante
+  expect(db.prepare("SELECT manual FROM transactions WHERE id='t1'").get()).toEqual({ manual: 0 });
+  // idempotent : deuxième passage sans erreur
+  migrateTransactionManualFields(db);
+  expect(db.prepare("SELECT COUNT(*) AS n FROM transactions").get()).toEqual({ n: 1 });
+});
+
+test("migrateReconcileIgnored creates the table idempotently", () => {
+  const db = new Database(":memory:");
+  migrateReconcileIgnored(db);
+  migrateReconcileIgnored(db);
+  db.prepare("INSERT INTO reconcile_ignored (manual_id, synced_id) VALUES ('m1', 's1')").run();
+  expect(db.prepare("SELECT COUNT(*) AS n FROM reconcile_ignored").get()).toEqual({ n: 1 });
 });
