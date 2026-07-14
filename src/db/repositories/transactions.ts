@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { randomUUID } from "node:crypto";
 
 export type TxnRow = {
   id: string;
@@ -19,6 +20,9 @@ export type TxnView = {
   groupId: number | null;
   lineId: number | null;
   excluded: boolean;
+  manual: boolean;
+  incomeKind: "principal" | "supplementary" | null;
+  note: string | null;
 };
 
 export function upsertTransaction(db: Database.Database, t: TxnRow): number {
@@ -35,6 +39,7 @@ export function listTransactions(
 ): TxnView[] {
   let sql =
     `SELECT t.id, t.date, t.amount, t.label, t.group_id AS groupId, t.line_id AS lineId, t.excluded AS excluded,
+            t.manual AS manual, t.income_kind AS incomeKind, t.note AS note,
             t.account_id AS accountId,
             COALESCE(COALESCE(a.custom_name, a.name) || ' ' || a.iban_masked, COALESCE(a.custom_name, a.name)) AS accountLabel
      FROM transactions t
@@ -48,8 +53,13 @@ export function listTransactions(
   if (clauses.length) sql += " WHERE " + clauses.join(" AND ");
   sql += " ORDER BY t.date DESC";
   const stmt = db.prepare(sql);
-  const rows = (clauses.length ? stmt.all(params) : stmt.all()) as (Omit<TxnView, "excluded"> & { excluded: number })[];
-  return rows.map((r) => ({ ...r, excluded: r.excluded === 1 }));
+  const rows = (clauses.length ? stmt.all(params) : stmt.all()) as (Omit<TxnView, "excluded" | "manual" | "incomeKind"> & { excluded: number; manual: number; incomeKind: string | null })[];
+  return rows.map((r) => ({
+    ...r,
+    excluded: r.excluded === 1,
+    manual: r.manual === 1,
+    incomeKind: r.incomeKind === "principal" || r.incomeKind === "supplementary" ? r.incomeKind : null,
+  }));
 }
 
 // groupId non nul => rattachement manuel ; lineId => ligne récurrente précise
@@ -69,4 +79,33 @@ export function setTransactionGroup(
     excluded ? 1 : 0,
     id,
   );
+}
+
+export type ManualTxnInput = {
+  accountId: string;
+  date: string; // YYYY-MM-DD
+  amount: number; // signé
+  label: string;
+  groupId: number | null;
+  lineId: number | null;
+  incomeKind: "principal" | "supplementary" | null;
+};
+
+// Insère une transaction saisie à la main. id préfixé "manual:", manual = 1.
+export function insertManualTransaction(db: Database.Database, input: ManualTxnInput): string {
+  const id = `manual:${randomUUID()}`;
+  db.prepare(
+    `INSERT INTO transactions (id, account_id, date, amount, label, category_id, group_id, line_id, excluded, manual, income_kind, note)
+     VALUES (@id, @account_id, @date, @amount, @label, NULL, @group_id, @line_id, 0, 1, @income_kind, NULL)`,
+  ).run({
+    id,
+    account_id: input.accountId,
+    date: input.date,
+    amount: input.amount,
+    label: input.label,
+    group_id: input.groupId,
+    line_id: input.lineId,
+    income_kind: input.incomeKind,
+  });
+  return id;
 }
