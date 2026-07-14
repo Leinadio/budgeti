@@ -130,6 +130,25 @@ test("mergeTransactions keeps the bank row, carries tagging, notes the manual la
   });
 });
 
+test("mergeTransactions does not delete the manual row when synced target does not exist", () => {
+  const db = seed();
+  const gid = insertEnvelopeGroup(db, "a1", "Rémunération", "in", 652.09);
+  const m = insertManualTransaction(db, {
+    accountId: "a1", date: "2026-07-01", amount: 652.09, label: "Rémunération juillet",
+    groupId: gid, lineId: null, incomeKind: "principal",
+  });
+
+  // Attempt to merge with a non-existent synced id
+  mergeTransactions(db, { syncedId: "does-not-exist", manualId: m });
+
+  // Manual row should still exist unchanged
+  const rows = listTransactions(db);
+  expect(rows).toHaveLength(1);
+  expect(rows[0]).toMatchObject({
+    id: m, manual: true, groupId: gid, incomeKind: "principal", label: "Rémunération juillet",
+  });
+});
+
 test("ignoreMatch records a dismissed pair so it is no longer suggested", () => {
   const db = seed();
   const m = insertManualTransaction(db, {

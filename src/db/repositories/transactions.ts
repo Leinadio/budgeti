@@ -188,10 +188,11 @@ export function mergeTransactions(
       .prepare("SELECT label, group_id AS groupId, line_id AS lineId, income_kind AS incomeKind FROM transactions WHERE id=? AND manual=1")
       .get(manualId) as { label: string; groupId: number | null; lineId: number | null; incomeKind: string | null } | undefined;
     if (!m) return;
-    db.prepare(
+    const res = db.prepare(
       `UPDATE transactions SET group_id=@group_id, line_id=@line_id, income_kind=@income_kind, note=@note
        WHERE id=@id AND manual=0`,
     ).run({ id: syncedId, group_id: m.groupId, line_id: m.lineId, income_kind: m.incomeKind, note: m.label });
+    if (res.changes === 0) return; // cible synchronisée introuvable : on ne supprime pas la saisie manuelle
     db.prepare("DELETE FROM transactions WHERE id=? AND manual=1").run(manualId);
   });
   run();
