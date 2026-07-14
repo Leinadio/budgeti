@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { GroupSelectField } from "@/components/group-select-field";
+import { IncomeKindSelect } from "@/components/income-kind-select";
 import { TruncatedText } from "@/components/truncated-text";
 import { AddTransactionSheet } from "@/components/add-transaction-sheet";
 import { Badge } from "@/components/ui/badge";
@@ -71,6 +72,15 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
       return ln ? `${base} › ${ln}` : base;
     }
     return "non catégorisée";
+  };
+
+  const owningDirection = (t: TxnView): "in" | "out" | null => {
+    const res = resolveOwnership(
+      { id: t.id, date: t.date, amount: t.amount, label: t.label, accountId: t.accountId, groupId: t.groupId, excluded: t.excluded },
+      ownable,
+    );
+    if (res.status !== "manual") return null;
+    return groups.find((g) => g.id === res.groupId)?.direction ?? null;
   };
 
   const accountTxnGroups = useMemo(() => {
@@ -201,7 +211,10 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
                     <TableCell className="text-muted-foreground whitespace-nowrap">{t.accountLabel}</TableCell>
                     <TableCell>{renderLabel(t)}</TableCell>
                     <TableCell>
-                      <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} />
+                      <div className="flex flex-col">
+                        <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} />
+                        {owningDirection(t) === "in" && <IncomeKindSelect txnId={t.id} value={t.incomeKind} />}
+                      </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       <TruncatedText text={statusLabel(t)} className="max-w-[200px]" />
@@ -258,7 +271,10 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
                           <TableCell className="text-muted-foreground">{t.date}</TableCell>
                           <TableCell>{renderLabel(t)}</TableCell>
                           <TableCell>
-                            <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} />
+                            <div className="flex flex-col">
+                              <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} />
+                              {owningDirection(t) === "in" && <IncomeKindSelect txnId={t.id} value={t.incomeKind} />}
+                            </div>
                           </TableCell>
                           <TableCell className="text-muted-foreground">
                             <TruncatedText text={statusLabel(t)} className="max-w-[200px]" />
