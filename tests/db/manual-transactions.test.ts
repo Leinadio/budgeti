@@ -94,3 +94,19 @@ test("findReconcileSuggestions skips ignored pairs", () => {
   db.prepare("INSERT INTO reconcile_ignored (manual_id, synced_id) VALUES (?, ?)").run(m, "bank_ok");
   expect(findReconcileSuggestions(db)).toHaveLength(0);
 });
+
+test("findReconcileSuggestions enforces boundary at exactly 5-day window", () => {
+  const db = seed();
+  const m = insertManualTransaction(db, {
+    accountId: "a1", date: "2026-07-01", amount: 100, label: "test boundary", groupId: null, lineId: null, incomeKind: null,
+  });
+  // +5 days: should be included
+  upsertTransaction(db, { id: "bank_5days", account_id: "a1", date: "2026-07-06", amount: 100, label: "VIR", category_id: null });
+  // +6 days: should be excluded
+  upsertTransaction(db, { id: "bank_6days", account_id: "a1", date: "2026-07-07", amount: 100, label: "VIR", category_id: null });
+
+  const sugg = findReconcileSuggestions(db);
+  const syncedIds = sugg.map((s) => s.synced.id);
+  expect(syncedIds).toContain("bank_5days");
+  expect(syncedIds).not.toContain("bank_6days");
+});
