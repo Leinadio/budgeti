@@ -1,7 +1,8 @@
 import { expect, test } from "vitest";
 import { getDb } from "../../src/db/index";
 import { upsertAccount } from "../../src/db/repositories/accounts";
-import { insertManualTransaction, listTransactions, updateManualTransaction, deleteManualTransaction, setIncomeKind, upsertTransaction, findReconcileSuggestions } from "../../src/db/repositories/transactions";
+import { insertManualTransaction, listTransactions, updateManualTransaction, deleteManualTransaction, setIncomeKind, upsertTransaction, findReconcileSuggestions, mergeTransactions, ignoreMatch } from "../../src/db/repositories/transactions";
+import { insertEnvelopeGroup } from "../../src/db/repositories/groups";
 
 function seed() {
   const db = getDb(":memory:");
@@ -109,4 +110,35 @@ test("findReconcileSuggestions enforces boundary at exactly 5-day window", () =>
   const syncedIds = sugg.map((s) => s.synced.id);
   expect(syncedIds).toContain("bank_5days");
   expect(syncedIds).not.toContain("bank_6days");
+});
+
+test("mergeTransactions keeps the bank row, carries tagging, notes the manual label", () => {
+  const db = seed();
+  const gid = insertEnvelopeGroup(db, "a1", "Rémunération", "in", 652.09);
+  const m = insertManualTransaction(db, {
+    accountId: "a1", date: "2026-07-01", amount: 652.09, label: "Rémunération juillet",
+    groupId: gid, lineId: null, incomeKind: "principal",
+  });
+  upsertTransaction(db, { id: "bank1", account_id: "a1", date: "2026-07-03", amount: 652.09, label: "VIR SEPA RECU", category_id: null });
+
+  mergeTransactions(db, { syncedId: "bank1", manualId: m });
+
+  const rows = listTransactions(db);
+  expect(rows.map((t) => t.id)).toEqual(["bank1"]); // la manuelle a disparu
+  expect(rows[0]).toMatchObject({
+    id: "bank1", label: "VIR SEPA RECU", groupId: gid, incomeKind: "principal", note: "Rémunération juillet", manual: false,
+  });
+});
+
+test("ignoreMatch records a dismissed pair so it is no longer suggested", () => {
+  const db = seed();
+  const m = insertManualTransaction(db, {
+    accountId: "a1", date: "2026-07-01", amount: 50, label: "top-up", groupId: null, lineId: null, incomeKind: "supplementary",
+  });
+  upsertTransaction(db, { id: "bank1", account_id: "a1", date: "2026-07-02", amount: 50, label: "VIR", category_id: null });
+  ignoreMatch(db, m, "bank1");
+  expect(findReconcileSuggestions(db)).toHaveLength(0);
+  // idempotent : deuxième écartement sans erreur
+  ignoreMatch(db, m, "bank1");
+  expect(db.prepare("SELECT COUNT(*) AS n FROM reconcile_ignored").get()).toEqual({ n: 1 });
 });

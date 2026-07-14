@@ -175,3 +175,29 @@ export function findReconcileSuggestions(db: Database.Database, windowDays = 5):
   }
   return out;
 }
+
+// Fusionne une saisie manuelle dans sa vraie ligne bancaire : on garde la ligne
+// bancaire, on lui reporte groupe/ligne/étiquette de la manuelle, son libellé va
+// dans note, puis la manuelle est supprimée. Atomique.
+export function mergeTransactions(
+  db: Database.Database,
+  { syncedId, manualId }: { syncedId: string; manualId: string },
+): void {
+  const run = db.transaction(() => {
+    const m = db
+      .prepare("SELECT label, group_id AS groupId, line_id AS lineId, income_kind AS incomeKind FROM transactions WHERE id=? AND manual=1")
+      .get(manualId) as { label: string; groupId: number | null; lineId: number | null; incomeKind: string | null } | undefined;
+    if (!m) return;
+    db.prepare(
+      `UPDATE transactions SET group_id=@group_id, line_id=@line_id, income_kind=@income_kind, note=@note
+       WHERE id=@id AND manual=0`,
+    ).run({ id: syncedId, group_id: m.groupId, line_id: m.lineId, income_kind: m.incomeKind, note: m.label });
+    db.prepare("DELETE FROM transactions WHERE id=? AND manual=1").run(manualId);
+  });
+  run();
+}
+
+// Mémorise une paire écartée (« ce n'est pas la même »).
+export function ignoreMatch(db: Database.Database, manualId: string, syncedId: string): void {
+  db.prepare("INSERT OR IGNORE INTO reconcile_ignored (manual_id, synced_id) VALUES (?, ?)").run(manualId, syncedId);
+}
