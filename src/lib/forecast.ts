@@ -31,6 +31,7 @@ export type Txn = {
   groupId: number | null;
   lineId?: number | null;
   excluded?: boolean;
+  incomeKind?: "principal" | "supplementary" | null;
 };
 
 export type TimelineItem = { day: number; name: string; amount: number; seen: boolean };

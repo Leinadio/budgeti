@@ -20,15 +20,18 @@ CREATE TABLE IF NOT EXISTS rules (
 );
 
 CREATE TABLE IF NOT EXISTS transactions (
-  id TEXT PRIMARY KEY,             -- Enable Banking entry_reference / transaction id
+  id TEXT PRIMARY KEY,             -- Enable Banking id, ou "manual:<uuid>" pour une saisie
   account_id TEXT NOT NULL REFERENCES accounts(id),
   date TEXT NOT NULL,              -- YYYY-MM-DD
   amount REAL NOT NULL,            -- signed euros: debit negative, credit positive
-  label TEXT NOT NULL,             -- raw bank label
+  label TEXT NOT NULL,             -- raw bank label ou libellé saisi
   category_id INTEGER REFERENCES categories(id),
   group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL,
-  line_id INTEGER REFERENCES group_lines(id) ON DELETE SET NULL,  -- ligne récurrente visée (rattachement manuel fin)
-  excluded INTEGER NOT NULL DEFAULT 0   -- 1 = forcé « non catégorisé » (hors auto-catégorisation)
+  line_id INTEGER REFERENCES group_lines(id) ON DELETE SET NULL,
+  excluded INTEGER NOT NULL DEFAULT 0,  -- 1 = forcé « non catégorisé »
+  manual INTEGER NOT NULL DEFAULT 0,    -- 1 = saisie manuelle
+  income_kind TEXT,                     -- 'principal' | 'supplementary' | NULL
+  note TEXT                             -- commentaire ; libellé manuel après fusion
 );
 
 CREATE TABLE IF NOT EXISTS budgets (
@@ -72,4 +75,10 @@ CREATE TABLE IF NOT EXISTS group_keywords (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
   keyword TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reconcile_ignored (
+  manual_id TEXT NOT NULL,
+  synced_id TEXT NOT NULL,
+  PRIMARY KEY (manual_id, synced_id)
 );

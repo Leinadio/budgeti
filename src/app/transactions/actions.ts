@@ -1,7 +1,23 @@
 "use server";
 import { db } from "../../db/index";
-import { setTransactionGroup } from "../../db/repositories/transactions";
+import {
+  setTransactionGroup,
+  insertManualTransaction,
+  updateManualTransaction,
+  deleteManualTransaction,
+  setIncomeKind as setIncomeKindRepo,
+  mergeTransactions,
+  ignoreMatch as ignoreMatchRepo,
+} from "../../db/repositories/transactions";
+import { isValidManualForm, toManualInput, type ManualFormInput } from "@/lib/manual-txn";
 import { revalidatePath } from "next/cache";
+
+function revalidateAll() {
+  revalidatePath("/transactions");
+  revalidatePath("/previsionnel");
+  revalidatePath("/historique");
+  revalidatePath("/");
+}
 
 export async function setGroup(
   txnId: string,
@@ -11,8 +27,38 @@ export async function setGroup(
   const gid = groupId !== null && Number.isFinite(groupId) ? groupId : null;
   const lid = lineId !== null && Number.isFinite(lineId) ? lineId : null;
   setTransactionGroup(db(), txnId, gid, false, lid);
-  revalidatePath("/transactions");
-  revalidatePath("/previsionnel");
-  revalidatePath("/historique");
-  revalidatePath("/");
+  revalidateAll();
+}
+
+export async function addTransaction(form: ManualFormInput) {
+  if (!isValidManualForm(form)) return;
+  insertManualTransaction(db(), toManualInput(form));
+  revalidateAll();
+}
+
+export async function editTransaction(id: string, form: ManualFormInput) {
+  if (!isValidManualForm(form)) return;
+  const { accountId: _accountId, ...rest } = toManualInput(form);
+  updateManualTransaction(db(), id, rest);
+  revalidateAll();
+}
+
+export async function removeTransaction(id: string) {
+  deleteManualTransaction(db(), id);
+  revalidateAll();
+}
+
+export async function setIncomeKind(id: string, kind: "principal" | "supplementary" | null) {
+  setIncomeKindRepo(db(), id, kind);
+  revalidateAll();
+}
+
+export async function mergeTransaction(syncedId: string, manualId: string) {
+  mergeTransactions(db(), { syncedId, manualId });
+  revalidateAll();
+}
+
+export async function ignoreMatch(manualId: string, syncedId: string) {
+  ignoreMatchRepo(db(), manualId, syncedId);
+  revalidateAll();
 }

@@ -89,3 +89,26 @@ export function migrateTransactionLineId(db: Database.Database): void {
   if (cols.some((c) => c.name === "line_id")) return;
   db.exec(`ALTER TABLE transactions ADD COLUMN line_id INTEGER REFERENCES group_lines(id) ON DELETE SET NULL`);
 }
+
+// Ajoute les colonnes de saisie manuelle : manual (1 = saisie main), income_kind
+// (principale/supplémentaire pour une entrée), note (commentaire, reçoit le libellé
+// manuel après fusion). Idempotent.
+export function migrateTransactionManualFields(db: Database.Database): void {
+  const cols = db.prepare("PRAGMA table_info(transactions)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "manual"))
+    db.exec(`ALTER TABLE transactions ADD COLUMN manual INTEGER NOT NULL DEFAULT 0`);
+  if (!cols.some((c) => c.name === "income_kind"))
+    db.exec(`ALTER TABLE transactions ADD COLUMN income_kind TEXT`);
+  if (!cols.some((c) => c.name === "note"))
+    db.exec(`ALTER TABLE transactions ADD COLUMN note TEXT`);
+}
+
+// Table des rapprochements écartés (« ce n'est pas la même ») : ne plus reproposer
+// une paire (manuelle, synchronisée). Idempotent.
+export function migrateReconcileIgnored(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS reconcile_ignored (
+    manual_id TEXT NOT NULL,
+    synced_id TEXT NOT NULL,
+    PRIMARY KEY (manual_id, synced_id)
+  )`);
+}

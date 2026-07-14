@@ -17,11 +17,15 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { GroupSelectField } from "@/components/group-select-field";
+import { IncomeKindSelect } from "@/components/income-kind-select";
 import { TruncatedText } from "@/components/truncated-text";
+import { AddTransactionSheet } from "@/components/add-transaction-sheet";
+import { Badge } from "@/components/ui/badge";
+import { ManualTxnActions } from "@/components/manual-txn-actions";
 
 type ClientGroup = OwnableGroup & { name: string; lines: { id: number; name: string }[] };
 
-export function TransactionsBrowser({ transactions, groups }: { transactions: TxnView[]; groups: ClientGroup[] }) {
+export function TransactionsBrowser({ transactions, groups, accounts }: { transactions: TxnView[]; groups: ClientGroup[]; accounts: { id: string; label: string }[] }) {
   const [filters, setFilters] = useState<TxnFilters>(EMPTY_FILTERS);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const toggleMonth = (key: string) =>
@@ -32,6 +36,17 @@ export function TransactionsBrowser({ transactions, groups }: { transactions: Tx
       return next;
     });
   const ownable: OwnableGroup[] = groups;
+  const formGroups = groups.map((g) => ({ id: g.id, name: g.name, accountId: g.accountId, direction: g.direction }));
+
+  const renderLabel = (t: TxnView) => (
+    <span className="flex flex-col gap-0.5">
+      <span className="flex items-center gap-1.5">
+        <TruncatedText text={t.label} className="max-w-[380px]" />
+        {t.manual && <Badge variant="outline">manuel · en attente</Badge>}
+      </span>
+      {t.note && <span className="text-muted-foreground text-xs">{t.note}</span>}
+    </span>
+  );
 
   const groupName = (id: number) => groups.find((g) => g.id === id)?.name ?? "?";
   const groupsOfAccount = (accountId: string) =>
@@ -59,7 +74,16 @@ export function TransactionsBrowser({ transactions, groups }: { transactions: Tx
     return "non catégorisée";
   };
 
-  const accounts = useMemo(() => {
+  const owningDirection = (t: TxnView): "in" | "out" | null => {
+    const res = resolveOwnership(
+      { id: t.id, date: t.date, amount: t.amount, label: t.label, accountId: t.accountId, groupId: t.groupId, excluded: t.excluded },
+      ownable,
+    );
+    if (res.status !== "manual") return null;
+    return groups.find((g) => g.id === res.groupId)?.direction ?? null;
+  };
+
+  const accountTxnGroups = useMemo(() => {
     const byAccount = new Map<string, { label: string; items: TxnView[] }>();
     for (const t of transactions) {
       const g = byAccount.get(t.accountId) ?? { label: t.accountLabel ?? "Compte", items: [] };
@@ -82,14 +106,22 @@ export function TransactionsBrowser({ transactions, groups }: { transactions: Tx
 
   if (transactions.length === 0) {
     return (
-      <p className="text-muted-foreground text-sm">
-        Aucune transaction. Va dans Réglages pour synchroniser.
-      </p>
+      <div className="flex flex-col gap-4">
+        <div className="flex justify-end">
+          <AddTransactionSheet accounts={accounts} groups={formGroups} />
+        </div>
+        <p className="text-muted-foreground text-sm">
+          Aucune transaction synchronisée. Ajoute-en une à la main ou synchronise dans Réglages.
+        </p>
+      </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex justify-end">
+        <AddTransactionSheet accounts={accounts} groups={formGroups} />
+      </div>
       <div className="flex flex-wrap items-center gap-2">
         <Input
           placeholder="Rechercher un libellé…"
@@ -164,28 +196,33 @@ export function TransactionsBrowser({ transactions, groups }: { transactions: Tx
                 <TableHead>Groupe</TableHead>
                 <TableHead>Appartenance</TableHead>
                 <TableHead className="text-right">Montant</TableHead>
+                <TableHead className="text-right"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {results.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-muted-foreground">Aucun résultat.</TableCell>
+                  <TableCell colSpan={7} className="text-muted-foreground">Aucun résultat.</TableCell>
                 </TableRow>
               ) : (
                 results.map((t) => (
                   <TableRow key={t.id}>
                     <TableCell className="text-muted-foreground whitespace-nowrap">{t.date}</TableCell>
                     <TableCell className="text-muted-foreground whitespace-nowrap">{t.accountLabel}</TableCell>
+                    <TableCell>{renderLabel(t)}</TableCell>
                     <TableCell>
-                      <TruncatedText text={t.label} className="max-w-[380px]" />
-                    </TableCell>
-                    <TableCell>
-                      <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} />
+                      <div className="flex flex-col">
+                        <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} />
+                        {owningDirection(t) === "in" && <IncomeKindSelect txnId={t.id} value={t.incomeKind} />}
+                      </div>
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       <TruncatedText text={statusLabel(t)} className="max-w-[200px]" />
                     </TableCell>
                     <TableCell className="text-right font-medium whitespace-nowrap">{formatEur(t.amount)}</TableCell>
+                    <TableCell className="text-right">
+                      {t.manual && <ManualTxnActions txn={t} accounts={accounts} groups={formGroups} />}
+                    </TableCell>
                   </TableRow>
                 ))
               )}
@@ -193,15 +230,15 @@ export function TransactionsBrowser({ transactions, groups }: { transactions: Tx
           </Table>
         </div>
       ) : (
-        <Tabs defaultValue={accounts[0]?.[0]}>
+        <Tabs defaultValue={accountTxnGroups[0]?.[0]}>
           <TabsList>
-            {accounts.map(([accountId, group]) => (
+            {accountTxnGroups.map(([accountId, group]) => (
               <TabsTrigger key={accountId} value={accountId}>
                 {group.label}
               </TabsTrigger>
             ))}
           </TabsList>
-          {accounts.map(([accountId, group]) => (
+          {accountTxnGroups.map(([accountId, group]) => (
             <TabsContent key={accountId} value={accountId}>
               <Table>
                 <TableHeader>
@@ -211,6 +248,7 @@ export function TransactionsBrowser({ transactions, groups }: { transactions: Tx
                     <TableHead>Groupe</TableHead>
                     <TableHead>Appartenance</TableHead>
                     <TableHead className="text-right">Montant</TableHead>
+                    <TableHead className="text-right"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -220,7 +258,7 @@ export function TransactionsBrowser({ transactions, groups }: { transactions: Tx
                     return (
                     <Fragment key={m.month}>
                       <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => toggleMonth(key)}>
-                        <TableCell colSpan={5} className="text-muted-foreground text-sm font-medium">
+                        <TableCell colSpan={6} className="text-muted-foreground text-sm font-medium">
                           <span className="flex items-center gap-1.5">
                             {isCollapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
                             {m.label}
@@ -231,16 +269,20 @@ export function TransactionsBrowser({ transactions, groups }: { transactions: Tx
                       {!isCollapsed && m.items.map((t) => (
                         <TableRow key={t.id}>
                           <TableCell className="text-muted-foreground">{t.date}</TableCell>
+                          <TableCell>{renderLabel(t)}</TableCell>
                           <TableCell>
-                            <TruncatedText text={t.label} className="max-w-[460px]" />
-                          </TableCell>
-                          <TableCell>
-                            <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} />
+                            <div className="flex flex-col">
+                              <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} />
+                              {owningDirection(t) === "in" && <IncomeKindSelect txnId={t.id} value={t.incomeKind} />}
+                            </div>
                           </TableCell>
                           <TableCell className="text-muted-foreground">
                             <TruncatedText text={statusLabel(t)} className="max-w-[200px]" />
                           </TableCell>
                           <TableCell className="text-right font-medium">{formatEur(t.amount)}</TableCell>
+                          <TableCell className="text-right">
+                            {t.manual && <ManualTxnActions txn={t} accounts={accounts} groups={formGroups} />}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </Fragment>

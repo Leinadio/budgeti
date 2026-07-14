@@ -7,7 +7,9 @@ import {
   addMonthsKey, monthRange, isMonthKey, clampMonth,
 } from "../../lib/history";
 import { computeForecast, type Group, type Txn } from "../../lib/forecast";
+import { monthRemuneration } from "../../lib/remuneration";
 import { ForecastDetailSheet } from "@/components/forecast-detail-sheet";
+import { RemunerationSummary } from "@/components/remuneration-summary";
 import { monthKey } from "../../lib/money";
 import { accountLabel } from "../../lib/account";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -38,6 +40,7 @@ export default async function HistoriquePage({
     groupId: t.groupId,
     lineId: t.lineId,
     excluded: t.excluded,
+    incomeKind: t.incomeKind,
   }));
 
   if (accounts.length === 0) {
@@ -81,6 +84,7 @@ export default async function HistoriquePage({
           const txns = allTxns.filter((t) => t.accountId === a.id);
           const sections = computeHistory(groups, txns, months, currentMonth);
           const forecast = computeForecast(a.id, a.balance, groups, txns, currentMonth);
+          const remunMonths = months.map((m) => monthRemuneration(groups, txns, m));
           const overspend = monthlyOverspend(sections, months.length);
           const grand = grandTotals(sections, months.length);
           const selectGroups = groups.map((g) => ({
@@ -91,6 +95,7 @@ export default async function HistoriquePage({
 
           return (
             <TabsContent key={a.id} value={a.id} className="flex flex-col gap-4">
+              <RemunerationSummary months={remunMonths} />
               <div className="flex justify-end">
                 <ForecastDetailSheet label={accountLabel(a)} forecast={forecast} />
               </div>
