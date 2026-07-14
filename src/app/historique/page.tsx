@@ -83,6 +83,11 @@ export default async function HistoriquePage({
           const forecast = computeForecast(a.id, a.balance, groups, txns, currentMonth);
           const overspend = monthlyOverspend(sections, months.length);
           const grand = grandTotals(sections, months.length);
+          const selectGroups = groups.map((g) => ({
+            id: g.id,
+            name: g.name,
+            lines: g.kind === "recurring" ? g.lines.map((l) => ({ id: l.id, name: l.name })) : [],
+          }));
 
           return (
             <TabsContent key={a.id} value={a.id} className="flex flex-col gap-4">
@@ -100,6 +105,7 @@ export default async function HistoriquePage({
                     sections={sections}
                     overspend={overspend}
                     grand={grand}
+                    groups={selectGroups}
                   />
                 </CenterScroll>
               )}

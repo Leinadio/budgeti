@@ -97,7 +97,7 @@ export function computeForecast(
     .map((t) => {
       const o: OwnedTxn = { id: t.id, date: t.date, amount: t.amount, label: t.label, accountId: t.accountId, groupId: t.groupId, excluded: t.excluded };
       const res = resolveOwnership(o, ownable);
-      const ownerId = res.status === "manual" || res.status === "auto" ? res.groupId : null;
+      const ownerId = res.status === "manual" ? res.groupId : null;
       return { t, ownerId };
     });
 
@@ -145,10 +145,9 @@ export function computeForecast(
       for (const line of g.lines) {
         total += line.amount;
         nextDelta += sign * line.amount;
-        const kw = line.keyword.toLowerCase();
-        // « Vue » si le mot-clé matche, ou si une transaction a été rattachée
-        // manuellement à cette ligne précise (corrige la détection automatique).
-        const seen = mine.some((t) => t.lineId === line.id || t.label.toLowerCase().includes(kw));
+        // « Vue » uniquement si une transaction a été rattachée manuellement à
+        // cette ligne précise (plus de détection automatique par mot-clé).
+        const seen = mine.some((t) => t.lineId === line.id);
         if (!seen) {
           current += sign * line.amount;
           currentSteps.push({ label: `${g.name} · ${line.name} — pas encore passé (le ${line.day})`, amount: sign * line.amount });

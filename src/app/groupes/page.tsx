@@ -2,9 +2,9 @@ import { db } from "../../db/index";
 import { listGroups } from "../../db/repositories/groups";
 import { listAccounts } from "../../db/repositories/accounts";
 import { accountDisplayName } from "../../lib/account";
-import { addGroupKeyword, addLine } from "./actions";
+import { addLine } from "./actions";
 import { NewGroupForm } from "@/components/new-group-form";
-import { EditableGroupHeader, EditableKeyword, EditableLine } from "@/components/group-editors";
+import { EditableGroupHeader, EditableLine } from "@/components/group-editors";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -57,54 +57,29 @@ export default function GroupesPage() {
                 total={total}
               />
             </CardHeader>
-            <CardContent className="flex flex-col gap-2">
-              {g.kind === "envelope" ? (
-                <>
-                  <div className="flex flex-wrap gap-2">
-                    {g.keywords.length === 0 && (
-                      <span className="text-muted-foreground text-sm">Aucun mot-clé.</span>
-                    )}
-                    {g.keywords.map((kw) => (
-                      <EditableKeyword key={kw} groupId={g.id} keyword={kw} />
-                    ))}
+            {g.kind === "recurring" && (
+              <CardContent className="flex flex-col gap-2">
+                {g.lines.map((l) => (
+                  <EditableLine key={l.id} line={l} />
+                ))}
+                <form action={addLine} className="flex flex-wrap items-end gap-2 pt-2">
+                  <input type="hidden" name="groupId" value={g.id} />
+                  <div className="flex flex-col gap-1">
+                    <Label className="font-normal">Nom</Label>
+                    <Input name="name" placeholder="Ex: Spotify" required className="max-w-40" />
                   </div>
-                  <form action={addGroupKeyword} className="flex items-end gap-2">
-                    <input type="hidden" name="groupId" value={g.id} />
-                    <div className="flex flex-col gap-1">
-                      <Label className="font-normal">Mot-clé</Label>
-                      <Input name="keyword" placeholder="Ex: CARREFOUR" required className="max-w-40" />
-                    </div>
-                    <Button type="submit" size="sm" variant="secondary">Ajouter le mot-clé</Button>
-                  </form>
-                </>
-              ) : (
-                <>
-                  {g.lines.map((l) => (
-                    <EditableLine key={l.id} line={l} />
-                  ))}
-                  <form action={addLine} className="flex flex-wrap items-end gap-2 pt-2">
-                    <input type="hidden" name="groupId" value={g.id} />
-                    <div className="flex flex-col gap-1">
-                      <Label className="font-normal">Nom</Label>
-                      <Input name="name" placeholder="Ex: Spotify" required className="max-w-40" />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <Label className="font-normal">Montant €</Label>
-                      <Input type="number" name="amount" step="0.01" placeholder="0.00" className="max-w-28" />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <Label className="font-normal">Jour</Label>
-                      <Input type="number" name="day" min="1" max="31" placeholder="1-31" className="max-w-24" required />
-                    </div>
-                    <div className="flex flex-col gap-1">
-                      <Label className="font-normal">Mot-clé</Label>
-                      <Input name="keyword" placeholder="Ex: SPOTIFY" required className="max-w-40" />
-                    </div>
-                    <Button type="submit" size="sm" variant="secondary">Ajouter la ligne</Button>
-                  </form>
-                </>
-              )}
-            </CardContent>
+                  <div className="flex flex-col gap-1">
+                    <Label className="font-normal">Montant €</Label>
+                    <Input type="number" name="amount" step="0.01" placeholder="0.00" className="max-w-28" />
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <Label className="font-normal">Jour</Label>
+                    <Input type="number" name="day" min="1" max="31" placeholder="1-31" className="max-w-24" required />
+                  </div>
+                  <Button type="submit" size="sm" variant="secondary">Ajouter la ligne</Button>
+                </form>
+              </CardContent>
+            )}
           </Card>
         );
       })}

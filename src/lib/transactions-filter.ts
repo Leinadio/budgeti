@@ -51,9 +51,9 @@ export function filterTransactions(txns: TxnView[], filters: TxnFilters, ownable
         ownable,
       );
       if (filters.group === "none") {
-        if (res.status !== "none" && res.status !== "ambiguous") return false;
+        if (res.status !== "none") return false;
       } else {
-        const owner = res.status === "manual" || res.status === "auto" ? res.groupId : null;
+        const owner = res.status === "manual" ? res.groupId : null;
         if (owner !== filters.group) return false;
       }
     }

@@ -10,40 +10,34 @@ function txn(p: Partial<OwnedTxn>): OwnedTxn {
   return { id: "t", date: "2026-07-01", amount: -10, label: "", accountId: "a1", groupId: null, ...p };
 }
 
-test("manual attachment wins", () => {
+test("manual attachment to a group of the same account -> manual", () => {
   expect(resolveOwnership(txn({ groupId: 2, label: "CARREFOUR" }), groups)).toEqual({ status: "manual", groupId: 2 });
 });
 
-test("single keyword match -> auto", () => {
-  expect(resolveOwnership(txn({ label: "PAIEMENT CARREFOUR CITY" }), groups)).toEqual({ status: "auto", groupId: 1 });
+test("keyword no longer auto-matches -> none", () => {
+  expect(resolveOwnership(txn({ label: "PAIEMENT CARREFOUR CITY" }), groups)).toEqual({ status: "none" });
 });
 
-test("excluded forces none, overriding keyword match and manual group", () => {
+test("multiple groups sharing a keyword: still none without manual attachment", () => {
+  const dup: OwnableGroup = { id: 4, accountId: "a1", direction: "out", kind: "envelope", keywords: ["CARREFOUR"] };
+  expect(resolveOwnership(txn({ label: "CARREFOUR" }), [...groups, dup])).toEqual({ status: "none" });
+});
+
+test("excluded forces none, overriding a manual group", () => {
   expect(resolveOwnership(txn({ label: "CARREFOUR", excluded: true }), groups)).toEqual({ status: "none" });
   expect(resolveOwnership(txn({ groupId: 1, excluded: true }), groups)).toEqual({ status: "none" });
 });
 
-test("multiple matches -> ambiguous", () => {
-  const dup: OwnableGroup = { id: 4, accountId: "a1", direction: "out", kind: "envelope", keywords: ["CARREFOUR"] };
-  expect(resolveOwnership(txn({ label: "CARREFOUR" }), [...groups, dup])).toEqual({ status: "ambiguous" });
-});
-
-test("no match -> none", () => {
+test("no manual group -> none (even if a keyword would have matched)", () => {
   expect(resolveOwnership(txn({ label: "BOULANGERIE" }), groups)).toEqual({ status: "none" });
+  expect(resolveOwnership(txn({ amount: 2000, label: "VIR REMU" }), groups)).toEqual({ status: "none" });
 });
 
-test("sign must match direction", () => {
-  // crédit ne matche pas une enveloppe out
-  expect(resolveOwnership(txn({ amount: 10, label: "CARREFOUR" }), groups)).toEqual({ status: "none" });
-  // crédit matche un groupe in
-  expect(resolveOwnership(txn({ amount: 2000, label: "VIR REMU" }), groups)).toEqual({ status: "auto", groupId: 3 });
-});
-
-test("other account is ignored", () => {
-  expect(resolveOwnership(txn({ accountId: "a2", label: "CARREFOUR" }), groups)).toEqual({ status: "none" });
-});
-
-test("manual to a group of another account falls through to keyword", () => {
+test("manual to a group of another account -> none (not owned)", () => {
   const other: OwnableGroup = { id: 9, accountId: "a2", direction: "out", kind: "envelope", keywords: [] };
-  expect(resolveOwnership(txn({ groupId: 9, label: "CARREFOUR" }), [...groups, other])).toEqual({ status: "auto", groupId: 1 });
+  expect(resolveOwnership(txn({ groupId: 9, label: "CARREFOUR" }), [...groups, other])).toEqual({ status: "none" });
+});
+
+test("manual group on another account is ignored", () => {
+  expect(resolveOwnership(txn({ accountId: "a2", groupId: 1 }), groups)).toEqual({ status: "none" });
 });

@@ -20,21 +20,21 @@ test("text filter is case-insensitive on label", () => {
   expect(r.map((t) => t.id)).toEqual(["1"]);
 });
 
-test("group filter matches resolved owner (auto by keyword)", () => {
-  const txns = [tx({ id: "1", label: "ACHAT CARREFOUR", amount: -20 }), tx({ id: "2", label: "SPOTIFY", amount: -10 })];
+test("group filter matches the manually assigned owner", () => {
+  const txns = [tx({ id: "1", label: "ACHAT CARREFOUR", amount: -20, groupId: 1 }), tx({ id: "2", label: "SPOTIFY", amount: -10 })];
   const r = filterTransactions(txns, filters({ group: 1 }), ownable);
   expect(r.map((t) => t.id)).toEqual(["1"]);
 });
 
-test("group filter 'none' matches uncategorised (none + ambiguous)", () => {
-  const txns = [tx({ id: "1", label: "ACHAT CARREFOUR", amount: -20 }), tx({ id: "2", label: "INCONNU", amount: -10 })];
+test("group filter 'none' matches transactions with no manual group", () => {
+  const txns = [tx({ id: "1", label: "ACHAT CARREFOUR", amount: -20, groupId: 1 }), tx({ id: "2", label: "INCONNU", amount: -10 })];
   const r = filterTransactions(txns, filters({ group: "none" }), ownable);
   expect(r.map((t) => t.id)).toEqual(["2"]);
 });
 
-test("excluded transaction is uncategorised even if a keyword matches", () => {
-  const txns = [tx({ id: "1", label: "ACHAT CARREFOUR", amount: -20, excluded: true })];
-  // matcherait le groupe 1 par mot-clé, mais forcé non catégorisé
+test("excluded transaction is uncategorised", () => {
+  const txns = [tx({ id: "1", label: "ACHAT CARREFOUR", amount: -20, groupId: 1, excluded: true })];
+  // groupe assigné mais exclu -> hors catégorie
   expect(filterTransactions(txns, filters({ group: 1 }), ownable)).toEqual([]);
   expect(filterTransactions(txns, filters({ group: "none" }), ownable).map((t) => t.id)).toEqual(["1"]);
 });

@@ -5,12 +5,15 @@ import type { Group, Txn } from "./forecast";
 // pour une ligne ; les sous-totaux additionnent les deux). balance = budgeted - réalisé.
 export type MonthCell = { budgeted: number; depense: number; recu: number; balance: number };
 // Une transaction détaillée, rattachée à un groupe ou à un sous-groupe (ligne).
+// group_id / line_id portés pour alimenter le menu de (ré)assignation.
 export type HistoryTxn = {
   id: string;
   date: string; // YYYY-MM-DD
   label: string;
   amount: number; // signé (négatif = sortie)
   month: string; // YYYY-MM
+  groupId: number | null;
+  lineId: number | null;
 };
 // Un sous-groupe = une ligne d'un récurrent (Spotify, Direct Assurance…).
 export type HistorySubRow = {
@@ -29,9 +32,10 @@ export type HistoryRow = {
   txns: HistoryTxn[]; // transactions directement sous le groupe (enveloppe, ou récurrent sans ligne)
 };
 export type HistorySection = {
-  kind: "envelope" | "recurring";
+  kind: "envelope" | "recurring" | "uncategorized";
   rows: HistoryRow[];
   totals: MonthCell[];
+  txns?: HistoryTxn[]; // uniquement pour « uncategorized » : liste plate
 };
 
 // Mois distincts « YYYY-MM » présents dans les transactions, triés croissant.
@@ -113,26 +117,25 @@ export function computeHistory(
   const owned = txns.map((t) => {
     const o: OwnedTxn = { id: t.id, date: t.date, amount: t.amount, label: t.label, accountId: t.accountId, groupId: t.groupId, excluded: t.excluded };
     const res = resolveOwnership(o, ownable);
-    const ownerId = res.status === "manual" || res.status === "auto" ? res.groupId : null;
+    const ownerId = res.status === "manual" ? res.groupId : null;
     return { t, ownerId, month: t.date.slice(0, 7) };
   });
 
   const spent = (gid: number, m: string) =>
     owned.filter((o) => o.ownerId === gid && o.month === m).reduce((s, o) => s + Math.abs(o.t.amount), 0);
 
-  // Rattache une transaction d'un récurrent à une de ses lignes : d'abord le
-  // line_id manuel, sinon la première ligne dont le mot-clé matche le libellé,
-  // sinon null (elle reste directement sous le groupe).
-  const lineOf = (g: Group, t: Txn): number | null => {
-    if (t.lineId != null && g.lines.some((l) => l.id === t.lineId)) return t.lineId;
-    const lbl = t.label.toLowerCase();
-    const m = g.lines.find((l) => lbl.includes(l.keyword.toLowerCase()));
-    return m ? m.id : null;
-  };
+  // Rattache une transaction d'un récurrent à une de ses lignes uniquement via
+  // le line_id manuel ; sinon elle reste directement sous le groupe.
+  const lineOf = (g: Group, t: Txn): number | null =>
+    t.lineId != null && g.lines.some((l) => l.id === t.lineId) ? t.lineId : null;
 
   const toHistoryTxn = (t: Txn): HistoryTxn => ({
     id: t.id, date: t.date, label: t.label, amount: t.amount, month: t.date.slice(0, 7),
+    groupId: t.groupId, lineId: t.lineId ?? null,
   });
+
+  // On ne liste que les transactions des mois affichés.
+  const inRange = (t: Txn) => months.includes(t.date.slice(0, 7));
 
   const cellsFor = (budgeted: number, isOut: boolean, overspend: number, realizedOf: (m: string) => number): MonthCell[] =>
     months.map((m) => {
@@ -167,13 +170,13 @@ export function computeHistory(
         id: l.id,
         name: l.name,
         cells: cellsFor(l.amount, isOut, 0, realizedOf),
-        txns: lineTxns.map(toHistoryTxn),
+        txns: lineTxns.filter(inRange).map(toHistoryTxn),
       };
     });
 
     // Transactions directement sous le groupe : enveloppe (pas de lignes) ou
     // récurrent dont la transaction ne matche aucune ligne.
-    const groupTxns = mine.filter((t) => lineOf(g, t) === null).map(toHistoryTxn);
+    const groupTxns = mine.filter((t) => lineOf(g, t) === null && inRange(t)).map(toHistoryTxn);
 
     return { id: g.id, name: g.name, kind: g.kind, direction: g.direction, cells, subRows, txns: groupTxns };
   };
@@ -195,7 +198,25 @@ export function computeHistory(
     return { kind, rows, totals };
   };
 
-  return [section("envelope"), section("recurring")].filter((s): s is HistorySection => s !== null);
+  // Transactions sans groupe : listées par mois, avec un total Dépensé/Reçu.
+  const uncategorized = (): HistorySection | null => {
+    const mine = owned
+      .filter((o) => o.ownerId === null && inRange(o.t))
+      .map((o) => o.t)
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    if (mine.length === 0) return null;
+    const totals = months.map((m) => {
+      const monthTxns = mine.filter((t) => t.date.slice(0, 7) === m);
+      const depense = monthTxns.filter((t) => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
+      const recu = monthTxns.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
+      return { budgeted: 0, depense, recu, balance: recu - depense };
+    });
+    return { kind: "uncategorized", rows: [], totals, txns: mine.map(toHistoryTxn) };
+  };
+
+  return [section("envelope"), section("recurring"), uncategorized()].filter(
+    (s): s is HistorySection => s !== null,
+  );
 }
 
 // Dépassement total par mois : somme des dépassements des groupes de sortie

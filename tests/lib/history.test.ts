@@ -26,9 +26,9 @@ test("monthsWithData returns distinct sorted months", () => {
 
 test("spent is summed per group and per month", () => {
   const txns = [
-    tx({ id: "1", date: "2026-06-10", amount: -120, label: "CARREFOUR" }),
-    tx({ id: "2", date: "2026-07-10", amount: -50, label: "CARREFOUR" }),
-    tx({ id: "3", date: "2026-07-15", amount: -30, label: "CARREFOUR" }),
+    tx({ id: "1", date: "2026-06-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
+    tx({ id: "2", date: "2026-07-10", amount: -50, label: "CARREFOUR", groupId: 1 }),
+    tx({ id: "3", date: "2026-07-15", amount: -30, label: "CARREFOUR", groupId: 1 }),
   ];
   const sections = computeHistory([courses], txns, ["2026-06", "2026-07"], "2026-07");
   const row = sections[0].rows[0];
@@ -37,7 +37,7 @@ test("spent is summed per group and per month", () => {
 });
 
 test("budgeted: envelope monthlyAmount, recurring sum of lines; balance = budgeted - spent", () => {
-  const txns = [tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR" })];
+  const txns = [tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 })];
   const sections = computeHistory([courses, abo], txns, ["2026-07"], "2026-07");
   const env = sections.find((s) => s.kind === "envelope")!.rows[0];
   const rec = sections.find((s) => s.kind === "recurring")!.rows[0];
@@ -54,8 +54,8 @@ test("excluded transactions are not counted", () => {
 test("section totals sum the rows per month", () => {
   const courses2: Group = { ...courses, id: 3, name: "Courses2", monthlyAmount: 100, keywords: ["LECLERC"] };
   const txns = [
-    tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR" }),
-    tx({ id: "2", date: "2026-07-10", amount: -40, label: "LECLERC" }),
+    tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
+    tx({ id: "2", date: "2026-07-10", amount: -40, label: "LECLERC", groupId: 3 }),
   ];
   const sections = computeHistory([courses, courses2], txns, ["2026-07"], "2026-07");
   expect(sections[0].totals[0]).toEqual({ budgeted: 400, depense: 160, recu: 0, balance: 240 });
@@ -63,13 +63,13 @@ test("section totals sum the rows per month", () => {
 
 test("income group fills recu, not depense", () => {
   const salaire: Group = { id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "envelope", monthlyAmount: 2000, keywords: ["REMU"], lines: [] };
-  const txns = [tx({ id: "1", date: "2026-07-01", amount: 2000, label: "VIR REMU" })];
+  const txns = [tx({ id: "1", date: "2026-07-01", amount: 2000, label: "VIR REMU", groupId: 9 })];
   const sections = computeHistory([salaire], txns, ["2026-07"], "2026-07");
   expect(sections[0].rows[0].cells[0]).toEqual({ budgeted: 2000, depense: 0, recu: 2000, balance: 0 });
 });
 
 test("future projection within budget: spent = budgeted, balance = 0", () => {
-  const txns = [tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR" })];
+  const txns = [tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 })];
   const sections = computeHistory([courses], txns, ["2026-07", "2026-08"], "2026-07");
   const row = sections[0].rows[0];
   expect(row.cells[0]).toEqual({ budgeted: 300, depense: 120, recu: 0, balance: 180 }); // juillet réel
@@ -77,7 +77,7 @@ test("future projection within budget: spent = budgeted, balance = 0", () => {
 });
 
 test("future projection carries the current-month overspend (like Previsionnel)", () => {
-  const txns = [tx({ id: "1", date: "2026-07-10", amount: -450, label: "CARREFOUR" })]; // 450 > 300
+  const txns = [tx({ id: "1", date: "2026-07-10", amount: -450, label: "CARREFOUR", groupId: 1 })]; // 450 > 300
   const sections = computeHistory([courses], txns, ["2026-07", "2026-08"], "2026-07");
   const row = sections[0].rows[0];
   expect(row.cells[0]).toEqual({ budgeted: 300, depense: 450, recu: 0, balance: -150 }); // juillet réel
@@ -127,8 +127,8 @@ test("clampMonth bounds within [min, max]", () => {
 test("grandTotals sum all sections per month (expenses and income)", () => {
   const salaire: Group = { id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "recurring", monthlyAmount: null, keywords: [], lines: [{ id: 91, name: "Paie", amount: 2000, day: 1, keyword: "REMU" }] };
   const txns = [
-    tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR" }),
-    tx({ id: "2", date: "2026-07-01", amount: 2000, label: "VIR REMU" }),
+    tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
+    tx({ id: "2", date: "2026-07-01", amount: 2000, label: "VIR REMU", groupId: 9 }),
   ];
   const sections = computeHistory([courses, salaire], txns, ["2026-07"], "2026-07");
   const grand = grandTotals(sections, 1);
@@ -139,18 +139,18 @@ test("monthlyOverspend sums out-group overspends per month, ignores under-budget
   const c2: Group = { ...courses, id: 3, name: "C2", monthlyAmount: 50, keywords: ["LECLERC"] };
   const salaire: Group = { id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "envelope", monthlyAmount: 2000, keywords: ["REMU"], lines: [] };
   const txns = [
-    tx({ id: "1", date: "2026-07-10", amount: -450, label: "CARREFOUR" }), // budget 300 -> dépassement 150
-    tx({ id: "2", date: "2026-07-10", amount: -20, label: "LECLERC" }), // budget 50 -> sous budget, 0
-    tx({ id: "3", date: "2026-07-01", amount: 2500, label: "VIR REMU" }), // entrée, ignorée
+    tx({ id: "1", date: "2026-07-10", amount: -450, label: "CARREFOUR", groupId: 1 }), // budget 300 -> dépassement 150
+    tx({ id: "2", date: "2026-07-10", amount: -20, label: "LECLERC", groupId: 3 }), // budget 50 -> sous budget, 0
+    tx({ id: "3", date: "2026-07-01", amount: 2500, label: "VIR REMU", groupId: 9 }), // entrée, ignorée
   ];
   const sections = computeHistory([courses, c2, salaire], txns, ["2026-07"], "2026-07");
   expect(monthlyOverspend(sections, 1)).toEqual([150]);
 });
 
-test("recurring: transactions attributed to sub-groups by keyword", () => {
+test("recurring: transactions attributed to sub-groups by manual line_id", () => {
   const txns = [
-    tx({ id: "1", date: "2026-07-03", amount: -10, label: "PRLV SPOTIFY" }),
-    tx({ id: "2", date: "2026-07-08", amount: -15, label: "NETFLIX.COM" }),
+    tx({ id: "1", date: "2026-07-03", amount: -10, label: "PRLV SPOTIFY", groupId: 2, lineId: 11 }),
+    tx({ id: "2", date: "2026-07-08", amount: -15, label: "NETFLIX.COM", groupId: 2, lineId: 12 }),
   ];
   const sections = computeHistory([abo], txns, ["2026-07"], "2026-07");
   const rec = sections.find((s) => s.kind === "recurring")!.rows[0];
@@ -171,7 +171,7 @@ test("manual line_id attaches a transaction to a sub-group even without keyword"
 });
 
 test("envelope transactions are listed directly under the group (no sub-rows)", () => {
-  const txns = [tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR" })];
+  const txns = [tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 })];
   const sections = computeHistory([courses], txns, ["2026-07"], "2026-07");
   const env = sections[0].rows[0];
   expect(env.subRows).toEqual([]);
@@ -187,7 +187,26 @@ test("recurring transaction matching no line stays directly under the group", ()
 });
 
 test("empty sections are omitted", () => {
-  const txns = [tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR" })];
+  const txns = [tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 })];
   const sections = computeHistory([courses], txns, ["2026-07"], "2026-07");
   expect(sections.map((s) => s.kind)).toEqual(["envelope"]);
+});
+
+test("transactions with no group go to the uncategorized section with per-month totals", () => {
+  const txns = [
+    tx({ id: "1", date: "2026-07-05", amount: -40, label: "ACHAT X" }), // sortie non catégorisée
+    tx({ id: "2", date: "2026-07-06", amount: 100, label: "REMBOURSEMENT" }), // entrée non catégorisée
+    tx({ id: "3", date: "2026-07-07", amount: -25, label: "CARREFOUR", groupId: 1 }), // catégorisée
+  ];
+  const sections = computeHistory([courses], txns, ["2026-07"], "2026-07");
+  const uncat = sections.find((s) => s.kind === "uncategorized")!;
+  expect(uncat.txns!.map((t) => t.id).sort()).toEqual(["1", "2"]);
+  expect(uncat.txns!.every((t) => t.groupId === null)).toBe(true);
+  expect(uncat.totals[0]).toEqual({ budgeted: 0, depense: 40, recu: 100, balance: 60 });
+});
+
+test("no uncategorized section when every transaction has a group", () => {
+  const txns = [tx({ id: "1", date: "2026-07-05", amount: -40, label: "X", groupId: 1 })];
+  const sections = computeHistory([courses], txns, ["2026-07"], "2026-07");
+  expect(sections.some((s) => s.kind === "uncategorized")).toBe(false);
 });

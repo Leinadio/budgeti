@@ -1,7 +1,7 @@
 "use client";
 import { useState, useTransition, type FormEvent } from "react";
 import { Pencil } from "lucide-react";
-import { editGroup, editGroupKeyword, editLine, removeGroup, removeLine } from "@/app/groupes/actions";
+import { editGroup, editLine, removeGroup, removeLine } from "@/app/groupes/actions";
 import { formatEur } from "@/lib/money";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -99,48 +99,6 @@ export function EditableGroupHeader({
   );
 }
 
-// Un mot-clé d'enveloppe : affichage ou champ d'édition.
-export function EditableKeyword({ groupId, keyword }: { groupId: number; keyword: string }) {
-  const [editing, setEditing] = useState(false);
-  const [pending, start] = useTransition();
-
-  function onSubmit(e: FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fd = new FormData(e.currentTarget);
-    start(async () => {
-      await editGroupKeyword(fd);
-      setEditing(false);
-    });
-  }
-
-  if (editing) {
-    return (
-      <form onSubmit={onSubmit} className="flex items-center gap-1">
-        <input type="hidden" name="groupId" value={groupId} />
-        <input type="hidden" name="oldKeyword" value={keyword} />
-        <Input name="keyword" defaultValue={keyword} required className="h-7 max-w-40 text-sm" />
-        <Button type="submit" size="sm" variant="ghost" className="h-7" disabled={pending}>
-          OK
-        </Button>
-        <Button type="button" size="sm" variant="ghost" className="h-7" onClick={() => setEditing(false)}>
-          ×
-        </Button>
-      </form>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={() => setEditing(true)}
-      className="hover:bg-muted inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-sm"
-    >
-      {keyword}
-      <Pencil className="text-muted-foreground size-3" />
-    </button>
-  );
-}
-
 type Line = { id: number; name: string; amount: number; day: number; keyword: string };
 
 // Une ligne de récurrent : affichage ou formulaire d'édition.
@@ -173,10 +131,6 @@ export function EditableLine({ line }: { line: Line }) {
           <Label className="font-normal">Jour</Label>
           <Input type="number" name="day" min="1" max="31" defaultValue={line.day} required className="max-w-24" />
         </div>
-        <div className="flex flex-col gap-1">
-          <Label className="font-normal">Mot-clé</Label>
-          <Input name="keyword" defaultValue={line.keyword} required className="max-w-40" />
-        </div>
         <Button type="submit" size="sm" disabled={pending}>Enregistrer</Button>
         <Button type="button" size="sm" variant="ghost" onClick={() => setEditing(false)}>
           Annuler
@@ -189,7 +143,7 @@ export function EditableLine({ line }: { line: Line }) {
     <div className="flex items-center justify-between text-sm">
       <span>
         {line.name}
-        <span className="text-muted-foreground"> · {line.keyword} · le {line.day}</span>
+        <span className="text-muted-foreground"> · le {line.day}</span>
       </span>
       <span className="flex items-center gap-2">
         <span>{formatEur(line.amount)}</span>

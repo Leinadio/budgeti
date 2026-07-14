@@ -8,6 +8,11 @@ import type { AccountForecast } from "@/lib/forecast";
 import { monthsDiff, type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn } from "@/lib/history";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TruncatedText } from "@/components/truncated-text";
+import { GroupSelectField } from "@/components/group-select-field";
+
+// Groupes du compte, pour le menu de (ré)assignation sur chaque transaction.
+type SelectGroup = { id: number; name: string; lines: { id: number; name: string }[] };
+const MUTED40 = "bg-[color-mix(in_oklab,var(--muted)_40%,var(--background))]";
 
 const NUM = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmt = (n: number) => NUM.format(n).replace(/[  ]/g, " ");
@@ -49,8 +54,9 @@ function AmountCells({ cells, mode }: { cells: MonthCell[]; mode: "out" | "in" |
 }
 
 // Cellules d'une transaction : son montant tombe dans la colonne Dép. (sortie)
-// ou Reçu (entrée) du mois où elle a lieu ; tout le reste est vide.
-function TxnCells({ txn, months, direction }: { txn: HistoryTxn; months: string[]; direction: "in" | "out" }) {
+// ou Reçu (entrée), selon son signe, du mois où elle a lieu ; le reste est vide.
+function TxnCells({ txn, months }: { txn: HistoryTxn; months: string[] }) {
+  const isOut = txn.amount < 0;
   return (
     <>
       {months.map((m, i) => {
@@ -59,8 +65,8 @@ function TxnCells({ txn, months, direction }: { txn: HistoryTxn; months: string[
         return (
           <Fragment key={i}>
             <TableCell className="border-l" />
-            <TableCell className="text-right tabular-nums text-muted-foreground">{direction === "out" ? val : ""}</TableCell>
-            <TableCell className="text-right tabular-nums text-muted-foreground">{direction === "in" ? val : ""}</TableCell>
+            <TableCell className="text-right tabular-nums text-muted-foreground">{here && isOut ? val : ""}</TableCell>
+            <TableCell className="text-right tabular-nums text-muted-foreground">{here && !isOut ? val : ""}</TableCell>
             <TableCell />
           </Fragment>
         );
@@ -130,30 +136,46 @@ function NameCell({ children, indent, expandable, expanded, onToggle, bg = "bg-b
   );
 }
 
-function TxnRow({ txn, months, direction, indent }: {
+// Ligne de transaction : « date · libellé » puis, en dessous, le menu de
+// (ré)assignation de groupe. Le montant tombe dans la colonne de son mois.
+function TxnRow({ txn, months, groups, indent }: {
   txn: HistoryTxn;
   months: string[];
-  direction: "in" | "out";
+  groups: SelectGroup[];
   indent: number;
 }) {
   return (
-    <TableRow className="text-sm text-muted-foreground">
-      <NameCell indent={indent}>
-        <span className="shrink-0 tabular-nums">{txn.date}</span>
-        <TruncatedText text={txn.label} className="min-w-0 flex-1" />
-      </NameCell>
-      <TxnCells txn={txn} months={months} direction={direction} />
+    <TableRow className="align-top text-sm text-muted-foreground">
+      <TableCell className="bg-background sticky left-0 z-10 p-0">
+        <div
+          className="flex flex-col gap-1 py-2 pr-2"
+          style={{ width: COL1_W, paddingLeft: `${0.5 + indent * 1.25}rem` }}
+        >
+          <div className="flex items-center gap-1.5 overflow-hidden">
+            <span className="shrink-0 tabular-nums">{txn.date}</span>
+            <TruncatedText text={txn.label} className="min-w-0 flex-1" />
+          </div>
+          <GroupSelectField
+            txnId={txn.id}
+            groups={groups}
+            defaultGroupId={txn.groupId}
+            defaultLineId={txn.lineId}
+          />
+        </div>
+      </TableCell>
+      <TxnCells txn={txn} months={months} />
     </TableRow>
   );
 }
 
-export function HistoryGrid({ months, currentMonth, forecast, sections, overspend, grand }: {
+export function HistoryGrid({ months, currentMonth, forecast, sections, overspend, grand, groups }: {
   months: string[];
   currentMonth: string;
   forecast: AccountForecast;
   sections: HistorySection[];
   overspend: number[];
   grand: MonthCell[];
+  groups: SelectGroup[];
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const isOpen = (k: string) => open.has(k);
@@ -197,13 +219,13 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                     <AmountCells cells={sub.cells} mode={r.direction} />
                   </TableRow>
                   {lOpen && sub.txns.map((t) => (
-                    <TxnRow key={t.id} txn={t} months={months} direction={r.direction} indent={2} />
+                    <TxnRow key={t.id} txn={t} months={months} groups={groups} indent={2} />
                   ))}
                 </Fragment>
               );
             })}
             {r.txns.map((t) => (
-              <TxnRow key={t.id} txn={t} months={months} direction={r.direction} indent={1} />
+              <TxnRow key={t.id} txn={t} months={months} groups={groups} indent={1} />
             ))}
           </>
         )}
@@ -253,23 +275,43 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
         </TableRow>
       </TableHeader>
       <TableBody>
+        {sections.map((sec) => {
+          if (sec.kind === "uncategorized") {
+            const uKey = "s:uncat";
+            const uOpen = isOpen(uKey);
+            const hasTxns = (sec.txns?.length ?? 0) > 0;
+            return (
+              <Fragment key={sec.kind}>
+                <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
+                  <NameCell indent={0} bg={MUTED40} expandable={hasTxns} expanded={uOpen} onToggle={hasTxns ? () => toggle(uKey) : undefined}>
+                    <span className="min-w-0 truncate">Non catégorisés</span>
+                  </NameCell>
+                  <AmountCells cells={sec.totals} mode="total" />
+                </TableRow>
+                {uOpen && sec.txns?.map((t) => (
+                  <TxnRow key={t.id} txn={t} months={months} groups={groups} indent={1} />
+                ))}
+              </Fragment>
+            );
+          }
+          return (
+            <Fragment key={sec.kind}>
+              <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
+                <TableCell className={cn("sticky left-0 z-10 p-0", MUTED40)}>
+                  <FirstColBox>{sec.kind === "envelope" ? "Enveloppes" : "Récurrents"}</FirstColBox>
+                </TableCell>
+                <AmountCells cells={sec.totals} mode="total" />
+              </TableRow>
+              {sec.rows.map(renderGroup)}
+            </Fragment>
+          );
+        })}
         <TableRow className="bg-muted/60 hover:bg-muted/60 font-semibold">
           <TableCell className="sticky left-0 z-10 bg-[color-mix(in_oklab,var(--muted)_60%,var(--background))] p-0">
             <FirstColBox>Total</FirstColBox>
           </TableCell>
           <AmountCells cells={grand} mode="total" />
         </TableRow>
-        {sections.map((sec) => (
-          <Fragment key={sec.kind}>
-            <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
-              <TableCell className="sticky left-0 z-10 bg-[color-mix(in_oklab,var(--muted)_40%,var(--background))] p-0">
-                <FirstColBox>{sec.kind === "envelope" ? "Enveloppes" : "Récurrents"}</FirstColBox>
-              </TableCell>
-              <AmountCells cells={sec.totals} mode="total" />
-            </TableRow>
-            {sec.rows.map(renderGroup)}
-          </Fragment>
-        ))}
       </TableBody>
     </Table>
   );

@@ -10,26 +10,23 @@ type GroupOpt = { id: number; name: string; lines: LineOpt[] };
 // menu déroulant ne les collapse pas.
 const INDENT = "   › ";
 
-// Encodage de la valeur du select :
-//   ""        = Automatique
-//   "none"    = forcé non catégorisé
+// Encodage de la valeur du select (rattachement 100 % manuel) :
+//   ""        = non catégorisé (aucun groupe)
 //   "g:<id>"  = groupe entier
 //   "l:<id>"  = ligne précise d'un récurrent (implique son groupe parent)
-function stateOf(groupId: number | null, lineId: number | null, excluded: boolean): string {
-  if (excluded) return "none";
+function stateOf(groupId: number | null, lineId: number | null): string {
   if (lineId !== null) return `l:${lineId}`;
   if (groupId !== null) return `g:${groupId}`;
   return "";
 }
 
 export function GroupSelectField({
-  txnId, groups, defaultGroupId, defaultLineId, excluded = false,
+  txnId, groups, defaultGroupId, defaultLineId,
 }: {
   txnId: string;
   groups: GroupOpt[];
   defaultGroupId: number | null;
   defaultLineId: number | null;
-  excluded?: boolean;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -42,7 +39,7 @@ export function GroupSelectField({
 
   // Affiche tout de suite le choix (valeur optimiste), puis suit la vérité
   // serveur : quand l'état serveur change après le refresh, on se resynchronise.
-  const server = stateOf(defaultGroupId, defaultLineId, excluded);
+  const server = stateOf(defaultGroupId, defaultLineId);
   const [value, setValue] = useState(server);
   const [prevServer, setPrevServer] = useState(server);
   if (server !== prevServer) {
@@ -60,7 +57,6 @@ export function GroupSelectField({
         setValue(v);
         let groupId: number | null = null;
         let lineId: number | null = null;
-        const isExcluded = v === "none";
         if (v.startsWith("g:")) {
           groupId = Number.parseInt(v.slice(2), 10);
         } else if (v.startsWith("l:")) {
@@ -70,13 +66,12 @@ export function GroupSelectField({
         startTransition(async () => {
           // revalidatePath seul ne rafraîchit pas la vue courante après l'action ;
           // router.refresh() re-télécharge le rendu serveur de façon fiable.
-          await setGroup(txnId, groupId, isExcluded, lineId);
+          await setGroup(txnId, groupId, lineId);
           router.refresh();
         });
       }}
     >
-      <option value="">Automatique</option>
-      <option value="none">Non catégorisé</option>
+      <option value="">Non catégorisé</option>
       {groups.map((g) => (
         <Fragment key={g.id}>
           <option value={`g:${g.id}`}>{g.name}</option>

@@ -54,11 +54,9 @@ export function TransactionsBrowser({ transactions, groups }: { transactions: Tx
     if (res.status === "manual") {
       const base = groupName(res.groupId);
       const ln = t.lineId !== null ? lineName(t.lineId) : null;
-      return ln ? `${base} › ${ln} (manuel)` : `${base} (manuel)`;
+      return ln ? `${base} › ${ln}` : base;
     }
-    if (res.status === "auto") return `${groupName(res.groupId)} (auto)`;
-    if (res.status === "ambiguous") return "à répartir";
-    return "non budgétée";
+    return "non catégorisée";
   };
 
   const accounts = useMemo(() => {
@@ -182,7 +180,7 @@ export function TransactionsBrowser({ transactions, groups }: { transactions: Tx
                       <TruncatedText text={t.label} className="max-w-[380px]" />
                     </TableCell>
                     <TableCell>
-                      <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} excluded={t.excluded} />
+                      <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} />
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       <TruncatedText text={statusLabel(t)} className="max-w-[200px]" />
@@ -237,7 +235,7 @@ export function TransactionsBrowser({ transactions, groups }: { transactions: Tx
                             <TruncatedText text={t.label} className="max-w-[460px]" />
                           </TableCell>
                           <TableCell>
-                            <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} excluded={t.excluded} />
+                            <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} />
                           </TableCell>
                           <TableCell className="text-muted-foreground">
                             <TruncatedText text={statusLabel(t)} className="max-w-[200px]" />

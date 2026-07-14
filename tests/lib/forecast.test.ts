@@ -24,7 +24,7 @@ function tx(p: Partial<Txn>): Txn {
 }
 
 test("envelope: spent via ownership, remaining floored, subtracted from current", () => {
-  const txns = [tx({ id: "t1", amount: -120, label: "CARREFOUR CITY" }), tx({ id: "t2", amount: -30, label: "LECLERC" })];
+  const txns = [tx({ id: "t1", amount: -120, label: "CARREFOUR CITY", groupId: 1 }), tx({ id: "t2", amount: -30, label: "LECLERC", groupId: 1 })];
   const f = computeForecast("a1", 1000, [courses], txns, "2026-07");
   // dépensé 150 / 300 -> reste 150
   expect(f.currentEstimate).toBe(850);
@@ -34,7 +34,7 @@ test("envelope: spent via ownership, remaining floored, subtracted from current"
 });
 
 test("envelope overspend: remaining floored at 0 but spent kept real", () => {
-  const txns = [tx({ id: "t1", amount: -450, label: "CARREFOUR" })];
+  const txns = [tx({ id: "t1", amount: -450, label: "CARREFOUR", groupId: 1 })];
   const f = computeForecast("a1", 1000, [courses], txns, "2026-07");
   expect(f.currentEstimate).toBe(1000);
   const gv = f.groups[0];
@@ -51,7 +51,7 @@ test("no overspend: overspend and prevOverspend are 0", () => {
 });
 
 test("overspend this month only: current overspend set, previous month clean", () => {
-  const txns = [tx({ id: "t1", date: "2026-07-05", amount: -500, label: "CARREFOUR" })];
+  const txns = [tx({ id: "t1", date: "2026-07-05", amount: -500, label: "CARREFOUR", groupId: 1 })];
   const f = computeForecast("a1", 1000, [courses], txns, "2026-07");
   const gv = f.groups[0];
   expect(gv.overspend).toBe(200); // 500 - 300
@@ -60,7 +60,7 @@ test("overspend this month only: current overspend set, previous month clean", (
 });
 
 test("overspend last month only: prev recap set, current month clean", () => {
-  const txns = [tx({ id: "t1", date: "2026-06-10", amount: -500, label: "CARREFOUR" })];
+  const txns = [tx({ id: "t1", date: "2026-06-10", amount: -500, label: "CARREFOUR", groupId: 1 })];
   const f = computeForecast("a1", 1000, [courses], txns, "2026-07");
   const gv = f.groups[0];
   expect(gv.overspend).toBe(0);
@@ -71,8 +71,8 @@ test("overspend last month only: prev recap set, current month clean", () => {
 
 test("overspend both months: current and previous both set", () => {
   const txns = [
-    tx({ id: "t1", date: "2026-07-05", amount: -450, label: "CARREFOUR" }),
-    tx({ id: "t2", date: "2026-06-10", amount: -520, label: "LECLERC" }),
+    tx({ id: "t1", date: "2026-07-05", amount: -450, label: "CARREFOUR", groupId: 1 }),
+    tx({ id: "t2", date: "2026-06-10", amount: -520, label: "LECLERC", groupId: 1 }),
   ];
   const f = computeForecast("a1", 1000, [courses], txns, "2026-07");
   const gv = f.groups[0];
@@ -81,14 +81,14 @@ test("overspend both months: current and previous both set", () => {
 });
 
 test("prevMonthKey handles year boundary (january -> previous december)", () => {
-  const txns = [tx({ id: "t1", date: "2025-12-15", amount: -500, label: "CARREFOUR" })];
+  const txns = [tx({ id: "t1", date: "2025-12-15", amount: -500, label: "CARREFOUR", groupId: 1 })];
   const f = computeForecast("a1", 1000, [courses], txns, "2026-01");
   expect(f.groups[0].prevSpent).toBe(500);
   expect(f.groups[0].prevOverspend).toBe(200);
 });
 
 test("recurring line unseen subtracted; seen ignored; timeline sorted", () => {
-  const txns = [tx({ id: "t1", amount: -10, label: "PRLV SPOTIFY" })]; // Spotify vue
+  const txns = [tx({ id: "t1", amount: -10, label: "PRLV SPOTIFY", groupId: 2, lineId: 11 })]; // Spotify rattachée
   const f = computeForecast("a1", 1000, [abo], txns, "2026-07");
   // Spotify vue -> ignorée ; Netflix non vue -> -15
   expect(f.currentEstimate).toBe(985);
@@ -146,7 +146,7 @@ test("income envelope adds to estimates instead of subtracting", () => {
 });
 
 test("overspend projection: next month keeps the overspend", () => {
-  const txns = [tx({ id: "t1", amount: -450, label: "CARREFOUR" })]; // 450 pour 300 de budget
+  const txns = [tx({ id: "t1", amount: -450, label: "CARREFOUR", groupId: 1 })]; // 450 pour 300 de budget
   const f = computeForecast("a1", 1000, [courses], txns, "2026-07");
   // nextEstimate normal : 1000 - 300 (budget) = 700
   expect(f.nextEstimate).toBe(700);
@@ -164,7 +164,7 @@ test("no overspend: with-overspend estimate equals next estimate", () => {
 });
 
 test("breakdown steps reconstruct both estimates exactly", () => {
-  const txns = [tx({ id: "t1", amount: -120, label: "CARREFOUR" }), tx({ id: "t2", amount: -10, label: "PRLV SPOTIFY" })];
+  const txns = [tx({ id: "t1", amount: -120, label: "CARREFOUR", groupId: 1 }), tx({ id: "t2", amount: -10, label: "PRLV SPOTIFY", groupId: 2, lineId: 11 })];
   const f = computeForecast("a1", 1000, [courses, abo, salaire], txns, "2026-07");
   const sumCurrent = f.currentSteps.reduce((s, x) => s + x.amount, 0);
   const sumNext = f.nextSteps.reduce((s, x) => s + x.amount, 0);

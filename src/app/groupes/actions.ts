@@ -5,8 +5,6 @@ import {
   insertRecurringGroup,
   deleteGroup,
   updateGroup,
-  addKeyword,
-  updateKeyword,
   insertLine,
   updateLine,
   deleteLine,
@@ -58,34 +56,16 @@ export async function editGroup(formData: FormData) {
   refresh();
 }
 
-export async function addGroupKeyword(formData: FormData) {
-  const groupId = Number.parseInt(String(formData.get("groupId")), 10);
-  const keyword = String(formData.get("keyword") ?? "").trim();
-  if (Number.isFinite(groupId) && keyword) addKeyword(db(), groupId, keyword);
-  refresh();
-}
-
-export async function editGroupKeyword(formData: FormData) {
-  const groupId = Number.parseInt(String(formData.get("groupId")), 10);
-  const oldKeyword = String(formData.get("oldKeyword") ?? "").trim();
-  const keyword = String(formData.get("keyword") ?? "").trim();
-  if (Number.isFinite(groupId) && oldKeyword && keyword && oldKeyword !== keyword) {
-    updateKeyword(db(), groupId, oldKeyword, keyword);
-  }
-  refresh();
-}
-
 export async function addLine(formData: FormData) {
   const groupId = Number.parseInt(String(formData.get("groupId")), 10);
   if (!Number.isFinite(groupId)) return;
   const name = String(formData.get("name") ?? "").trim();
-  const keyword = String(formData.get("keyword") ?? "").trim();
-  if (!name || !keyword) return;
+  if (!name) return;
   const parsed = Number.parseFloat(String(formData.get("amount")));
   const amount = Number.isFinite(parsed) ? Math.abs(parsed) : 0;
   const dayParsed = Number.parseInt(String(formData.get("day")), 10);
   if (!Number.isFinite(dayParsed) || dayParsed < 1 || dayParsed > 31) return;
-  insertLine(db(), groupId, name, amount, dayParsed, keyword);
+  insertLine(db(), groupId, name, amount, dayParsed, "");
   refresh();
 }
 
@@ -93,13 +73,12 @@ export async function editLine(formData: FormData) {
   const id = Number.parseInt(String(formData.get("id")), 10);
   if (!Number.isFinite(id)) return;
   const name = String(formData.get("name") ?? "").trim();
-  const keyword = String(formData.get("keyword") ?? "").trim();
-  if (!name || !keyword) return;
+  if (!name) return;
   const parsed = Number.parseFloat(String(formData.get("amount")));
   const amount = Number.isFinite(parsed) ? Math.abs(parsed) : 0;
   const dayParsed = Number.parseInt(String(formData.get("day")), 10);
   if (!Number.isFinite(dayParsed) || dayParsed < 1 || dayParsed > 31) return;
-  updateLine(db(), id, name, amount, dayParsed, keyword);
+  updateLine(db(), id, name, amount, dayParsed, "");
   refresh();
 }
 

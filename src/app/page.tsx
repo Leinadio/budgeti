@@ -26,8 +26,7 @@ export default function Dashboard() {
       { id: t.id, date: t.date, amount: t.amount, label: t.label, accountId: t.accountId, groupId: t.groupId, excluded: t.excluded },
       ownable,
     );
-    if (res.status === "manual" || res.status === "auto") return groups.find((g) => g.id === res.groupId)?.name ?? "";
-    if (res.status === "ambiguous") return "à répartir";
+    if (res.status === "manual") return groups.find((g) => g.id === res.groupId)?.name ?? "";
     return "";
   };
 
