@@ -112,3 +112,11 @@ export function migrateReconcileIgnored(db: Database.Database): void {
     PRIMARY KEY (manual_id, synced_id)
   )`);
 }
+
+// Ajoute income_kind aux groupes : classe une entrée en revenu « principal » ou
+// « supplementary ». NULL pour une dépense ou un groupe non-revenu. Idempotent.
+export function migrateGroupIncomeKind(db: Database.Database): void {
+  const cols = db.prepare("PRAGMA table_info(groups)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "income_kind"))
+    db.exec(`ALTER TABLE groups ADD COLUMN income_kind TEXT`);
+}
