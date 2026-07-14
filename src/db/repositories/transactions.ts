@@ -109,3 +109,37 @@ export function insertManualTransaction(db: Database.Database, input: ManualTxnI
   });
   return id;
 }
+
+// Édite une transaction manuelle (garde-fou : n'agit que sur manual = 1).
+export function updateManualTransaction(
+  db: Database.Database,
+  id: string,
+  input: Omit<ManualTxnInput, "accountId">,
+): void {
+  db.prepare(
+    `UPDATE transactions SET date=@date, amount=@amount, label=@label, group_id=@group_id, line_id=@line_id, income_kind=@income_kind
+     WHERE id=@id AND manual=1`,
+  ).run({
+    id,
+    date: input.date,
+    amount: input.amount,
+    label: input.label,
+    group_id: input.groupId,
+    line_id: input.lineId,
+    income_kind: input.incomeKind,
+  });
+}
+
+// Supprime une transaction manuelle (garde-fou : n'agit que sur manual = 1).
+export function deleteManualTransaction(db: Database.Database, id: string): void {
+  db.prepare("DELETE FROM transactions WHERE id=? AND manual=1").run(id);
+}
+
+// Étiquette une entrée principale/supplémentaire (ou retire l'étiquette).
+export function setIncomeKind(
+  db: Database.Database,
+  id: string,
+  kind: "principal" | "supplementary" | null,
+): void {
+  db.prepare("UPDATE transactions SET income_kind=? WHERE id=?").run(kind, id);
+}
