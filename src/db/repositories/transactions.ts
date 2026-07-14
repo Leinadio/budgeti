@@ -25,6 +25,8 @@ export type TxnView = {
   note: string | null;
 };
 
+export type ReconcileSuggestion = { manual: TxnView; synced: TxnView };
+
 export function upsertTransaction(db: Database.Database, t: TxnRow): number {
   const result = db.prepare(
     `INSERT OR IGNORE INTO transactions (id, account_id, date, amount, label, category_id)
@@ -142,4 +144,34 @@ export function setIncomeKind(
   kind: "principal" | "supplementary" | null,
 ): void {
   db.prepare("UPDATE transactions SET income_kind=? WHERE id=?").run(kind, id);
+}
+
+// Écart en jours entre deux dates "YYYY-MM-DD" (UTC, pur calendaire).
+function dayDiff(a: string, b: string): number {
+  const da = Date.parse(a + "T00:00:00Z");
+  const db2 = Date.parse(b + "T00:00:00Z");
+  return Math.round((da - db2) / 86_400_000);
+}
+
+// Paires (manuelle, synchronisée) probablement identiques : même compte, même
+// montant, dates à windowDays près, non déjà écartées.
+export function findReconcileSuggestions(db: Database.Database, windowDays = 5): ReconcileSuggestion[] {
+  const all = listTransactions(db);
+  const manuals = all.filter((t) => t.manual);
+  const synced = all.filter((t) => !t.manual);
+  const ignored = new Set(
+    (db.prepare("SELECT manual_id, synced_id FROM reconcile_ignored").all() as { manual_id: string; synced_id: string }[])
+      .map((r) => `${r.manual_id}|${r.synced_id}`),
+  );
+  const out: ReconcileSuggestion[] = [];
+  for (const m of manuals) {
+    for (const s of synced) {
+      if (s.accountId !== m.accountId) continue;
+      if (s.amount !== m.amount) continue;
+      if (Math.abs(dayDiff(m.date, s.date)) > windowDays) continue;
+      if (ignored.has(`${m.id}|${s.id}`)) continue;
+      out.push({ manual: m, synced: s });
+    }
+  }
+  return out;
 }
