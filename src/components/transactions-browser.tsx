@@ -19,6 +19,8 @@ import { Button } from "@/components/ui/button";
 import { GroupSelectField } from "@/components/group-select-field";
 import { TruncatedText } from "@/components/truncated-text";
 import { AddTransactionSheet } from "@/components/add-transaction-sheet";
+import { Badge } from "@/components/ui/badge";
+import { ManualTxnActions } from "@/components/manual-txn-actions";
 
 type ClientGroup = OwnableGroup & { name: string; lines: { id: number; name: string }[] };
 
@@ -34,6 +36,16 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
     });
   const ownable: OwnableGroup[] = groups;
   const formGroups = groups.map((g) => ({ id: g.id, name: g.name, accountId: g.accountId, direction: g.direction }));
+
+  const renderLabel = (t: TxnView) => (
+    <span className="flex flex-col gap-0.5">
+      <span className="flex items-center gap-1.5">
+        <TruncatedText text={t.label} className="max-w-[380px]" />
+        {t.manual && <Badge variant="outline">manuel · en attente</Badge>}
+      </span>
+      {t.note && <span className="text-muted-foreground text-xs">{t.note}</span>}
+    </span>
+  );
 
   const groupName = (id: number) => groups.find((g) => g.id === id)?.name ?? "?";
   const groupsOfAccount = (accountId: string) =>
@@ -174,21 +186,20 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
                 <TableHead>Groupe</TableHead>
                 <TableHead>Appartenance</TableHead>
                 <TableHead className="text-right">Montant</TableHead>
+                <TableHead className="text-right"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {results.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-muted-foreground">Aucun résultat.</TableCell>
+                  <TableCell colSpan={7} className="text-muted-foreground">Aucun résultat.</TableCell>
                 </TableRow>
               ) : (
                 results.map((t) => (
                   <TableRow key={t.id}>
                     <TableCell className="text-muted-foreground whitespace-nowrap">{t.date}</TableCell>
                     <TableCell className="text-muted-foreground whitespace-nowrap">{t.accountLabel}</TableCell>
-                    <TableCell>
-                      <TruncatedText text={t.label} className="max-w-[380px]" />
-                    </TableCell>
+                    <TableCell>{renderLabel(t)}</TableCell>
                     <TableCell>
                       <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} />
                     </TableCell>
@@ -196,6 +207,9 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
                       <TruncatedText text={statusLabel(t)} className="max-w-[200px]" />
                     </TableCell>
                     <TableCell className="text-right font-medium whitespace-nowrap">{formatEur(t.amount)}</TableCell>
+                    <TableCell className="text-right">
+                      {t.manual && <ManualTxnActions txn={t} accounts={accounts} groups={formGroups} />}
+                    </TableCell>
                   </TableRow>
                 ))
               )}
@@ -221,6 +235,7 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
                     <TableHead>Groupe</TableHead>
                     <TableHead>Appartenance</TableHead>
                     <TableHead className="text-right">Montant</TableHead>
+                    <TableHead className="text-right"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -230,7 +245,7 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
                     return (
                     <Fragment key={m.month}>
                       <TableRow className="cursor-pointer hover:bg-muted/50" onClick={() => toggleMonth(key)}>
-                        <TableCell colSpan={5} className="text-muted-foreground text-sm font-medium">
+                        <TableCell colSpan={6} className="text-muted-foreground text-sm font-medium">
                           <span className="flex items-center gap-1.5">
                             {isCollapsed ? <ChevronRight className="size-4" /> : <ChevronDown className="size-4" />}
                             {m.label}
@@ -241,9 +256,7 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
                       {!isCollapsed && m.items.map((t) => (
                         <TableRow key={t.id}>
                           <TableCell className="text-muted-foreground">{t.date}</TableCell>
-                          <TableCell>
-                            <TruncatedText text={t.label} className="max-w-[460px]" />
-                          </TableCell>
+                          <TableCell>{renderLabel(t)}</TableCell>
                           <TableCell>
                             <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} />
                           </TableCell>
@@ -251,6 +264,9 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
                             <TruncatedText text={statusLabel(t)} className="max-w-[200px]" />
                           </TableCell>
                           <TableCell className="text-right font-medium">{formatEur(t.amount)}</TableCell>
+                          <TableCell className="text-right">
+                            {t.manual && <ManualTxnActions txn={t} accounts={accounts} groups={formGroups} />}
+                          </TableCell>
                         </TableRow>
                       ))}
                     </Fragment>
