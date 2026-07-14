@@ -18,10 +18,11 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { GroupSelectField } from "@/components/group-select-field";
 import { TruncatedText } from "@/components/truncated-text";
+import { AddTransactionSheet } from "@/components/add-transaction-sheet";
 
 type ClientGroup = OwnableGroup & { name: string; lines: { id: number; name: string }[] };
 
-export function TransactionsBrowser({ transactions, groups }: { transactions: TxnView[]; groups: ClientGroup[] }) {
+export function TransactionsBrowser({ transactions, groups, accounts }: { transactions: TxnView[]; groups: ClientGroup[]; accounts: { id: string; label: string }[] }) {
   const [filters, setFilters] = useState<TxnFilters>(EMPTY_FILTERS);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const toggleMonth = (key: string) =>
@@ -32,6 +33,7 @@ export function TransactionsBrowser({ transactions, groups }: { transactions: Tx
       return next;
     });
   const ownable: OwnableGroup[] = groups;
+  const formGroups = groups.map((g) => ({ id: g.id, name: g.name, accountId: g.accountId, direction: g.direction }));
 
   const groupName = (id: number) => groups.find((g) => g.id === id)?.name ?? "?";
   const groupsOfAccount = (accountId: string) =>
@@ -59,7 +61,7 @@ export function TransactionsBrowser({ transactions, groups }: { transactions: Tx
     return "non catégorisée";
   };
 
-  const accounts = useMemo(() => {
+  const accountTxnGroups = useMemo(() => {
     const byAccount = new Map<string, { label: string; items: TxnView[] }>();
     for (const t of transactions) {
       const g = byAccount.get(t.accountId) ?? { label: t.accountLabel ?? "Compte", items: [] };
@@ -82,14 +84,22 @@ export function TransactionsBrowser({ transactions, groups }: { transactions: Tx
 
   if (transactions.length === 0) {
     return (
-      <p className="text-muted-foreground text-sm">
-        Aucune transaction. Va dans Réglages pour synchroniser.
-      </p>
+      <div className="flex flex-col gap-4">
+        <div className="flex justify-end">
+          <AddTransactionSheet accounts={accounts} groups={formGroups} />
+        </div>
+        <p className="text-muted-foreground text-sm">
+          Aucune transaction synchronisée. Ajoute-en une à la main ou synchronise dans Réglages.
+        </p>
+      </div>
     );
   }
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex justify-end">
+        <AddTransactionSheet accounts={accounts} groups={formGroups} />
+      </div>
       <div className="flex flex-wrap items-center gap-2">
         <Input
           placeholder="Rechercher un libellé…"
@@ -193,15 +203,15 @@ export function TransactionsBrowser({ transactions, groups }: { transactions: Tx
           </Table>
         </div>
       ) : (
-        <Tabs defaultValue={accounts[0]?.[0]}>
+        <Tabs defaultValue={accountTxnGroups[0]?.[0]}>
           <TabsList>
-            {accounts.map(([accountId, group]) => (
+            {accountTxnGroups.map(([accountId, group]) => (
               <TabsTrigger key={accountId} value={accountId}>
                 {group.label}
               </TabsTrigger>
             ))}
           </TabsList>
-          {accounts.map(([accountId, group]) => (
+          {accountTxnGroups.map(([accountId, group]) => (
             <TabsContent key={accountId} value={accountId}>
               <Table>
                 <TableHeader>
