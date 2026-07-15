@@ -2,10 +2,9 @@
 import { Fragment, useState } from "react";
 import { ArrowUpRight, ArrowDownRight, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatEur } from "@/lib/money";
 import { monthLabel } from "@/lib/transactions-view";
 import type { AccountForecast } from "@/lib/forecast";
-import { monthsDiff, type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn, type SoldeColumn } from "@/lib/history";
+import { type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn, type SoldeColumn } from "@/lib/history";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TruncatedText } from "@/components/truncated-text";
 import { GroupSelectField } from "@/components/group-select-field";
@@ -85,41 +84,6 @@ function TxnCells({ txn, months }: { txn: HistoryTxn; months: string[] }) {
         );
       })}
     </>
-  );
-}
-
-// Estimés du forecast rattachés à leur mois : le mois courant reçoit le solde et
-// l'estimé fin de mois ; chaque mois futur reçoit une projection linéaire
-// (le net mensuel du forecast répété), avec sa variante « dépassements maintenus ».
-function ForecastCard({ month, currentMonth, f, overspend }: {
-  month: string;
-  currentMonth: string;
-  f: AccountForecast;
-  overspend: number;
-}) {
-  let estimates: [string, number][] = [];
-  if (month === currentMonth) {
-    estimates = [["Solde actuel", f.balance], ["Estimé fin de mois", f.currentEstimate]];
-  } else if (month > currentMonth) {
-    const k = monthsDiff(currentMonth, month); // nombre de mois après le mois courant (>=1)
-    const monthlyNet = f.nextEstimate - f.currentEstimate; // net d'un mois de budgets
-    const estime = f.currentEstimate + k * monthlyNet;
-    const maintenu = estime - k * f.overspendTotal; // dépassements répétés chaque mois
-    estimates = [["Estimé", estime], ["Dépassements maintenus", maintenu]];
-  }
-  return (
-    <div className="flex flex-col gap-0.5 py-1 text-xs font-normal normal-case">
-      {estimates.map(([label, value]) => (
-        <div key={label} className="flex justify-between gap-3">
-          <span className="text-muted-foreground">{label}</span>
-          <span className={cn("font-semibold tabular-nums", value < 0 && "text-red-600")}>{formatEur(value)}</span>
-        </div>
-      ))}
-      <div className="flex justify-between gap-3">
-        <span className="text-muted-foreground">Dépassement</span>
-        <span className="font-semibold tabular-nums text-red-600">{overspend > 0 ? formatEur(overspend) : "—"}</span>
-      </div>
-    </div>
   );
 }
 
@@ -253,16 +217,9 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead rowSpan={3} className="bg-background sticky left-0 z-10 p-0 align-bottom">
+          <TableHead rowSpan={2} className="bg-background sticky left-0 z-10 p-0 align-bottom">
             <FirstColBox>Catégorie</FirstColBox>
           </TableHead>
-          {months.map((m, i) => (
-            <TableHead key={m} colSpan={5} className="border-l align-bottom font-normal">
-              <ForecastCard month={m} currentMonth={currentMonth} f={forecast} overspend={overspend[i]} />
-            </TableHead>
-          ))}
-        </TableRow>
-        <TableRow>
           {months.map((m) => (
             <TableHead
               key={m}
@@ -346,6 +303,42 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
             <FirstColBox>Solde actuel</FirstColBox>
           </TableCell>
           <AmountCells cells={grand} mode="total" solde={solde.closings} />
+        </TableRow>
+        {/* Estimé fin de mois : uniquement le mois courant (où « maintenant » et
+            « fin de mois » diffèrent) ; les mois futurs ont déjà leur solde projeté
+            sur la ligne « Solde actuel ». */}
+        <TableRow className="text-sm">
+          <TableCell className="bg-background sticky left-0 z-10 p-0">
+            <FirstColBox><span className="text-muted-foreground">Estimé fin de mois</span></FirstColBox>
+          </TableCell>
+          {months.map((m, i) => (
+            <Fragment key={i}>
+              <TableCell className="border-l" />
+              <TableCell />
+              <TableCell />
+              <TableCell />
+              <TableCell className={cn("text-right tabular-nums", forecast.currentEstimate < 0 && "text-red-600")}>
+                {m === currentMonth ? fmt(forecast.currentEstimate) : ""}
+              </TableCell>
+            </Fragment>
+          ))}
+        </TableRow>
+        {/* Dépassement : total des dépassements de budget (somme des Reste rouges). */}
+        <TableRow className="text-sm">
+          <TableCell className="bg-background sticky left-0 z-10 p-0">
+            <FirstColBox><span className="text-muted-foreground">Dépassement</span></FirstColBox>
+          </TableCell>
+          {months.map((_, i) => (
+            <Fragment key={i}>
+              <TableCell className="border-l" />
+              <TableCell />
+              <TableCell />
+              <TableCell className={cn("text-right tabular-nums", overspend[i] > 0 && "text-red-600")}>
+                {overspend[i] > 0 ? fmt(overspend[i]) : "—"}
+              </TableCell>
+              <TableCell />
+            </Fragment>
+          ))}
         </TableRow>
       </TableBody>
     </Table>
