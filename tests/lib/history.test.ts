@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff } from "../../src/lib/history";
+import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde } from "../../src/lib/history";
 import type { Group, Txn } from "../../src/lib/forecast";
 
 const courses: Group = {
@@ -209,4 +209,68 @@ test("no uncategorized section when every transaction has a group", () => {
   const txns = [tx({ id: "1", date: "2026-07-05", amount: -40, label: "X", groupId: 1 })];
   const sections = computeHistory([courses], txns, ["2026-07"], "2026-07");
   expect(sections.some((s) => s.kind === "uncategorized")).toBe(false);
+});
+
+const salaire: Group = {
+  id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "envelope",
+  monthlyAmount: 2000, keywords: ["REMU"], lines: [],
+};
+
+test("computeSolde: le bas du mois courant colle au solde de la banque", () => {
+  const txns = [
+    tx({ id: "1", date: "2026-07-01", amount: 2000, label: "VIR REMU", groupId: 9 }),
+    tx({ id: "2", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
+  ];
+  const months = ["2026-07"];
+  const sections = computeHistory([salaire, courses], txns, months, "2026-07");
+  const solde = computeSolde(sections, months, "2026-07", 1500);
+  // net juillet = 2000 - 120 = 1880 ; ouverture = 1500 - 1880 = -380
+  expect(solde.closings[0]).toBe(1500);
+  expect(solde.openings[0]).toBe(-380);
+  // rémunération d'abord (-380 + 2000 = 1620), puis dépense (1620 - 120 = 1500)
+  expect(solde.rowRunning[9][0]).toBe(1620);
+  expect(solde.rowRunning[1][0]).toBe(1500);
+});
+
+test("computeSolde: les mois s'enchaînent (fin du mois N = début du mois N+1)", () => {
+  const txns = [
+    tx({ id: "1", date: "2026-06-10", amount: -100, label: "CARREFOUR", groupId: 1 }),
+    tx({ id: "2", date: "2026-07-01", amount: 2000, label: "VIR REMU", groupId: 9 }),
+    tx({ id: "3", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
+  ];
+  const months = ["2026-06", "2026-07"];
+  const sections = computeHistory([salaire, courses], txns, months, "2026-07");
+  const solde = computeSolde(sections, months, "2026-07", 1500);
+  expect(solde.closings[1]).toBe(1500);
+  expect(solde.openings[1]).toBe(-380); // 1500 - 1880
+  expect(solde.closings[0]).toBe(solde.openings[1]); // enchaînement
+  expect(solde.openings[0]).toBe(-280); // -380 - (-100)
+});
+
+test("computeSolde: un mois futur part du solde de fin du mois courant", () => {
+  const txns = [
+    tx({ id: "1", date: "2026-07-01", amount: 2000, label: "VIR REMU", groupId: 9 }),
+    tx({ id: "2", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
+  ];
+  const months = ["2026-07", "2026-08"];
+  const sections = computeHistory([salaire, courses], txns, months, "2026-07");
+  const solde = computeSolde(sections, months, "2026-07", 1500);
+  // août projeté : salaire reçu 2000, courses dépensé = budget 300 -> net 1700
+  expect(solde.openings[1]).toBe(1500); // = fin de juillet
+  expect(solde.closings[1]).toBe(3200); // 1500 + 1700
+});
+
+test("computeSolde: fenêtre entièrement future ancre l'ouverture sur le solde d'aujourd'hui", () => {
+  const txns = [
+    tx({ id: "1", date: "2026-07-01", amount: 2000, label: "VIR REMU", groupId: 9 }),
+    tx({ id: "2", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
+  ];
+  const months = ["2026-08", "2026-09"];
+  const sections = computeHistory([salaire, courses], txns, months, "2026-07");
+  const solde = computeSolde(sections, months, "2026-07", 1500);
+  // chaque mois futur : salaire 2000 reçu, courses budget 300 -> net 1700
+  expect(solde.openings[0]).toBe(1500); // = solde d'aujourd'hui
+  expect(solde.closings[0]).toBe(3200); // 1500 + 1700
+  expect(solde.openings[1]).toBe(3200); // enchaînement
+  expect(solde.closings[1]).toBe(4900); // 3200 + 1700
 });
