@@ -59,7 +59,8 @@ CREATE TABLE IF NOT EXISTS groups (
   name TEXT NOT NULL,
   direction TEXT NOT NULL CHECK (direction IN ('in', 'out')),
   kind TEXT NOT NULL CHECK (kind IN ('envelope', 'recurring')),
-  monthly_amount REAL
+  monthly_amount REAL,
+  income_kind TEXT                 -- 'principal' | 'supplementary' | NULL (revenu)
 );
 
 CREATE TABLE IF NOT EXISTS group_lines (

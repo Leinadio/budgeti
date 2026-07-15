@@ -20,6 +20,7 @@ export type Group = {
   monthlyAmount: number | null;
   keywords: string[];
   lines: GroupLine[];
+  incomeKind?: "principal" | "supplementary" | null;
 };
 
 export type Txn = {

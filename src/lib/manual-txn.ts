@@ -18,13 +18,12 @@ export function isValidManualForm(f: ManualFormInput): boolean {
   return true;
 }
 
-// Normalise le formulaire vers l'entrée repository : signe le montant, force
-// income_kind (null pour une sortie, principal par défaut pour une entrée),
+// Normalise le formulaire vers l'entrée repository : signe le montant,
 // libellé par défaut si vide.
 export function toManualInput(f: ManualFormInput): ManualTxnInput {
   const magnitude = Math.abs(f.amount);
   const amount = f.direction === "in" ? magnitude : -magnitude;
   const label = f.label.trim() || (f.direction === "in" ? "Entrée manuelle" : "Sortie manuelle");
-  const incomeKind = f.direction === "in" ? (f.incomeKind ?? "principal") : null;
+  const incomeKind = null;
   return { accountId: f.accountId, date: f.date, amount, label, groupId: f.groupId, lineId: f.lineId, incomeKind };
 }

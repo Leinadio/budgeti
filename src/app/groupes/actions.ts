@@ -21,14 +21,22 @@ function refresh() {
 export async function addGroup(formData: FormData) {
   const accountId = String(formData.get("accountId") ?? "").trim();
   const name = String(formData.get("name") ?? "").trim();
-  const direction = String(formData.get("direction") ?? "");
-  const kind = String(formData.get("kind") ?? "");
-  if (!accountId || !name || (direction !== "in" && direction !== "out")) return;
-  if (kind === "envelope") {
-    const parsed = Number.parseFloat(String(formData.get("monthlyAmount")));
-    insertEnvelopeGroup(db(), accountId, name, direction, Number.isFinite(parsed) ? Math.abs(parsed) : 0);
-  } else if (kind === "recurring") {
-    insertRecurringGroup(db(), accountId, name, direction);
+  const nature = String(formData.get("nature") ?? "");
+  if (!accountId || !name) return;
+  if (nature === "principal") {
+    insertRecurringGroup(db(), accountId, name, "in", "principal");
+  } else if (nature === "supplementary") {
+    insertEnvelopeGroup(db(), accountId, name, "in", 0, "supplementary");
+  } else if (nature === "expense") {
+    const kind = String(formData.get("kind") ?? "");
+    if (kind === "envelope") {
+      const parsed = Number.parseFloat(String(formData.get("monthlyAmount")));
+      insertEnvelopeGroup(db(), accountId, name, "out", Number.isFinite(parsed) ? Math.abs(parsed) : 0, null);
+    } else if (kind === "recurring") {
+      insertRecurringGroup(db(), accountId, name, "out", null);
+    } else {
+      return;
+    }
   } else {
     return;
   }

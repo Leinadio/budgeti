@@ -13,9 +13,9 @@ test("toManualInput signs amount by direction and clears incomeKind for expenses
   expect(out.incomeKind).toBeNull();
 });
 
-test("toManualInput defaults incomeKind to principal and label when missing", () => {
+test("toManualInput defaults incomeKind to null and label when missing", () => {
   const r = toManualInput({ ...base, incomeKind: null, label: "  " });
-  expect(r.incomeKind).toBe("principal");
+  expect(r.incomeKind).toBeNull();
   expect(r.label).toBe("Entrée manuelle");
 });
 

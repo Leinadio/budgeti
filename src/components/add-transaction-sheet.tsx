@@ -26,14 +26,13 @@ export function AddTransactionSheet({ accounts, groups, edit }: { accounts: Acco
   const [amount, setAmount] = useState(edit ? String(Math.abs(edit.amount)) : "");
   const [label, setLabel] = useState(edit?.label ?? "");
   const [groupId, setGroupId] = useState<number | null>(edit?.groupId ?? null);
-  const [incomeKind, setIncomeKind] = useState<"principal" | "supplementary">(edit?.incomeKind ?? "principal");
 
   const groupChoices = groups.filter((g) => g.accountId === accountId && g.direction === direction);
 
   const submit = () => {
     const form: ManualFormInput = {
       accountId, date, direction, amount: Number(amount.replace(",", ".")),
-      label, groupId, lineId: null, incomeKind: direction === "in" ? incomeKind : null,
+      label, groupId, lineId: null, incomeKind: null,
     };
     startTransition(async () => {
       if (edit) await editTransaction(edit.id, form);
@@ -97,17 +96,6 @@ export function AddTransactionSheet({ accounts, groups, edit }: { accounts: Acco
               {groupChoices.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
             </select>
           </label>
-
-          {direction === "in" && (
-            <label className="flex flex-col gap-1 text-sm">
-              Type de rémunération
-              <select value={incomeKind} onChange={(e) => setIncomeKind(e.target.value as "principal" | "supplementary")}
-                className="border-input bg-background h-9 rounded-md border px-3 text-sm">
-                <option value="principal">Principale</option>
-                <option value="supplementary">Supplémentaire</option>
-              </select>
-            </label>
-          )}
 
           <Button onClick={submit} disabled={isPending || !accountId || !date || !amount}>
             {edit ? "Enregistrer" : "Ajouter"}

@@ -5,7 +5,6 @@ import {
   insertManualTransaction,
   updateManualTransaction,
   deleteManualTransaction,
-  setIncomeKind as setIncomeKindRepo,
   mergeTransactions,
   ignoreMatch as ignoreMatchRepo,
 } from "../../db/repositories/transactions";
@@ -45,11 +44,6 @@ export async function editTransaction(id: string, form: ManualFormInput) {
 
 export async function removeTransaction(id: string) {
   deleteManualTransaction(db(), id);
-  revalidateAll();
-}
-
-export async function setIncomeKind(id: string, kind: "principal" | "supplementary" | null) {
-  setIncomeKindRepo(db(), id, kind);
   revalidateAll();
 }
 

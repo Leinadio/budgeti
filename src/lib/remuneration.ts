@@ -25,7 +25,7 @@ function toOwnable(g: Group): OwnableGroup {
 // lectures. Seules les transactions rattachées à un groupe comptent.
 export function monthRemuneration(groups: Group[], txns: Txn[], month: string): MonthRemuneration {
   const ownable = groups.map(toOwnable);
-  const dirById = new Map(groups.map((g) => [g.id, g.direction] as const));
+  const byId = new Map(groups.map((g) => [g.id, g] as const));
   let principal = 0;
   let supplementary = 0;
   let expenses = 0;
@@ -34,13 +34,12 @@ export function monthRemuneration(groups: Group[], txns: Txn[], month: string): 
     const o: OwnedTxn = { id: t.id, date: t.date, amount: t.amount, label: t.label, accountId: t.accountId, groupId: t.groupId, excluded: t.excluded };
     const res = resolveOwnership(o, ownable);
     if (res.status !== "manual") continue;
-    const dir = dirById.get(res.groupId);
-    if (dir === "in") {
-      if (t.incomeKind === "supplementary") supplementary += Math.abs(t.amount);
-      else principal += Math.abs(t.amount);
-    } else if (dir === "out") {
-      expenses += Math.abs(t.amount);
-    }
+    const g = byId.get(res.groupId);
+    if (!g) continue;
+    // La classe de revenu vient du groupe, et non plus de l'étiquette de transaction.
+    if (g.incomeKind === "principal") principal += Math.abs(t.amount);
+    else if (g.incomeKind === "supplementary") supplementary += Math.abs(t.amount);
+    else if (g.direction === "out") expenses += Math.abs(t.amount);
   }
   return {
     month,

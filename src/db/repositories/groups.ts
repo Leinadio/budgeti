@@ -15,6 +15,7 @@ export type GroupRow = {
   direction: "in" | "out";
   kind: "envelope" | "recurring";
   monthlyAmount: number | null;
+  incomeKind: "principal" | "supplementary" | null;
   keywords: string[];
   lines: GroupLineRow[];
 };
@@ -22,16 +23,17 @@ export type GroupRow = {
 export function listGroups(db: Database.Database): GroupRow[] {
   const groups = db
     .prepare(
-      `SELECT id, account_id AS accountId, name, direction, kind, monthly_amount AS monthlyAmount
+      `SELECT id, account_id AS accountId, name, direction, kind, monthly_amount AS monthlyAmount, income_kind AS incomeKind
        FROM groups ORDER BY name`,
     )
-    .all() as Omit<GroupRow, "keywords" | "lines">[];
+    .all() as (Omit<GroupRow, "keywords" | "lines" | "incomeKind"> & { incomeKind: string | null })[];
   const kwStmt = db.prepare(`SELECT keyword FROM group_keywords WHERE group_id = ? ORDER BY id`);
   const lineStmt = db.prepare(
     `SELECT id, name, amount, day, keyword FROM group_lines WHERE group_id = ? ORDER BY id`,
   );
   return groups.map((g) => ({
     ...g,
+    incomeKind: g.incomeKind === "principal" || g.incomeKind === "supplementary" ? g.incomeKind : null,
     keywords: (kwStmt.all(g.id) as { keyword: string }[]).map((r) => r.keyword),
     lines: lineStmt.all(g.id) as GroupLineRow[],
   }));
@@ -43,12 +45,13 @@ export function insertEnvelopeGroup(
   name: string,
   direction: "in" | "out",
   monthlyAmount: number,
+  incomeKind: "principal" | "supplementary" | null = null,
 ): number {
   const info = db
     .prepare(
-      `INSERT INTO groups (account_id, name, direction, kind, monthly_amount) VALUES (?, ?, ?, 'envelope', ?)`,
+      `INSERT INTO groups (account_id, name, direction, kind, monthly_amount, income_kind) VALUES (?, ?, ?, 'envelope', ?, ?)`,
     )
-    .run(accountId, name, direction, monthlyAmount);
+    .run(accountId, name, direction, monthlyAmount, incomeKind);
   return Number(info.lastInsertRowid);
 }
 
@@ -57,12 +60,13 @@ export function insertRecurringGroup(
   accountId: string,
   name: string,
   direction: "in" | "out",
+  incomeKind: "principal" | "supplementary" | null = null,
 ): number {
   const info = db
     .prepare(
-      `INSERT INTO groups (account_id, name, direction, kind, monthly_amount) VALUES (?, ?, ?, 'recurring', NULL)`,
+      `INSERT INTO groups (account_id, name, direction, kind, monthly_amount, income_kind) VALUES (?, ?, ?, 'recurring', NULL, ?)`,
     )
-    .run(accountId, name, direction);
+    .run(accountId, name, direction, incomeKind);
   return Number(info.lastInsertRowid);
 }
 

@@ -119,3 +119,23 @@ test("migrateReconcileIgnored creates the table idempotently", () => {
   db.prepare("INSERT INTO reconcile_ignored (manual_id, synced_id) VALUES ('m1', 's1')").run();
   expect(db.prepare("SELECT COUNT(*) AS n FROM reconcile_ignored").get()).toEqual({ n: 1 });
 });
+
+import { migrateGroupIncomeKind } from "../../src/db/migrations";
+
+test("migrateGroupIncomeKind adds income_kind to groups idempotently", () => {
+  const db = new Database(":memory:");
+  db.exec(`
+    CREATE TABLE groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, account_id TEXT NOT NULL, name TEXT NOT NULL,
+      direction TEXT NOT NULL, kind TEXT NOT NULL, monthly_amount REAL
+    );
+    INSERT INTO groups (account_id, name, direction, kind, monthly_amount)
+      VALUES ('a1', 'Courses', 'out', 'envelope', 300);
+  `);
+  migrateGroupIncomeKind(db);
+  const cols = db.prepare("PRAGMA table_info(groups)").all() as { name: string }[];
+  expect(cols.some((c) => c.name === "income_kind")).toBe(true);
+  expect(db.prepare("SELECT income_kind FROM groups WHERE name='Courses'").get()).toEqual({ income_kind: null });
+  migrateGroupIncomeKind(db); // idempotent
+  expect(db.prepare("SELECT COUNT(*) AS n FROM groups").get()).toEqual({ n: 1 });
+});
