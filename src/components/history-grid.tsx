@@ -8,10 +8,22 @@ import { type MonthCell, type HistorySection, type HistoryRow, type HistorySubRo
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TruncatedText } from "@/components/truncated-text";
 import { GroupSelectField } from "@/components/group-select-field";
+import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover";
+import { type CellExplanation, type ExplanationStep, resteExplanation, sumExplanation, runningExplanation, soldeActuelExplanation } from "@/lib/history-explain";
 
 // Groupes du compte, pour le menu de (ré)assignation sur chaque transaction.
 type SelectGroup = { id: number; name: string; lines: { id: number; name: string }[] };
 const MUTED40 = "bg-[color-mix(in_oklab,var(--muted)_40%,var(--background))]";
+
+// Libellé affiché pour une section, dans le détail par section (ex. « Solde actuel »).
+function labelOfSection(kind: HistorySection["kind"]): string {
+  switch (kind) {
+    case "income": return "Rémunérations";
+    case "recurring": return "Récurrents";
+    case "envelope": return "Enveloppes";
+    case "uncategorized": return "Non catégorisés";
+  }
+}
 
 const NUM = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmt = (n: number) => NUM.format(Math.abs(n) < 0.005 ? 0 : n).replace(/[  ]/g, " ");
@@ -34,28 +46,103 @@ function FirstColBox({ children, indent = 0 }: { children: React.ReactNode; inde
   );
 }
 
+// Contenu du popover : titre, étapes signées, total en gras.
+function ExplanationContent({ e }: { e: CellExplanation }) {
+  const money = (n: number) => (
+    <span className={cn("tabular-nums whitespace-nowrap", n < 0 && "text-red-600")}>{fmt(n)}</span>
+  );
+  return (
+    <div className="flex flex-col gap-1 text-sm">
+      <div className="font-medium">{e.title}</div>
+      <div className="mt-1 flex flex-col gap-0.5">
+        {e.steps.map((s, i) => (
+          <div key={i} className="flex items-baseline justify-between gap-4">
+            <span className="text-muted-foreground">{s.label}</span>
+            {money(s.amount)}
+          </div>
+        ))}
+      </div>
+      <div className="mt-1 flex items-baseline justify-between gap-4 border-t pt-1 font-semibold">
+        <span>Total</span>
+        {money(e.result)}
+      </div>
+      {e.note && <p className="text-muted-foreground mt-1 text-xs">{e.note}</p>}
+    </div>
+  );
+}
+
+// Cellule de montant : cliquable (popover) si une explication est fournie.
+function CellAmount({ children, className, explanation }: {
+  children: React.ReactNode;
+  className?: string;
+  explanation?: CellExplanation | null;
+}) {
+  if (!explanation) return <TableCell className={className}>{children}</TableCell>;
+  return (
+    <TableCell className={className}>
+      <Popover>
+        <PopoverTrigger asChild>
+          <button type="button" className="cursor-pointer decoration-dotted underline-offset-2 hover:underline">
+            {children}
+          </button>
+        </PopoverTrigger>
+        <PopoverContent><ExplanationContent e={explanation} /></PopoverContent>
+      </Popover>
+    </TableCell>
+  );
+}
+
 // mode : "out" (dépense), "in" (entrée) ou "total" (sous-total, montre les deux
 // colonnes). La colonne Solde affiche le solde du compte cumulé, fourni par
 // `solde` (une valeur par mois) ; absente ou null => cellule vide.
-function AmountCells({ cells, mode, solde }: { cells: MonthCell[]; mode: "out" | "in" | "total"; solde?: (number | null)[] }) {
+function AmountCells({ cells, mode, solde, depEntries, recuEntries, budgetEntries }: {
+  cells: MonthCell[];
+  mode: "out" | "in" | "total";
+  solde?: (number | null)[];
+  // Entrées de détail pour la colonne Dépensé, par mois (transactions ou groupes).
+  depEntries?: (i: number) => ExplanationStep[] | null;
+  // Entrées de détail pour la colonne Reçu, par mois.
+  recuEntries?: (i: number) => ExplanationStep[] | null;
+  // Entrées de détail pour Budget (postes d'un récurrent, ou groupes d'une section), par mois.
+  budgetEntries?: (i: number) => ExplanationStep[] | null;
+}) {
   return (
     <>
       {cells.map((c, i) => (
         <Fragment key={i}>
-          <TableCell className="border-l text-right tabular-nums text-muted-foreground">
+          <CellAmount
+            className="border-l text-right tabular-nums text-muted-foreground"
+            explanation={mode !== "in" && c.budgeted !== 0 && budgetEntries?.(i) ? sumExplanation("Budget — postes", budgetEntries(i)!) : null}
+          >
             {mode === "in" ? "" : fmt(c.budgeted)}
-          </TableCell>
-          <TableCell className="text-right tabular-nums">{mode === "in" ? "—" : fmt(c.depense)}</TableCell>
-          <TableCell className="text-right tabular-nums">{mode === "out" ? "—" : fmt(c.recu)}</TableCell>
-          <TableCell className={cn("text-right tabular-nums", mode !== "in" && c.balance < 0 && "text-red-600")}>
+          </CellAmount>
+          <CellAmount
+            className="text-right tabular-nums"
+            explanation={mode !== "in" && c.depense !== 0 && depEntries?.(i) ? sumExplanation("Dépensé — détail", depEntries(i)!) : null}
+          >
+            {mode === "in" ? "—" : fmt(c.depense)}
+          </CellAmount>
+          <CellAmount
+            className="text-right tabular-nums"
+            explanation={mode !== "out" && c.recu !== 0 && recuEntries?.(i) ? sumExplanation("Reçu — détail", recuEntries(i)!) : null}
+          >
+            {mode === "out" ? "—" : fmt(c.recu)}
+          </CellAmount>
+          <CellAmount
+            className={cn("text-right tabular-nums", mode !== "in" && c.balance < 0 && "text-red-600")}
+            explanation={mode !== "in" && Math.abs(c.budgeted - c.depense - c.balance) < 0.005 ? resteExplanation(c.budgeted, c.depense) : null}
+          >
             {mode === "in" ? "" : fmt(c.balance)}
-          </TableCell>
+          </CellAmount>
           {(() => {
             const s = solde?.[i];
+            const net = c.recu - c.depense;
+            // Solde précédent = solde de cette ligne − son propre mouvement.
+            const exp = s != null ? runningExplanation(s - net, net) : null;
             return (
-              <TableCell className={cn("text-right tabular-nums", s != null && s < -0.005 && "text-red-600")}>
+              <CellAmount className={cn("text-right tabular-nums", s != null && s < -0.005 && "text-red-600")} explanation={exp}>
                 {s != null ? fmt(s) : ""}
-              </TableCell>
+              </CellAmount>
             );
           })()}
         </Fragment>
@@ -165,6 +252,14 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
       return next;
     });
 
+  // Transactions d'un groupe pour un mois donné → entrées {libellé, montant} pour le popover.
+  // Montant en valeur absolue (le total du popover doit égaler la cellule Dép./Reçu).
+  const txnEntries = (r: HistoryRow, month: string): ExplanationStep[] | null => {
+    const all = [...r.txns, ...r.subRows.flatMap((s) => s.txns)].filter((t) => t.month === month);
+    if (all.length === 0) return null;
+    return all.map((t) => ({ label: `${t.date} · ${t.label}`, amount: Math.abs(t.amount) }));
+  };
+
   // topLevel : ligne au niveau des sections (rémunérations), bande grise comme
   // les en-têtes Récurrents / Enveloppes.
   const renderGroup = (r: HistoryRow, topLevel = false) => {
@@ -182,7 +277,14 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
             )}
             <span className="min-w-0 truncate font-medium">{r.name}</span>
           </NameCell>
-          <AmountCells cells={r.cells} mode={r.direction} solde={solde.rowRunning[r.id]} />
+          <AmountCells
+            cells={r.cells}
+            mode={r.direction}
+            solde={solde.rowRunning[r.id]}
+            depEntries={(i) => txnEntries(r, months[i])}
+            recuEntries={(i) => txnEntries(r, months[i])}
+            budgetEntries={(i) => r.subRows.length > 0 ? r.subRows.map((s) => ({ label: s.name, amount: s.cells[i].budgeted })).filter((e) => e.amount !== 0) : null}
+          />
         </TableRow>
         {gOpen && (
           <>
@@ -259,7 +361,26 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
               <TableCell />
               <TableCell />
               <TableCell />
-              <TableCell className={cn("text-right tabular-nums", v < -0.005 && "text-red-600")}>{fmt(v)}</TableCell>
+              {(() => {
+                const exp: CellExplanation = i === 0
+                  ? {
+                      title: "Argent de départ",
+                      steps: [
+                        { label: "Solde du compte (banque)", amount: forecast.balance },
+                        { label: "Mouvements de la période (rembobinés)", amount: v - forecast.balance },
+                      ],
+                      result: v,
+                      note: "Reconstitué en rembobinant les mouvements depuis le solde réel de la banque.",
+                    }
+                  : sumExplanation("Argent de départ", [
+                      { label: "Solde de fin du mois précédent", amount: solde.closings[i - 1] },
+                    ]);
+                return (
+                  <CellAmount className={cn("text-right tabular-nums", v < -0.005 && "text-red-600")} explanation={exp}>
+                    {fmt(v)}
+                  </CellAmount>
+                );
+              })()}
             </Fragment>
           ))}
         </TableRow>
@@ -278,7 +399,19 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                   <NameCell indent={0} bg={MUTED40} expandable={hasTxns} expanded={uOpen} onToggle={hasTxns ? () => toggle(uKey) : undefined}>
                     <span className="min-w-0 truncate">Non catégorisés</span>
                   </NameCell>
-                  <AmountCells cells={sec.totals} mode="total" solde={solde.uncategorizedRunning ?? undefined} />
+                  <AmountCells
+                    cells={sec.totals}
+                    mode="total"
+                    solde={solde.uncategorizedRunning ?? undefined}
+                    depEntries={(i) => {
+                      const list = (sec.txns ?? []).filter((t) => t.month === months[i] && t.amount < 0);
+                      return list.length === 0 ? null : list.map((t) => ({ label: `${t.date} · ${t.label}`, amount: Math.abs(t.amount) }));
+                    }}
+                    recuEntries={(i) => {
+                      const list = (sec.txns ?? []).filter((t) => t.month === months[i] && t.amount > 0);
+                      return list.length === 0 ? null : list.map((t) => ({ label: `${t.date} · ${t.label}`, amount: t.amount }));
+                    }}
+                  />
                 </TableRow>
                 {uOpen && sec.txns?.map((t) => (
                   <TxnRow key={t.id} txn={t} months={months} groups={groups} indent={1} />
@@ -292,7 +425,13 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                 <TableCell className={cn("sticky left-0 z-10 p-0", MUTED40)}>
                   <FirstColBox>{sec.kind === "envelope" ? "Enveloppes" : "Récurrents"}</FirstColBox>
                 </TableCell>
-                <AmountCells cells={sec.totals} mode="total" />
+                <AmountCells
+                  cells={sec.totals}
+                  mode="total"
+                  depEntries={(i) => sec.rows.map((r) => ({ label: r.name, amount: r.cells[i].depense })).filter((e) => e.amount !== 0)}
+                  recuEntries={(i) => sec.rows.map((r) => ({ label: r.name, amount: r.cells[i].recu })).filter((e) => e.amount !== 0)}
+                  budgetEntries={(i) => sec.rows.map((r) => ({ label: r.name, amount: r.cells[i].budgeted })).filter((e) => e.amount !== 0)}
+                />
               </TableRow>
               {sec.rows.map((r) => renderGroup(r))}
             </Fragment>
@@ -302,11 +441,50 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
           <TableCell className="sticky left-0 z-10 bg-[color-mix(in_oklab,var(--muted)_60%,var(--background))] p-0">
             <FirstColBox>Solde actuel</FirstColBox>
           </TableCell>
-          <AmountCells cells={grand} mode="total" solde={solde.closings} />
+          {grand.map((c, i) => {
+            // Détail Dép./Reçu de « Solde actuel » : par section, pas par groupe.
+            const depEntries = sections
+              .map((sec) => ({ label: labelOfSection(sec.kind), amount: Math.abs(sec.totals[i].depense) }))
+              .filter((e) => e.amount !== 0);
+            const recuEntries = sections
+              .map((sec) => ({ label: labelOfSection(sec.kind), amount: Math.abs(sec.totals[i].recu) }))
+              .filter((e) => e.amount !== 0);
+            return (
+              <Fragment key={i}>
+                <CellAmount className="border-l text-right tabular-nums text-muted-foreground" explanation={null}>
+                  {fmt(c.budgeted)}
+                </CellAmount>
+                <CellAmount
+                  className="text-right tabular-nums"
+                  explanation={c.depense !== 0 ? sumExplanation("Dépensé — détail", depEntries) : null}
+                >
+                  {fmt(c.depense)}
+                </CellAmount>
+                <CellAmount
+                  className="text-right tabular-nums"
+                  explanation={c.recu !== 0 ? sumExplanation("Reçu — détail", recuEntries) : null}
+                >
+                  {fmt(c.recu)}
+                </CellAmount>
+                <CellAmount
+                  className={cn("text-right tabular-nums", c.balance < 0 && "text-red-600")}
+                  explanation={Math.abs(c.budgeted - c.depense - c.balance) < 0.005 ? resteExplanation(c.budgeted, c.depense) : null}
+                >
+                  {fmt(c.balance)}
+                </CellAmount>
+                <CellAmount
+                  className={cn("text-right tabular-nums", solde.closings[i] < -0.005 && "text-red-600")}
+                  explanation={soldeActuelExplanation(solde.openings[i], c.recu, c.depense)}
+                >
+                  {fmt(solde.closings[i])}
+                </CellAmount>
+              </Fragment>
+            );
+          })}
         </TableRow>
-        {/* Estimé fin de mois : uniquement le mois courant (où « maintenant » et
-            « fin de mois » diffèrent) ; les mois futurs ont déjà leur solde projeté
-            sur la ligne « Solde actuel ». */}
+        {/* Estimé fin de mois : mois courant = solde projeté fin de mois
+            (`forecast.currentEstimate`, distinct du solde « maintenant » sur la
+            ligne « Solde actuel ») ; autres mois = leur solde de clôture. */}
         <TableRow className="text-sm">
           <TableCell className="bg-background sticky left-0 z-10 p-0">
             <FirstColBox><span className="text-muted-foreground">Estimé fin de mois</span></FirstColBox>
@@ -317,9 +495,24 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
               <TableCell />
               <TableCell />
               <TableCell />
-              <TableCell className={cn("text-right tabular-nums", forecast.currentEstimate < 0 && "text-red-600")}>
-                {m === currentMonth ? fmt(forecast.currentEstimate) : ""}
-              </TableCell>
+              {(() => {
+                const v = m === currentMonth ? forecast.currentEstimate : solde.closings[i];
+                const estimeExp: CellExplanation = m === currentMonth
+                  ? {
+                      title: "Estimé fin de mois",
+                      steps: [
+                        { label: "Solde actuel", amount: forecast.balance },
+                        ...forecast.currentSteps.map((s) => ({ label: s.label, amount: s.amount })),
+                      ],
+                      result: forecast.currentEstimate,
+                    }
+                  : soldeActuelExplanation(solde.openings[i], grand[i].recu, grand[i].depense);
+                return (
+                  <CellAmount className={cn("text-right tabular-nums", v < -0.005 && "text-red-600")} explanation={estimeExp}>
+                    {fmt(v)}
+                  </CellAmount>
+                );
+              })()}
             </Fragment>
           ))}
         </TableRow>
@@ -328,17 +521,26 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
           <TableCell className="bg-background sticky left-0 z-10 p-0">
             <FirstColBox><span className="text-muted-foreground">Dépassement</span></FirstColBox>
           </TableCell>
-          {months.map((_, i) => (
-            <Fragment key={i}>
-              <TableCell className="border-l" />
-              <TableCell />
-              <TableCell />
-              <TableCell className={cn("text-right tabular-nums", overspend[i] > 0 && "text-red-600")}>
-                {overspend[i] > 0 ? fmt(overspend[i]) : "—"}
-              </TableCell>
-              <TableCell />
-            </Fragment>
-          ))}
+          {months.map((_, i) => {
+            const overEntries = sections
+              .flatMap((s) => s.rows)
+              .filter((r) => r.direction === "out" && r.cells[i].balance < 0)
+              .map((r) => ({ label: r.name, amount: -r.cells[i].balance }));
+            return (
+              <Fragment key={i}>
+                <TableCell className="border-l" />
+                <TableCell />
+                <TableCell />
+                <CellAmount
+                  className={cn("text-right tabular-nums", overspend[i] > 0 && "text-red-600")}
+                  explanation={overspend[i] > 0 ? sumExplanation("Dépassement — groupes au-dessus du budget", overEntries) : null}
+                >
+                  {overspend[i] > 0 ? fmt(overspend[i]) : "—"}
+                </CellAmount>
+                <TableCell />
+              </Fragment>
+            );
+          })}
         </TableRow>
       </TableBody>
     </Table>
