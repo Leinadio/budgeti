@@ -41,11 +41,13 @@ function AmountCells({ cells, mode }: { cells: MonthCell[]; mode: "out" | "in" |
     <>
       {cells.map((c, i) => (
         <Fragment key={i}>
-          <TableCell className="border-l text-right tabular-nums text-muted-foreground">{fmt(c.budgeted)}</TableCell>
+          <TableCell className="border-l text-right tabular-nums text-muted-foreground">
+            {mode === "in" ? "" : fmt(c.budgeted)}
+          </TableCell>
           <TableCell className="text-right tabular-nums">{mode === "in" ? "—" : fmt(c.depense)}</TableCell>
           <TableCell className="text-right tabular-nums">{mode === "out" ? "—" : fmt(c.recu)}</TableCell>
           <TableCell className={cn("text-right tabular-nums", mode === "out" && c.balance < 0 && "text-red-600")}>
-            {fmt(c.balance)}
+            {mode === "in" ? `+${fmt(c.recu)}` : fmt(c.balance)}
           </TableCell>
         </Fragment>
       ))}

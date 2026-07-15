@@ -182,7 +182,12 @@ export function computeHistory(
   };
 
   const section = (kind: "envelope" | "recurring"): HistorySection | null => {
-    const rows = groups.filter((g) => g.kind === kind).map(rowFor);
+    // Rémunérations (sens « in ») en tête de section, puis les dépenses ; tri
+    // stable pour préserver l'ordre d'origine à l'intérieur de chaque bloc.
+    const rows = groups
+      .filter((g) => g.kind === kind)
+      .map(rowFor)
+      .sort((a, b) => (a.direction === b.direction ? 0 : a.direction === "in" ? -1 : 1));
     if (rows.length === 0) return null;
     const totals = months.map((_, i) =>
       rows.reduce((acc, r) => {
@@ -214,7 +219,7 @@ export function computeHistory(
     return { kind: "uncategorized", rows: [], totals, txns: mine.map(toHistoryTxn) };
   };
 
-  return [section("envelope"), section("recurring"), uncategorized()].filter(
+  return [section("recurring"), section("envelope"), uncategorized()].filter(
     (s): s is HistorySection => s !== null,
   );
 }

@@ -28,7 +28,6 @@ export default async function HistoriquePage({
 }) {
   const database = db();
   const currentMonth = monthKey(new Date().toISOString().slice(0, 10));
-  const nextMonth = addMonthsKey(currentMonth, 1);
   const accounts = listAccounts(database);
   const allGroups = listGroups(database);
   const allTxns: Txn[] = listTransactions(database).map((t) => ({
@@ -58,12 +57,13 @@ export default async function HistoriquePage({
   const stripMin = earliest && earliest < prevMonth ? earliest : prevMonth;
   const stripMax = addMonthsKey(currentMonth, 12);
 
-  // Plage retenue depuis l'URL, sinon 3 mois centrés sur le mois courant.
+  // Plage retenue depuis l'URL, sinon 3 mois à partir du mois courant (le mois
+  // courant en première colonne, puis les deux mois suivants pour la projection).
   const sp = await searchParams;
   const rawFrom = Array.isArray(sp.from) ? sp.from[0] : sp.from;
   const rawTo = Array.isArray(sp.to) ? sp.to[0] : sp.to;
-  let from = isMonthKey(rawFrom) ? clampMonth(rawFrom, stripMin, stripMax) : prevMonth;
-  let to = isMonthKey(rawTo) ? clampMonth(rawTo, stripMin, stripMax) : nextMonth;
+  let from = isMonthKey(rawFrom) ? clampMonth(rawFrom, stripMin, stripMax) : currentMonth;
+  let to = isMonthKey(rawTo) ? clampMonth(rawTo, stripMin, stripMax) : addMonthsKey(currentMonth, 2);
   if (from > to) [from, to] = [to, from];
   if (monthRange(from, to).length > MAX_MONTHS) to = addMonthsKey(from, MAX_MONTHS - 1);
   const months = monthRange(from, to);

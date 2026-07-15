@@ -78,11 +78,16 @@ export function MonthRangePicker({ min, max, from, to, current }: {
                   "w-11 rounded-md py-1 text-center text-xs capitalize transition-colors",
                   selected ? "bg-primary text-primary-foreground" : "hover:bg-muted",
                   isAnchor && "ring-primary ring-2",
-                  m === current && !selected && "font-semibold",
+                  m === current && "font-semibold",
                 )}
               >
                 {shortLabel(m)}
               </button>
+              {/* Pastille sous le mois courant, toujours visible (repère « aujourd'hui »).
+                  Hauteur réservée sur chaque colonne pour garder l'alignement. */}
+              <span className="mt-0.5 flex h-1.5 items-center justify-center">
+                {m === current && <span className="bg-primary size-1.5 rounded-full" />}
+              </span>
             </div>
           );
         })}
