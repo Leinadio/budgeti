@@ -40,7 +40,7 @@ function NodeRow({ node, path, depth }: { node: DetailNode; path: string; depth:
 // glissement (offcanvas) est piloté par le SidebarProvider qui l'englobe.
 export function HistoryDetailSidebar({ detail, onClose }: { detail: CellDetail | null; onClose: () => void }) {
   return (
-    <Sidebar side="right" collapsible="offcanvas">
+    <Sidebar side="right" variant="inset" collapsible="offcanvas">
       {detail && (
         <>
           <SidebarHeader className="gap-0 border-b p-4">

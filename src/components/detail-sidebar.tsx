@@ -33,6 +33,12 @@ export function DetailSidebarProvider({ children }: { children: React.ReactNode 
         onOpenChange={(open) => {
           if (!open) setDetail(null);
         }}
+        // group/detail + data-detail : le contenu (SidebarInset) doit coller a la
+        // sidebar de detail quand elle est ouverte (son p-2 fait deja l'ecart).
+        // shadcn ne gere ce reglage que pour une sidebar de gauche, via un
+        // selecteur `peer` qui ne remonte pas jusqu'a une sidebar placee apres.
+        className="group/detail"
+        data-detail={detail ? "open" : "closed"}
         style={{ "--sidebar-width": "26rem" } as React.CSSProperties}
       >
         {children}

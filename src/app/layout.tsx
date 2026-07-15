@@ -23,8 +23,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <SidebarProvider className="min-w-0 flex-1">
             <AppSidebar />
             {/* min-w-0 : sans lui, un contenu large (grand tableau) empeche l'inset
-                de retrecir sous sa taille min-content et deborde sous la sidebar. */}
-            <SidebarInset className="min-w-0">
+                de retrecir sous sa taille min-content et deborde sous la sidebar.
+                mr-0 quand le detail est ouvert : son p-2 fait deja l'ecart. */}
+            <SidebarInset className="min-w-0 md:group-data-[detail=open]/detail:mr-0">
               <header className="flex items-center gap-2 border-b bg-card px-4 py-2">
                 <SidebarTrigger />
               </header>

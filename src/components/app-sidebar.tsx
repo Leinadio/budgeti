@@ -26,7 +26,7 @@ const NAV = [
 export function AppSidebar() {
   const pathname = usePathname();
   return (
-    <Sidebar>
+    <Sidebar variant="inset">
       <SidebarHeader className="px-3 py-3 text-base font-semibold">Budget CIC</SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
