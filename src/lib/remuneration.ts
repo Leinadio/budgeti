@@ -36,7 +36,7 @@ export function monthRemuneration(groups: Group[], txns: Txn[], month: string): 
     if (res.status !== "manual") continue;
     const g = byId.get(res.groupId);
     if (!g) continue;
-    // La classe de revenu vient du groupe, plus de l'étiquette de transaction.
+    // La classe de revenu vient du groupe, et non plus de l'étiquette de transaction.
     if (g.incomeKind === "principal") principal += Math.abs(t.amount);
     else if (g.incomeKind === "supplementary") supplementary += Math.abs(t.amount);
     else if (g.direction === "out") expenses += Math.abs(t.amount);
