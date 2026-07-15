@@ -250,3 +250,70 @@ export function grandTotals(sections: HistorySection[], monthCount: number): Mon
     ),
   );
 }
+
+// Solde du compte reconstitué le long du tableau. On part du solde réel fourni
+// par la banque (mois courant) : on rembobine pour trouver le solde d'ouverture
+// de chaque mois, puis on accumule ligne par ligne, dans l'ordre d'affichage,
+// pour la colonne « Solde ». Le bas du mois courant retombe donc, par
+// construction, exactement sur le solde de la banque.
+export type SoldeColumn = {
+  openings: number[];
+  closings: number[];
+  rowRunning: Record<number, number[]>;
+  uncategorizedRunning: number[] | null;
+};
+
+const cellNet = (c: MonthCell) => c.recu - c.depense;
+
+export function computeSolde(
+  sections: HistorySection[],
+  months: string[],
+  currentMonth: string,
+  balance: number,
+): SoldeColumn {
+  const n = months.length;
+  // Mouvement net affiché par mois = somme des sous-totaux de section
+  // (entrées - sorties). Inclut déjà les non catégorisés et les projections.
+  const net = months.map((_, i) => sections.reduce((s, sec) => s + cellNet(sec.totals[i]), 0));
+
+  const openings = new Array<number>(n).fill(0);
+  const closings = new Array<number>(n).fill(0);
+
+  // Ancre : le mois courant se ferme sur le solde réel de la banque. S'il est
+  // hors de la plage affichée, on ancre sur la borne la plus proche.
+  let ci = months.indexOf(currentMonth);
+  if (ci === -1) ci = n > 0 && currentMonth > months[n - 1] ? n - 1 : 0;
+
+  if (n > 0) {
+    closings[ci] = balance;
+    openings[ci] = balance - net[ci];
+    for (let i = ci - 1; i >= 0; i--) {
+      closings[i] = openings[i + 1];
+      openings[i] = closings[i] - net[i];
+    }
+    for (let i = ci + 1; i < n; i++) {
+      openings[i] = closings[i - 1];
+      closings[i] = openings[i] + net[i];
+    }
+  }
+
+  // Accumulation ligne par ligne, dans l'ordre d'affichage des sections.
+  const rowRunning: Record<number, number[]> = {};
+  let uncategorizedRunning: number[] | null = null;
+  for (let i = 0; i < n; i++) {
+    let run = openings[i];
+    for (const sec of sections) {
+      if (sec.kind === "uncategorized") {
+        run += cellNet(sec.totals[i]);
+        (uncategorizedRunning ??= new Array<number>(n).fill(0))[i] = run;
+      } else {
+        for (const r of sec.rows) {
+          run += cellNet(r.cells[i]);
+          (rowRunning[r.id] ??= new Array<number>(n).fill(0))[i] = run;
+        }
+      }
+    }
+  }
+
+  return { openings, closings, rowRunning, uncategorizedRunning };
+}
