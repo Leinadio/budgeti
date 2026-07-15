@@ -75,6 +75,7 @@ function TxnCells({ txn, months }: { txn: HistoryTxn; months: string[] }) {
             <TableCell className="text-right tabular-nums text-muted-foreground">{here && isOut ? val : ""}</TableCell>
             <TableCell className="text-right tabular-nums text-muted-foreground">{here && !isOut ? val : ""}</TableCell>
             <TableCell />
+            <TableCell />
           </Fragment>
         );
       })}
