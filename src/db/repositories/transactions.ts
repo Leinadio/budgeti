@@ -137,15 +137,6 @@ export function deleteManualTransaction(db: Database.Database, id: string): void
   db.prepare("DELETE FROM transactions WHERE id=? AND manual=1").run(id);
 }
 
-// Étiquette une entrée principale/supplémentaire (ou retire l'étiquette).
-export function setIncomeKind(
-  db: Database.Database,
-  id: string,
-  kind: "principal" | "supplementary" | null,
-): void {
-  db.prepare("UPDATE transactions SET income_kind=? WHERE id=?").run(kind, id);
-}
-
 // Écart en jours entre deux dates "YYYY-MM-DD" (UTC, pur calendaire).
 function dayDiff(a: string, b: string): number {
   const da = Date.parse(a + "T00:00:00Z");

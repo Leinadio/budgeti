@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { getDb } from "../../src/db/index";
 import { upsertAccount } from "../../src/db/repositories/accounts";
-import { insertManualTransaction, listTransactions, updateManualTransaction, deleteManualTransaction, setIncomeKind, upsertTransaction, findReconcileSuggestions, mergeTransactions, ignoreMatch } from "../../src/db/repositories/transactions";
+import { insertManualTransaction, listTransactions, updateManualTransaction, deleteManualTransaction, upsertTransaction, findReconcileSuggestions, mergeTransactions, ignoreMatch } from "../../src/db/repositories/transactions";
 import { insertEnvelopeGroup } from "../../src/db/repositories/groups";
 
 function seed() {
@@ -53,15 +53,6 @@ test("deleteManualTransaction removes only manual rows", () => {
   expect(listTransactions(db)).toHaveLength(2);
   deleteManualTransaction(db, id);
   expect(listTransactions(db).map((t) => t.id)).toEqual(["bank1"]);
-});
-
-test("setIncomeKind tags any income row, including a synced one", () => {
-  const db = seed();
-  upsertTransaction(db, { id: "bank1", account_id: "a1", date: "2026-07-01", amount: 652.09, label: "VIREMENT", category_id: null });
-  setIncomeKind(db, "bank1", "principal");
-  expect(listTransactions(db).find((x) => x.id === "bank1")!.incomeKind).toBe("principal");
-  setIncomeKind(db, "bank1", null);
-  expect(listTransactions(db).find((x) => x.id === "bank1")!.incomeKind).toBeNull();
 });
 
 test("findReconcileSuggestions matches by account, amount and date window", () => {
