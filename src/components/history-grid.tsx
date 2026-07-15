@@ -8,7 +8,6 @@ import { type MonthCell, type HistorySection, type HistoryRow, type HistorySubRo
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TruncatedText } from "@/components/truncated-text";
 import { GroupSelectField } from "@/components/group-select-field";
-import { HistoryDetailSidebar } from "@/components/history-detail-sidebar";
 import { type CellDetail, type DetailNode, makeDetail, txnNode } from "@/lib/history-explain";
 
 // Groupes du compte, pour le menu de (ré)assignation sur chaque transaction.
@@ -536,7 +535,7 @@ function TxnRow({ txn, months, groups, indent }: {
   );
 }
 
-export function HistoryGrid({ months, currentMonth, forecast, sections, overspend, grand, groups, solde }: {
+export function HistoryGrid({ months, currentMonth, forecast, sections, overspend, grand, groups, solde, onSelect }: {
   months: string[];
   currentMonth: string;
   forecast: AccountForecast;
@@ -545,6 +544,8 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
   grand: MonthCell[];
   groups: SelectGroup[];
   solde: SoldeColumn;
+  // Clic sur un montant : remonté au parent, qui l'affiche dans la sidebar.
+  onSelect: (d: CellDetail) => void;
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const isOpen = (k: string) => open.has(k);
@@ -555,10 +556,6 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
       else next.add(k);
       return next;
     });
-
-  // Détail sélectionné (clic sur un montant) → affiché dans la sidebar fixe.
-  const [selected, setSelected] = useState<CellDetail | null>(null);
-  const onSelect = (d: CellDetail) => setSelected(d);
 
   // topLevel : ligne au niveau des sections (rémunérations), bande grise comme
   // les en-têtes Récurrents / Enveloppes.
@@ -620,7 +617,6 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
   };
 
   return (
-    <>
     <Table>
       <TableHeader>
         <TableRow>
@@ -804,7 +800,5 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
         </TableRow>
       </TableBody>
     </Table>
-    <HistoryDetailSidebar detail={selected} onClose={() => setSelected(null)} />
-    </>
   );
 }

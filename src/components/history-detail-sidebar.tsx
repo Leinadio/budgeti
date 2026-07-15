@@ -1,8 +1,9 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { X, ChevronRight, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CellDetail, DetailNode } from "@/lib/history-explain";
+import { Sidebar, SidebarHeader, SidebarContent } from "@/components/ui/sidebar";
 
 const NUM = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtAbs = (n: number) => NUM.format(Math.abs(n) < 0.005 ? 0 : Math.abs(n)).replace(/[  ]/g, " ");
@@ -34,49 +35,42 @@ function NodeRow({ node, path, depth }: { node: DetailNode; path: string; depth:
   );
 }
 
+// Sidebar shadcn côté droit : elle pousse le contenu (comme la navigation de
+// gauche) au lieu de le recouvrir. Le contenu affiché vient de `detail` ; le
+// glissement (offcanvas) est piloté par le SidebarProvider qui l'englobe.
 export function HistoryDetailSidebar({ detail, onClose }: { detail: CellDetail | null; onClose: () => void }) {
-  // On garde le panneau monté et on conserve le dernier détail affiché pour que
-  // la fermeture (slide-out) reste fluide même quand `detail` repasse à null.
-  const [shown, setShown] = useState<CellDetail | null>(detail);
-  useEffect(() => {
-    if (detail) setShown(detail);
-  }, [detail]);
-  const open = detail !== null;
   return (
-    <aside
-      aria-hidden={!open}
-      className={cn(
-        "bg-background fixed top-0 right-0 z-40 flex h-screen w-[400px] max-w-[90vw] flex-col border-l shadow-xl",
-        "transition-transform duration-300 ease-in-out",
-        open ? "translate-x-0" : "pointer-events-none translate-x-full",
-      )}
-    >
-      {shown && (
+    <Sidebar side="right" collapsible="offcanvas">
+      {detail && (
         <>
-          <div className="flex items-start justify-between gap-2 border-b p-4">
-            <div className="min-w-0">
-              <h2 className="font-semibold">{shown.title}</h2>
-              {shown.subtitle && <p className="text-muted-foreground text-sm">{shown.subtitle}</p>}
-              <p className={cn("mt-1 text-lg font-semibold tabular-nums", shown.result < 0 && "text-red-600")}>{fmtSigned(shown.result)}</p>
+          <SidebarHeader className="gap-0 border-b p-4">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <h2 className="font-semibold">{detail.title}</h2>
+                {detail.subtitle && <p className="text-muted-foreground text-sm">{detail.subtitle}</p>}
+                <p className={cn("mt-1 text-lg font-semibold tabular-nums", detail.result < 0 && "text-red-600")}>{fmtSigned(detail.result)}</p>
+              </div>
+              <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground shrink-0 rounded p-1" aria-label="Fermer">
+                <X className="size-4" />
+              </button>
             </div>
-            <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground shrink-0 rounded p-1" aria-label="Fermer">
-              <X className="size-4" />
-            </button>
-          </div>
-          <div className="flex-1 overflow-y-auto p-4" key={`${shown.title}·${shown.subtitle ?? ""}·${shown.result}`}>
-            {shown.nodes.map((n, i) => (
-              <NodeRow key={i} node={n} path={`${i}`} depth={0} />
-            ))}
-            <div className="mt-2 flex items-center gap-2 border-t pt-2 text-sm font-semibold">
-              <span className="w-3 shrink-0" />
-              <span className="w-4 shrink-0 text-center">=</span>
-              <span className={cn("w-24 shrink-0 text-right tabular-nums", shown.result < 0 && "text-red-600")}>{fmtAbs(shown.result)}</span>
-              <span className="min-w-0 flex-1 truncate">Total</span>
+          </SidebarHeader>
+          <SidebarContent className="p-4" key={`${detail.title}·${detail.subtitle ?? ""}·${detail.result}`}>
+            <div>
+              {detail.nodes.map((n, i) => (
+                <NodeRow key={i} node={n} path={`${i}`} depth={0} />
+              ))}
+              <div className="mt-2 flex items-center gap-2 border-t pt-2 text-sm font-semibold">
+                <span className="w-3 shrink-0" />
+                <span className="w-4 shrink-0 text-center">=</span>
+                <span className={cn("w-24 shrink-0 text-right tabular-nums", detail.result < 0 && "text-red-600")}>{fmtAbs(detail.result)}</span>
+                <span className="min-w-0 flex-1 truncate">Total</span>
+              </div>
+              {detail.note && <p className="text-muted-foreground mt-3 text-xs">{detail.note}</p>}
             </div>
-            {shown.note && <p className="text-muted-foreground mt-3 text-xs">{shown.note}</p>}
-          </div>
+          </SidebarContent>
         </>
       )}
-    </aside>
+    </Sidebar>
   );
 }

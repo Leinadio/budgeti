@@ -13,8 +13,7 @@ import { RemunerationSummary } from "@/components/remuneration-summary";
 import { monthKey } from "../../lib/money";
 import { accountLabel } from "../../lib/account";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { CenterScroll } from "@/components/center-scroll";
-import { HistoryGrid } from "@/components/history-grid";
+import { HistoryWithDetail } from "@/components/history-with-detail";
 import { MonthRangePicker } from "@/components/month-range-picker";
 
 export const dynamic = "force-dynamic";
@@ -103,18 +102,16 @@ export default async function HistoriquePage({
               {sections.length === 0 ? (
                 <p className="text-muted-foreground text-sm">Aucune donnée pour ce compte.</p>
               ) : (
-                <CenterScroll>
-                  <HistoryGrid
-                    months={months}
-                    currentMonth={currentMonth}
-                    forecast={forecast}
-                    sections={sections}
-                    overspend={overspend}
-                    grand={grand}
-                    groups={selectGroups}
-                    solde={solde}
-                  />
-                </CenterScroll>
+                <HistoryWithDetail
+                  months={months}
+                  currentMonth={currentMonth}
+                  forecast={forecast}
+                  sections={sections}
+                  overspend={overspend}
+                  grand={grand}
+                  groups={selectGroups}
+                  solde={solde}
+                />
               )}
             </TabsContent>
           );
