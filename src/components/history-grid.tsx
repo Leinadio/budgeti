@@ -15,10 +15,6 @@ import { type CellDetail, type DetailNode, makeDetail, txnNode } from "@/lib/his
 type SelectGroup = { id: number; name: string; lines: { id: number; name: string }[] };
 const MUTED40 = "bg-[color-mix(in_oklab,var(--muted)_40%,var(--background))]";
 
-// NB (Task 4) : le libellé par section (« Rémunérations », « Récurrents »…) utilisé
-// pour le détail de « Solde actuel » a été retiré ici, non-utilisé pour cette task ;
-// à réintroduire si Task 4 construit un CellDetail pour cette ligne de synthèse.
-
 const NUM = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmt = (n: number) => NUM.format(Math.abs(n) < 0.005 ? 0 : n).replace(/[  ]/g, " ");
 
@@ -81,12 +77,101 @@ function budgetNodes(r: HistoryRow, i: number): DetailNode[] | undefined {
   return nodes.length > 0 ? nodes : undefined;
 }
 
+// --- Task 4 : lignes de synthèse (sous-totaux de section, Solde actuel, Argent
+// de départ, Estimé fin de mois, Dépassement) — helpers pour construire leurs
+// CellDetail, dépliables jusqu'aux transactions.
+//
+// Un groupe comme nœud d'un calcul de section/total : montant = sa contribution
+// (signée) pour la colonne demandée, enfants = ses transactions du mois (sauf pour
+// « budget », qui n'a pas de transactions). Défini au niveau du module (comme
+// txnChildren ci-dessus) : (i, month) sont passés explicitement plutôt que capturés
+// par fermeture sur `months`, ce composant n'étant pas imbriqué dans HistoryGrid.
+function groupNode(r: HistoryRow, i: number, month: string, kind: "depense" | "recu" | "budget" | "net"): DetailNode {
+  const c = r.cells[i];
+  const amount = kind === "depense" ? c.depense : kind === "recu" ? c.recu : kind === "budget" ? c.budgeted : c.recu - c.depense;
+  const sign: 1 | -1 = amount < 0 ? -1 : 1;
+  return { label: r.name, amount, children: kind === "budget" ? undefined : txnChildren(r, month, sign) };
+}
+
+// Inverse un nœud (et ses enfants), pour transformer un nœud « Dépensé » positif
+// (utilisé tel quel dans une colonne Dépensé) en sous-nœud négatif d'un « Reste ».
+function negateNode(n: DetailNode): DetailNode {
+  return { ...n, amount: -n.amount, children: n.children?.map(negateNode) };
+}
+
+function labelOfSection(kind: HistorySection["kind"]): string {
+  switch (kind) {
+    case "income":
+      return "Rémunérations";
+    case "recurring":
+      return "Récurrents";
+    case "envelope":
+      return "Enveloppes";
+    case "uncategorized":
+      return "Non catégorisés";
+  }
+}
+
+// Transactions non catégorisées d'un mois → nœuds feuilles, montant signé tel quel
+// (contrairement à txnChildren, qui force un signe uniforme : les non catégorisés
+// mélangent entrées et sorties dans une même « section », donc on garde le signe
+// réel de chaque transaction, ce qui totalise correctement le mouvement net).
+function uncatTxnNodes(sec: HistorySection, month: string): DetailNode[] | undefined {
+  const all = (sec.txns ?? []).filter((t) => t.month === month);
+  if (all.length === 0) return undefined;
+  return all.map((t) => txnNode(t.date, t.label, t.amount));
+}
+
+// Variante de txnChildren pour les non catégorisés (pas de HistoryRow : transactions
+// à plat sur la section) : ne garde que les transactions du sens demandé (isOut),
+// en valeur absolue — même convention que txnChildren(r, month, 1) pour Dépensé/Reçu.
+function sectionTxnChildren(txns: HistoryTxn[] | undefined, month: string, isOut: boolean): DetailNode[] | undefined {
+  const filtered = (txns ?? []).filter((t) => t.month === month && (isOut ? t.amount < 0 : t.amount > 0));
+  if (filtered.length === 0) return undefined;
+  return filtered.map((t) => txnNode(t.date, t.label, Math.abs(t.amount)));
+}
+
+// Une section comme nœud d'un calcul global (Solde actuel / Estimé / Reçu-Dépensé-
+// Budget du grand total) : montant = sa contribution pour la colonne demandée,
+// enfants = ses groupes (ou, pour les non catégorisés qui n'ont pas de groupes,
+// directement ses transactions).
+function sectionNode(sec: HistorySection, i: number, month: string, kind: "depense" | "recu" | "budget" | "net"): DetailNode {
+  const t = sec.totals[i];
+  const amount = kind === "depense" ? t.depense : kind === "recu" ? t.recu : kind === "budget" ? t.budgeted : t.recu - t.depense;
+  const children =
+    kind === "budget"
+      ? undefined
+      : sec.kind === "uncategorized"
+        ? kind === "net"
+          ? uncatTxnNodes(sec, month)
+          : sectionTxnChildren(sec.txns, month, kind === "depense")
+        : sec.rows.map((r) => groupNode(r, i, month, kind));
+  return { label: labelOfSection(sec.kind), amount, children };
+}
+
+// Détail « Solde actuel » (Argent de départ + chaque section, dépliable jusqu'aux
+// transactions). Réutilisé tel quel pour l'« Estimé fin de mois » des mois autres
+// que le mois courant (même calcul, seul le titre affiché change).
+function soldeActuelDetail(
+  sections: HistorySection[],
+  solde: SoldeColumn,
+  i: number,
+  month: string,
+  opts: { title: string; result: number },
+): CellDetail {
+  return makeDetail(
+    opts.title,
+    [{ label: "Argent de départ", amount: solde.openings[i] }, ...sections.map((sec) => sectionNode(sec, i, month, "net"))],
+    { subtitle: monthLabel(month), result: opts.result },
+  );
+}
+
 // mode : "out" (dépense), "in" (entrée) ou "total" (sous-total, montre les deux
 // colonnes). La colonne Solde affiche le solde du compte cumulé, fourni par
 // `solde` (une valeur par mois) ; absente ou null => cellule vide.
 // detailRow : ligne de groupe (transactions/postes) permettant de construire le
-// détail cliquable des cellules. Absente pour les sous-lignes et les lignes de
-// synthèse (Task 4) : ces cellules restent alors non cliquables.
+// détail cliquable des cellules. Absente pour les sous-lignes (postes d'un
+// récurrent) : ces cellules restent non cliquables (hors périmètre, cf. ci-dessous).
 function AmountCells({ cells, mode, solde, onSelect, subtitleOf, detailRow, months }: {
   cells: MonthCell[];
   mode: "out" | "in" | "total";
@@ -172,6 +257,167 @@ function AmountCells({ cells, mode, solde, onSelect, subtitleOf, detailRow, mont
               onSelect={onSelect}
             >
               {s != null ? fmt(s) : ""}
+            </CellAmount>
+          </Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+// Sous-total d'une section (Récurrents / Enveloppes / Non catégorisés) : rendu
+// dédié, pas via AmountCells, car aucun HistoryRow unique n'y est associé. Chaque
+// cellule se déplie sur la liste des groupes de la section (ou, pour les non
+// catégorisés qui n'ont pas de groupes, directement leurs transactions).
+// Reste : pour Récurrents/Enveloppes (sections « out » uniquement), budget − dépensé
+// == balance exactement par construction (chaque ligne vérifie déjà cette égalité,
+// donc leur somme aussi) : toujours cliquable. Pour les non catégorisés, budget et
+// balance sont toujours à 0 : l'invariant ne tient que si dépensé == 0, donc en
+// pratique non cliquable (comme documenté au Task 3 pour ce cas).
+function SectionTotalsCells({ sec, months, onSelect, solde }: {
+  sec: HistorySection;
+  months: string[];
+  onSelect?: (d: CellDetail) => void;
+  solde?: (number | null)[];
+}) {
+  const isUncat = sec.kind === "uncategorized";
+  return (
+    <>
+      {sec.totals.map((c, i) => {
+        const month = months[i];
+        const subtitle = `${labelOfSection(sec.kind)} · ${monthLabel(month)}`;
+
+        const budgetDetail: CellDetail | null =
+          c.budgeted !== 0
+            ? makeDetail("Budget", sec.rows.map((r) => groupNode(r, i, month, "budget")), { subtitle, result: c.budgeted })
+            : null;
+
+        const depNodes = isUncat ? sectionTxnChildren(sec.txns, month, true) : sec.rows.map((r) => groupNode(r, i, month, "depense"));
+        const depDetail: CellDetail | null =
+          c.depense !== 0 && depNodes ? makeDetail("Dépensé", depNodes, { subtitle, result: c.depense }) : null;
+
+        const recuNodes = isUncat ? sectionTxnChildren(sec.txns, month, false) : sec.rows.map((r) => groupNode(r, i, month, "recu"));
+        const recuDetail: CellDetail | null =
+          c.recu !== 0 && recuNodes ? makeDetail("Reçu", recuNodes, { subtitle, result: c.recu }) : null;
+
+        const resteDetail: CellDetail | null =
+          Math.abs(c.budgeted - c.depense - c.balance) < 0.005
+            ? makeDetail(
+                "Reste",
+                [
+                  { label: "Budget", amount: c.budgeted },
+                  { label: "Dépensé", amount: -c.depense, children: sec.rows.map((r) => groupNode(r, i, month, "depense")).map(negateNode) },
+                ],
+                { subtitle, result: c.balance },
+              )
+            : null;
+
+        const s = solde?.[i];
+        const net = c.recu - c.depense;
+        const soldeDetail: CellDetail | null =
+          s != null
+            ? makeDetail(
+                "Solde",
+                [
+                  { label: "Solde précédent", amount: s - net },
+                  { label: "Mouvement du mois", amount: net, children: uncatTxnNodes(sec, month) },
+                ],
+                { subtitle, result: s },
+              )
+            : null;
+
+        return (
+          <Fragment key={i}>
+            <CellAmount className="border-l text-right tabular-nums text-muted-foreground" detail={budgetDetail} onSelect={onSelect}>
+              {fmt(c.budgeted)}
+            </CellAmount>
+            <CellAmount className="text-right tabular-nums" detail={depDetail} onSelect={onSelect}>
+              {fmt(c.depense)}
+            </CellAmount>
+            <CellAmount className="text-right tabular-nums" detail={recuDetail} onSelect={onSelect}>
+              {fmt(c.recu)}
+            </CellAmount>
+            <CellAmount className={cn("text-right tabular-nums", c.balance < 0 && "text-red-600")} detail={resteDetail} onSelect={onSelect}>
+              {fmt(c.balance)}
+            </CellAmount>
+            <CellAmount
+              className={cn("text-right tabular-nums", s != null && s < -0.005 && "text-red-600")}
+              detail={soldeDetail}
+              onSelect={onSelect}
+            >
+              {s != null ? fmt(s) : ""}
+            </CellAmount>
+          </Fragment>
+        );
+      })}
+    </>
+  );
+}
+
+// Ligne « Solde actuel » (grand total) : rendu dédié, pas via AmountCells. Budg./
+// Dép./Reçu se déplient sur la liste des sections (elles-mêmes dépliables sur leurs
+// groupes, puis leurs transactions) ; Solde = Argent de départ + chaque section.
+// Reste : cliquable seulement si l'invariant budget − dépensé == balance tient
+// (souvent faux au global : la section Rémunérations a un budget mais pas de
+// dépense, donc généralement non cliquable — ce qui est acceptable, cf. brief).
+function GrandTotalsCells({ sections, grand, solde, months, onSelect }: {
+  sections: HistorySection[];
+  grand: MonthCell[];
+  solde: SoldeColumn;
+  months: string[];
+  onSelect?: (d: CellDetail) => void;
+}) {
+  return (
+    <>
+      {grand.map((c, i) => {
+        const month = months[i];
+        const subtitle = monthLabel(month);
+
+        const budgetDetail: CellDetail | null =
+          c.budgeted !== 0
+            ? makeDetail("Budget", sections.map((sec) => sectionNode(sec, i, month, "budget")), { subtitle, result: c.budgeted })
+            : null;
+        const depDetail: CellDetail | null =
+          c.depense !== 0
+            ? makeDetail("Dépensé", sections.map((sec) => sectionNode(sec, i, month, "depense")), { subtitle, result: c.depense })
+            : null;
+        const recuDetail: CellDetail | null =
+          c.recu !== 0
+            ? makeDetail("Reçu", sections.map((sec) => sectionNode(sec, i, month, "recu")), { subtitle, result: c.recu })
+            : null;
+        const resteDetail: CellDetail | null =
+          Math.abs(c.budgeted - c.depense - c.balance) < 0.005
+            ? makeDetail(
+                "Reste",
+                [
+                  { label: "Budget", amount: c.budgeted },
+                  { label: "Dépensé", amount: -c.depense, children: sections.map((sec) => sectionNode(sec, i, month, "depense")).map(negateNode) },
+                ],
+                { subtitle, result: c.balance },
+              )
+            : null;
+        const soldeDetail: CellDetail = soldeActuelDetail(sections, solde, i, month, { title: "Solde actuel", result: solde.closings[i] });
+
+        return (
+          <Fragment key={i}>
+            <CellAmount className="border-l text-right tabular-nums text-muted-foreground" detail={budgetDetail} onSelect={onSelect}>
+              {fmt(c.budgeted)}
+            </CellAmount>
+            <CellAmount className="text-right tabular-nums" detail={depDetail} onSelect={onSelect}>
+              {fmt(c.depense)}
+            </CellAmount>
+            <CellAmount className="text-right tabular-nums" detail={recuDetail} onSelect={onSelect}>
+              {fmt(c.recu)}
+            </CellAmount>
+            <CellAmount className={cn("text-right tabular-nums", c.balance < 0 && "text-red-600")} detail={resteDetail} onSelect={onSelect}>
+              {fmt(c.balance)}
+            </CellAmount>
+            <CellAmount
+              className={cn("text-right tabular-nums", solde.closings[i] < -0.005 && "text-red-600")}
+              detail={soldeDetail}
+              onSelect={onSelect}
+            >
+              {fmt(solde.closings[i])}
             </CellAmount>
           </Fragment>
         );
@@ -324,9 +570,9 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                     <NameCell indent={1} expandable={subHasTxns} expanded={lOpen} onToggle={subHasTxns ? () => toggle(lKey) : undefined}>
                       <span className="min-w-0 truncate">{sub.name}</span>
                     </NameCell>
-                    {/* Sous-ligne (poste d'un récurrent) : non cliquable pour cette task
-                        (txnChildren attend un HistoryRow ; une adaptation pour HistorySubRow
-                        est laissée à la Task 4 si souhaité). */}
+                    {/* Sous-ligne (poste d'un récurrent) : non cliquable, hors périmètre de
+                        cette task (txnChildren attend un HistoryRow ; une adaptation pour
+                        HistorySubRow pourrait être ajoutée séparément si souhaité). */}
                     <AmountCells cells={sub.cells} mode={r.direction} months={months} />
                   </TableRow>
                   {lOpen && sub.txns.map((t) => (
@@ -385,18 +631,41 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
           <TableCell className={cn("sticky left-0 z-10 p-0", MUTED40)}>
             <FirstColBox>Argent de départ</FirstColBox>
           </TableCell>
-          {solde.openings.map((v, i) => (
-            <Fragment key={i}>
-              <TableCell className="border-l" />
-              <TableCell />
-              <TableCell />
-              <TableCell />
-              {/* Non cliquable pour cette task (ligne de synthèse, cf. Task 4). */}
-              <TableCell className={cn("text-right tabular-nums", v < -0.005 && "text-red-600")}>
-                {fmt(v)}
-              </TableCell>
-            </Fragment>
-          ))}
+          {solde.openings.map((v, i) => {
+            // 1er mois affiché : reconstitué en rembobinant depuis le solde réel de
+            // la banque (forecast.balance = a.balance, l'ancre de computeSolde).
+            // Mois suivants : hérité du solde de clôture du mois précédent.
+            const detail: CellDetail =
+              i === 0
+                ? makeDetail(
+                    "Argent de départ",
+                    [
+                      { label: "Solde du compte (banque)", amount: forecast.balance },
+                      { label: "Mouvements de la période (rembobinés)", amount: solde.openings[0] - forecast.balance },
+                    ],
+                    {
+                      subtitle: monthLabel(months[0]),
+                      result: solde.openings[0],
+                      note: "Reconstitué en rembobinant les mouvements depuis le solde réel de la banque.",
+                    },
+                  )
+                : makeDetail(
+                    "Argent de départ",
+                    [{ label: "Solde de fin du mois précédent", amount: solde.closings[i - 1] }],
+                    { subtitle: monthLabel(months[i]), result: solde.openings[i] },
+                  );
+            return (
+              <Fragment key={i}>
+                <TableCell className="border-l" />
+                <TableCell />
+                <TableCell />
+                <TableCell />
+                <CellAmount className={cn("text-right tabular-nums", v < -0.005 && "text-red-600")} detail={detail} onSelect={onSelect}>
+                  {fmt(v)}
+                </CellAmount>
+              </Fragment>
+            );
+          })}
         </TableRow>
         {sections.map((sec) => {
           if (sec.kind === "income") {
@@ -413,13 +682,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                   <NameCell indent={0} bg={MUTED40} expandable={hasTxns} expanded={uOpen} onToggle={hasTxns ? () => toggle(uKey) : undefined}>
                     <span className="min-w-0 truncate">Non catégorisés</span>
                   </NameCell>
-                  {/* Non cliquable pour cette task (sous-total de section, cf. Task 4). */}
-                  <AmountCells
-                    cells={sec.totals}
-                    mode="total"
-                    solde={solde.uncategorizedRunning ?? undefined}
-                    months={months}
-                  />
+                  <SectionTotalsCells sec={sec} months={months} onSelect={onSelect} solde={solde.uncategorizedRunning ?? undefined} />
                 </TableRow>
                 {uOpen && sec.txns?.map((t) => (
                   <TxnRow key={t.id} txn={t} months={months} groups={groups} indent={1} />
@@ -433,8 +696,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                 <TableCell className={cn("sticky left-0 z-10 p-0", MUTED40)}>
                   <FirstColBox>{sec.kind === "envelope" ? "Enveloppes" : "Récurrents"}</FirstColBox>
                 </TableCell>
-                {/* Non cliquable pour cette task (sous-total de section, cf. Task 4). */}
-                <AmountCells cells={sec.totals} mode="total" months={months} />
+                <SectionTotalsCells sec={sec} months={months} onSelect={onSelect} />
               </TableRow>
               {sec.rows.map((r) => renderGroup(r))}
             </Fragment>
@@ -444,57 +706,72 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
           <TableCell className="sticky left-0 z-10 bg-[color-mix(in_oklab,var(--muted)_60%,var(--background))] p-0">
             <FirstColBox>Solde actuel</FirstColBox>
           </TableCell>
-          {/* Non cliquable pour cette task (ligne de synthèse, cf. Task 4). */}
-          {grand.map((c, i) => (
-            <Fragment key={i}>
-              <TableCell className="border-l text-right tabular-nums text-muted-foreground">{fmt(c.budgeted)}</TableCell>
-              <TableCell className="text-right tabular-nums">{fmt(c.depense)}</TableCell>
-              <TableCell className="text-right tabular-nums">{fmt(c.recu)}</TableCell>
-              <TableCell className={cn("text-right tabular-nums", c.balance < 0 && "text-red-600")}>{fmt(c.balance)}</TableCell>
-              <TableCell className={cn("text-right tabular-nums", solde.closings[i] < -0.005 && "text-red-600")}>
-                {fmt(solde.closings[i])}
-              </TableCell>
-            </Fragment>
-          ))}
+          <GrandTotalsCells sections={sections} grand={grand} solde={solde} months={months} onSelect={onSelect} />
         </TableRow>
         {/* Estimé fin de mois : mois courant = solde projeté fin de mois
             (`forecast.currentEstimate`, distinct du solde « maintenant » sur la
-            ligne « Solde actuel ») ; autres mois = leur solde de clôture.
-            Non cliquable pour cette task (ligne de synthèse, cf. Task 4). */}
+            ligne « Solde actuel ») ; autres mois = leur solde de clôture (même
+            détail que la ligne « Solde actuel » pour ce mois — cf. soldeActuelDetail). */}
         <TableRow className="text-sm">
           <TableCell className="bg-background sticky left-0 z-10 p-0">
             <FirstColBox><span className="text-muted-foreground">Estimé fin de mois</span></FirstColBox>
           </TableCell>
           {months.map((m, i) => {
-            const v = m === currentMonth ? forecast.currentEstimate : solde.closings[i];
+            const isCurrent = m === currentMonth;
+            const v = isCurrent ? forecast.currentEstimate : solde.closings[i];
+            const detail: CellDetail = isCurrent
+              ? makeDetail(
+                  "Estimé fin de mois",
+                  [
+                    { label: "Solde actuel", amount: forecast.balance },
+                    ...forecast.currentSteps.map((s) => ({ label: s.label, amount: s.amount })),
+                  ],
+                  { subtitle: monthLabel(m), result: forecast.currentEstimate },
+                )
+              : soldeActuelDetail(sections, solde, i, m, { title: "Estimé fin de mois", result: solde.closings[i] });
             return (
               <Fragment key={i}>
                 <TableCell className="border-l" />
                 <TableCell />
                 <TableCell />
                 <TableCell />
-                <TableCell className={cn("text-right tabular-nums", v < -0.005 && "text-red-600")}>{fmt(v)}</TableCell>
+                <CellAmount className={cn("text-right tabular-nums", v < -0.005 && "text-red-600")} detail={detail} onSelect={onSelect}>
+                  {fmt(v)}
+                </CellAmount>
               </Fragment>
             );
           })}
         </TableRow>
-        {/* Dépassement : total des dépassements de budget (somme des Reste rouges).
-            Non cliquable pour cette task (ligne de synthèse, cf. Task 4). */}
+        {/* Dépassement : total des dépassements de budget (somme des Reste rouges). */}
         <TableRow className="text-sm">
           <TableCell className="bg-background sticky left-0 z-10 p-0">
             <FirstColBox><span className="text-muted-foreground">Dépassement</span></FirstColBox>
           </TableCell>
-          {months.map((_, i) => (
-            <Fragment key={i}>
-              <TableCell className="border-l" />
-              <TableCell />
-              <TableCell />
-              <TableCell className={cn("text-right tabular-nums", overspend[i] > 0 && "text-red-600")}>
-                {overspend[i] > 0 ? fmt(overspend[i]) : "—"}
-              </TableCell>
-              <TableCell />
-            </Fragment>
-          ))}
+          {months.map((_, i) => {
+            const month = months[i];
+            const detail: CellDetail | null =
+              overspend[i] > 0
+                ? makeDetail(
+                    "Dépassement",
+                    sections
+                      .flatMap((s) => s.rows)
+                      .filter((r) => r.direction === "out" && r.cells[i].balance < 0)
+                      .map((r) => ({ label: r.name, amount: -r.cells[i].balance })),
+                    { subtitle: monthLabel(month), result: overspend[i] },
+                  )
+                : null;
+            return (
+              <Fragment key={i}>
+                <TableCell className="border-l" />
+                <TableCell />
+                <TableCell />
+                <CellAmount className={cn("text-right tabular-nums", overspend[i] > 0 && "text-red-600")} detail={detail} onSelect={onSelect}>
+                  {overspend[i] > 0 ? fmt(overspend[i]) : "—"}
+                </CellAmount>
+                <TableCell />
+              </Fragment>
+            );
+          })}
         </TableRow>
       </TableBody>
     </Table>
