@@ -15,7 +15,7 @@ type SelectGroup = { id: number; name: string; lines: { id: number; name: string
 const MUTED40 = "bg-[color-mix(in_oklab,var(--muted)_40%,var(--background))]";
 
 const NUM = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const fmt = (n: number) => NUM.format(n).replace(/[  ]/g, " ");
+const fmt = (n: number) => NUM.format(Math.abs(n) < 0.005 ? 0 : n).replace(/[  ]/g, " ");
 
 // Largeur fixe de la première colonne. Un conteneur interne à largeur px fixe
 // (et non un max-width sur la cellule, ignoré en table-auto) garantit que la
@@ -51,9 +51,14 @@ function AmountCells({ cells, mode, solde }: { cells: MonthCell[]; mode: "out" |
           <TableCell className={cn("text-right tabular-nums", mode !== "in" && c.balance < 0 && "text-red-600")}>
             {mode === "in" ? "" : fmt(c.balance)}
           </TableCell>
-          <TableCell className={cn("text-right tabular-nums", solde?.[i] != null && solde[i]! < 0 && "text-red-600")}>
-            {solde?.[i] != null ? fmt(solde[i]!) : ""}
-          </TableCell>
+          {(() => {
+            const s = solde?.[i];
+            return (
+              <TableCell className={cn("text-right tabular-nums", s != null && s < -0.005 && "text-red-600")}>
+                {s != null ? fmt(s) : ""}
+              </TableCell>
+            );
+          })()}
         </Fragment>
       ))}
     </>
@@ -295,7 +300,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
               <TableCell />
               <TableCell />
               <TableCell />
-              <TableCell className={cn("text-right tabular-nums", v < 0 && "text-red-600")}>{fmt(v)}</TableCell>
+              <TableCell className={cn("text-right tabular-nums", v < -0.005 && "text-red-600")}>{fmt(v)}</TableCell>
             </Fragment>
           ))}
         </TableRow>

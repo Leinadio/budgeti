@@ -281,19 +281,30 @@ export function computeSolde(
 
   // Ancre : le mois courant se ferme sur le solde réel de la banque. S'il est
   // hors de la plage affichée, on ancre sur la borne la plus proche.
-  let ci = months.indexOf(currentMonth);
-  if (ci === -1) ci = n > 0 && currentMonth > months[n - 1] ? n - 1 : 0;
-
   if (n > 0) {
-    closings[ci] = balance;
-    openings[ci] = balance - net[ci];
-    for (let i = ci - 1; i >= 0; i--) {
-      closings[i] = openings[i + 1];
-      openings[i] = closings[i] - net[i];
-    }
-    for (let i = ci + 1; i < n; i++) {
-      openings[i] = closings[i - 1];
-      closings[i] = openings[i] + net[i];
+    let ci = months.indexOf(currentMonth);
+    if (ci === -1 && currentMonth < months[0]) {
+      // Fenêtre entièrement future : le solde d'aujourd'hui est l'ouverture du 1er mois.
+      openings[0] = balance;
+      closings[0] = balance + net[0];
+      for (let i = 1; i < n; i++) {
+        openings[i] = closings[i - 1];
+        closings[i] = openings[i] + net[i];
+      }
+    } else {
+      // Mois courant dans la plage, ou plage entièrement passée : on ancre le
+      // solde de fin sur le mois courant (ou, hors plage, sur la borne haute).
+      if (ci === -1) ci = n - 1;
+      closings[ci] = balance;
+      openings[ci] = balance - net[ci];
+      for (let i = ci - 1; i >= 0; i--) {
+        closings[i] = openings[i + 1];
+        openings[i] = closings[i] - net[i];
+      }
+      for (let i = ci + 1; i < n; i++) {
+        openings[i] = closings[i - 1];
+        closings[i] = openings[i] + net[i];
+      }
     }
   }
 

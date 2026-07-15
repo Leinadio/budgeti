@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff } from "../../src/lib/history";
+import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde } from "../../src/lib/history";
 import type { Group, Txn } from "../../src/lib/forecast";
 
 const courses: Group = {
@@ -211,8 +211,6 @@ test("no uncategorized section when every transaction has a group", () => {
   expect(sections.some((s) => s.kind === "uncategorized")).toBe(false);
 });
 
-import { computeSolde } from "../../src/lib/history";
-
 const salaire: Group = {
   id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "envelope",
   monthlyAmount: 2000, keywords: ["REMU"], lines: [],
@@ -260,4 +258,19 @@ test("computeSolde: un mois futur part du solde de fin du mois courant", () => {
   // août projeté : salaire reçu 2000, courses dépensé = budget 300 -> net 1700
   expect(solde.openings[1]).toBe(1500); // = fin de juillet
   expect(solde.closings[1]).toBe(3200); // 1500 + 1700
+});
+
+test("computeSolde: fenêtre entièrement future ancre l'ouverture sur le solde d'aujourd'hui", () => {
+  const txns = [
+    tx({ id: "1", date: "2026-07-01", amount: 2000, label: "VIR REMU", groupId: 9 }),
+    tx({ id: "2", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
+  ];
+  const months = ["2026-08", "2026-09"];
+  const sections = computeHistory([salaire, courses], txns, months, "2026-07");
+  const solde = computeSolde(sections, months, "2026-07", 1500);
+  // chaque mois futur : salaire 2000 reçu, courses budget 300 -> net 1700
+  expect(solde.openings[0]).toBe(1500); // = solde d'aujourd'hui
+  expect(solde.closings[0]).toBe(3200); // 1500 + 1700
+  expect(solde.openings[1]).toBe(3200); // enchaînement
+  expect(solde.closings[1]).toBe(4900); // 3200 + 1700
 });
