@@ -367,10 +367,10 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                       title: "Argent de départ",
                       steps: [
                         { label: "Solde du compte (banque)", amount: forecast.balance },
-                        { label: "Mouvements affichés du mois", amount: -(grand[i].recu - grand[i].depense) },
+                        { label: "Mouvements de la période (rembobinés)", amount: v - forecast.balance },
                       ],
                       result: v,
-                      note: "On rembobine depuis le solde réel de la banque.",
+                      note: "Reconstitué en rembobinant les mouvements depuis le solde réel de la banque.",
                     }
                   : sumExplanation("Argent de départ", [
                       { label: "Solde de fin du mois précédent", amount: solde.closings[i - 1] },
