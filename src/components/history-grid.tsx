@@ -145,7 +145,10 @@ function sectionNode(sec: HistorySection, i: number, month: string, kind: "depen
         ? kind === "net"
           ? uncatTxnNodes(sec, month)
           : sectionTxnChildren(sec.txns, month, kind === "depense")
-        : sec.rows.map((r) => groupNode(r, i, month, kind));
+        : (() => {
+            const gn = sec.rows.map((r) => groupNode(r, i, month, kind));
+            return kind === "net" ? gn : gn.filter((n) => n.amount !== 0);
+          })();
   return { label: labelOfSection(sec.kind), amount, children };
 }
 
@@ -292,11 +295,15 @@ function SectionTotalsCells({ sec, months, onSelect, solde }: {
             ? makeDetail("Budget", sec.rows.map((r) => groupNode(r, i, month, "budget")), { subtitle, result: c.budgeted })
             : null;
 
-        const depNodes = isUncat ? sectionTxnChildren(sec.txns, month, true) : sec.rows.map((r) => groupNode(r, i, month, "depense"));
+        const depNodes = isUncat
+          ? sectionTxnChildren(sec.txns, month, true)
+          : sec.rows.map((r) => groupNode(r, i, month, "depense")).filter((n) => n.amount !== 0);
         const depDetail: CellDetail | null =
           c.depense !== 0 && depNodes ? makeDetail("Dépensé", depNodes, { subtitle, result: c.depense }) : null;
 
-        const recuNodes = isUncat ? sectionTxnChildren(sec.txns, month, false) : sec.rows.map((r) => groupNode(r, i, month, "recu"));
+        const recuNodes = isUncat
+          ? sectionTxnChildren(sec.txns, month, false)
+          : sec.rows.map((r) => groupNode(r, i, month, "recu")).filter((n) => n.amount !== 0);
         const recuDetail: CellDetail | null =
           c.recu !== 0 && recuNodes ? makeDetail("Reçu", recuNodes, { subtitle, result: c.recu }) : null;
 
@@ -306,7 +313,14 @@ function SectionTotalsCells({ sec, months, onSelect, solde }: {
                 "Reste",
                 [
                   { label: "Budget", amount: c.budgeted },
-                  { label: "Dépensé", amount: -c.depense, children: sec.rows.map((r) => groupNode(r, i, month, "depense")).map(negateNode) },
+                  {
+                    label: "Dépensé",
+                    amount: -c.depense,
+                    children: sec.rows
+                      .map((r) => groupNode(r, i, month, "depense"))
+                      .filter((n) => n.amount !== 0)
+                      .map(negateNode),
+                  },
                 ],
                 { subtitle, result: c.balance },
               )
@@ -379,11 +393,19 @@ function GrandTotalsCells({ sections, grand, solde, months, onSelect }: {
             : null;
         const depDetail: CellDetail | null =
           c.depense !== 0
-            ? makeDetail("Dépensé", sections.map((sec) => sectionNode(sec, i, month, "depense")), { subtitle, result: c.depense })
+            ? makeDetail(
+                "Dépensé",
+                sections.map((sec) => sectionNode(sec, i, month, "depense")).filter((n) => n.amount !== 0),
+                { subtitle, result: c.depense },
+              )
             : null;
         const recuDetail: CellDetail | null =
           c.recu !== 0
-            ? makeDetail("Reçu", sections.map((sec) => sectionNode(sec, i, month, "recu")), { subtitle, result: c.recu })
+            ? makeDetail(
+                "Reçu",
+                sections.map((sec) => sectionNode(sec, i, month, "recu")).filter((n) => n.amount !== 0),
+                { subtitle, result: c.recu },
+              )
             : null;
         const resteDetail: CellDetail | null =
           Math.abs(c.budgeted - c.depense - c.balance) < 0.005
@@ -391,7 +413,14 @@ function GrandTotalsCells({ sections, grand, solde, months, onSelect }: {
                 "Reste",
                 [
                   { label: "Budget", amount: c.budgeted },
-                  { label: "Dépensé", amount: -c.depense, children: sections.map((sec) => sectionNode(sec, i, month, "depense")).map(negateNode) },
+                  {
+                    label: "Dépensé",
+                    amount: -c.depense,
+                    children: sections
+                      .map((sec) => sectionNode(sec, i, month, "depense"))
+                      .filter((n) => n.amount !== 0)
+                      .map(negateNode),
+                  },
                 ],
                 { subtitle, result: c.balance },
               )

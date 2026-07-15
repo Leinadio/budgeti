@@ -48,7 +48,7 @@ export function HistoryDetailSidebar({ detail, onClose }: { detail: CellDetail |
           <X className="size-4" />
         </button>
       </div>
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-4" key={`${detail.title}·${detail.subtitle ?? ""}·${detail.result}`}>
         {detail.nodes.map((n, i) => (
           <NodeRow key={i} node={n} path={`${i}`} depth={0} />
         ))}
