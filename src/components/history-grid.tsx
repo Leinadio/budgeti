@@ -120,7 +120,7 @@ function AmountCells({ cells, mode, solde, depEntries, recuEntries, budgetEntrie
           </CellAmount>
           <CellAmount
             className={cn("text-right tabular-nums", mode !== "in" && c.balance < 0 && "text-red-600")}
-            explanation={mode !== "in" ? resteExplanation(c.budgeted, c.depense) : null}
+            explanation={mode !== "in" && Math.abs(c.budgeted - c.depense - c.balance) < 0.005 ? resteExplanation(c.budgeted, c.depense) : null}
           >
             {mode === "in" ? "" : fmt(c.balance)}
           </CellAmount>
