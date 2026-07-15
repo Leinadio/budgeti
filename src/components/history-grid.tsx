@@ -617,7 +617,10 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
   };
 
   return (
-    <Table>
+    // w-max : la largeur du tableau suit son contenu, pas le conteneur. Sinon
+    // (w-full par defaut) les colonnes se resserrent quand la sidebar de detail
+    // s'ouvre et retrecit la zone : le tableau doit defiler, pas se tasser.
+    <Table className="w-max">
       <TableHeader>
         <TableRow>
           <TableHead rowSpan={2} className="bg-background sticky left-0 z-10 p-0 align-bottom">
