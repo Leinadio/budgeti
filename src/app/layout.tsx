@@ -20,16 +20,18 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <DetailSidebarProvider>
           {/* flex-1 min-w-0 : le shell de gauche est une colonne de la rangee
               exterieure ; sans lui il ne se retrecit pas quand le detail s'ouvre. */}
-          <SidebarProvider className="min-w-0 flex-1">
+          <SidebarProvider className="h-svh min-w-0 flex-1 overflow-hidden">
             <AppSidebar />
             {/* min-w-0 : sans lui, un contenu large (grand tableau) empeche l'inset
                 de retrecir sous sa taille min-content et deborde sous la sidebar.
-                mr-0 quand le detail est ouvert : son p-2 fait deja l'ecart. */}
-            <SidebarInset className="min-w-0 md:group-data-[detail=open]/detail:mr-0">
-              <header className="flex items-center gap-2 border-b bg-card px-4 py-2">
+                mr-0 quand le detail est ouvert : son p-2 fait deja l'ecart.
+                overflow-hidden : clippe le contenu aux coins arrondis de la carte. */}
+            <SidebarInset className="min-w-0 overflow-hidden md:group-data-[detail=open]/detail:mr-0">
+              {/* shrink-0 : l'en-tete reste en place, c'est le contenu qui defile. */}
+              <header className="flex shrink-0 items-center gap-2 border-b bg-card px-4 py-2">
                 <SidebarTrigger />
               </header>
-              <div className="px-6 py-6">{children}</div>
+              <div className="flex-1 overflow-y-auto px-6 py-6">{children}</div>
             </SidebarInset>
           </SidebarProvider>
         </DetailSidebarProvider>

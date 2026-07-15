@@ -37,7 +37,10 @@ export function DetailSidebarProvider({ children }: { children: React.ReactNode 
         // sidebar de detail quand elle est ouverte (son p-2 fait deja l'ecart).
         // shadcn ne gere ce reglage que pour une sidebar de gauche, via un
         // selecteur `peer` qui ne remonte pas jusqu'a une sidebar placee apres.
-        className="group/detail"
+        // h-svh + overflow-hidden : le shell tient dans l'ecran et ne defile pas.
+        // C'est le contenu de la carte qui defile (voir layout), donc l'en-tete
+        // reste en place et les coins arrondis restent visibles.
+        className="group/detail h-svh overflow-hidden"
         data-detail={detail ? "open" : "closed"}
         style={{ "--sidebar-width": "26rem" } as React.CSSProperties}
       >
