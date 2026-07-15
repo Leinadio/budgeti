@@ -10,28 +10,47 @@ type Acct = { id: string; name: string };
 
 const selectClass = "border-input bg-background h-9 rounded-md border px-3 text-sm";
 
-// Le type (récurrent / enveloppe) pilote les champs : le montant n'existe que
-// pour une enveloppe ; un récurrent définit ses montants via ses lignes.
+// La « nature » pilote sens + type : une dépense choisit enveloppe/récurrent et
+// un montant ; une rémunération principale est un récurrent, une supplémentaire
+// une enveloppe sans montant (le montant du mois vient des transactions rangées).
 export function NewGroupForm({ accounts }: { accounts: Acct[] }) {
+  const [nature, setNature] = useState("expense");
   const [kind, setKind] = useState("envelope");
+  const isExpense = nature === "expense";
   return (
     <form action={addGroup} className="flex flex-wrap items-end gap-2">
       <div className="flex w-full flex-col gap-1">
-        <Label htmlFor="grp-kind" className="font-normal">Type</Label>
+        <Label htmlFor="grp-nature" className="font-normal">Nature</Label>
         <select
-          id="grp-kind"
-          name="kind"
-          value={kind}
-          onChange={(e) => setKind(e.target.value)}
-          className={cn(selectClass, "max-w-40")}
+          id="grp-nature"
+          name="nature"
+          value={nature}
+          onChange={(e) => setNature(e.target.value)}
+          className={cn(selectClass, "max-w-64")}
         >
-          <option value="envelope">Enveloppe</option>
-          <option value="recurring">Récurrent</option>
+          <option value="expense">Dépense</option>
+          <option value="principal">Rémunération principale</option>
+          <option value="supplementary">Rémunération supplémentaire</option>
         </select>
       </div>
+      {isExpense && (
+        <div className="flex flex-col gap-1">
+          <Label htmlFor="grp-kind" className="font-normal">Type</Label>
+          <select
+            id="grp-kind"
+            name="kind"
+            value={kind}
+            onChange={(e) => setKind(e.target.value)}
+            className={cn(selectClass, "max-w-40")}
+          >
+            <option value="envelope">Enveloppe</option>
+            <option value="recurring">Récurrent</option>
+          </select>
+        </div>
+      )}
       <div className="flex flex-col gap-1">
         <Label htmlFor="grp-name" className="font-normal">Nom</Label>
-        <Input id="grp-name" name="name" placeholder="Ex: Courses" required />
+        <Input id="grp-name" name="name" placeholder={isExpense ? "Ex: Courses" : "Ex: Rémunération"} required />
       </div>
       <div className="flex flex-col gap-1">
         <Label htmlFor="grp-account" className="font-normal">Compte</Label>
@@ -41,14 +60,7 @@ export function NewGroupForm({ accounts }: { accounts: Acct[] }) {
           ))}
         </select>
       </div>
-      <div className="flex flex-col gap-1">
-        <Label htmlFor="grp-direction" className="font-normal">Sens</Label>
-        <select id="grp-direction" name="direction" className={selectClass}>
-          <option value="out">Sortie</option>
-          <option value="in">Entrée</option>
-        </select>
-      </div>
-      {kind === "envelope" && (
+      {isExpense && kind === "envelope" && (
         <div className="flex flex-col gap-1">
           <Label htmlFor="grp-amount" className="font-normal">Montant €</Label>
           <Input id="grp-amount" type="number" name="monthlyAmount" step="0.01" placeholder="0.00" className="max-w-32" />
