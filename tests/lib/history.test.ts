@@ -78,12 +78,40 @@ test("le Reste de section ignore l'argent reçu (rémunération sans budget)", (
     tx({ id: "2", date: "2026-07-05", amount: -10, label: "SPOTIFY", groupId: 2, lineId: 11 }),
   ];
   const sections = computeHistory([remu, abo], txns, ["2026-07"], "2026-07");
-  const rec = sections.find((s) => s.kind === "recurring")!;
-  const remuRow = rec.rows.find((r) => r.direction === "in")!;
+  // La rémunération est désormais dans sa propre section « income », en tête.
+  const income = sections.find((s) => s.kind === "income")!;
+  const remuRow = income.rows[0];
   // La rémunération n'a pas de budget de dépense : son Reste est nul, l'argent reçu n'y entre pas.
   expect(remuRow.cells[0].balance).toBe(0);
-  // Total de section = Reste des dépenses seulement (abo : budget 25 - dépensé 10 = 15).
+  // La section récurrente ne contient plus que la dépense (abo : budget 25 - dépensé 10 = 15).
+  const rec = sections.find((s) => s.kind === "recurring")!;
+  expect(rec.rows.every((r) => r.direction === "out")).toBe(true);
   expect(rec.totals[0].balance).toBe(15);
+});
+
+test("les rémunérations forment une section 'income' en tête, hors Récurrents/Enveloppes", () => {
+  const remuRec: Group = {
+    id: 30, accountId: "a1", name: "Salaire", direction: "in", kind: "recurring",
+    monthlyAmount: null, keywords: [], lines: [], incomeKind: "principal",
+  };
+  const remuEnv: Group = {
+    id: 31, accountId: "a1", name: "Prime", direction: "in", kind: "envelope",
+    monthlyAmount: null, keywords: [], lines: [], incomeKind: "supplementary",
+  };
+  const txns = [
+    tx({ id: "1", date: "2026-07-01", amount: 2000, label: "SAL", groupId: 30 }),
+    tx({ id: "2", date: "2026-07-02", amount: 300, label: "PRIME", groupId: 31 }),
+    tx({ id: "3", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
+  ];
+  const sections = computeHistory([remuRec, remuEnv, courses], txns, ["2026-07"], "2026-07");
+  // Section income en tête, principale avant supplémentaire.
+  expect(sections[0].kind).toBe("income");
+  expect(sections[0].rows.map((r) => r.name)).toEqual(["Salaire", "Prime"]);
+  // Le seul récurrent était une rémunération : plus de section récurrente.
+  expect(sections.find((s) => s.kind === "recurring")).toBeUndefined();
+  // La section enveloppe ne garde que la dépense.
+  const env = sections.find((s) => s.kind === "envelope")!;
+  expect(env.rows.map((r) => r.name)).toEqual(["Courses"]);
 });
 
 test("le Reste des non catégorisés est nul (aucun budget)", () => {

@@ -201,14 +201,16 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
       return next;
     });
 
-  const renderGroup = (r: HistoryRow) => {
+  // topLevel : ligne au niveau des sections (rémunérations), bande grise comme
+  // les en-têtes Récurrents / Enveloppes.
+  const renderGroup = (r: HistoryRow, topLevel = false) => {
     const gKey = `g:${r.id}`;
     const hasChildren = r.subRows.length > 0 || r.txns.length > 0;
     const gOpen = isOpen(gKey);
     return (
       <Fragment key={r.id}>
-        <TableRow className={cn(hasChildren && "hover:bg-muted/50")}>
-          <NameCell indent={0} expandable={hasChildren} expanded={gOpen} onToggle={hasChildren ? () => toggle(gKey) : undefined}>
+        <TableRow className={cn(topLevel ? "bg-muted/40 hover:bg-muted/40 font-medium" : hasChildren && "hover:bg-muted/50")}>
+          <NameCell indent={0} bg={topLevel ? MUTED40 : undefined} expandable={hasChildren} expanded={gOpen} onToggle={hasChildren ? () => toggle(gKey) : undefined}>
             {r.direction === "in" ? (
               <ArrowUpRight className="size-4 shrink-0 text-sky-600" />
             ) : (
@@ -305,6 +307,10 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
           ))}
         </TableRow>
         {sections.map((sec) => {
+          if (sec.kind === "income") {
+            // Rémunérations : lignes au niveau des sections, tout en haut, sans en-tête.
+            return <Fragment key={sec.kind}>{sec.rows.map((r) => renderGroup(r, true))}</Fragment>;
+          }
           if (sec.kind === "uncategorized") {
             const uKey = "s:uncat";
             const uOpen = isOpen(uKey);
@@ -331,7 +337,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                 </TableCell>
                 <AmountCells cells={sec.totals} mode="total" />
               </TableRow>
-              {sec.rows.map(renderGroup)}
+              {sec.rows.map((r) => renderGroup(r))}
             </Fragment>
           );
         })}

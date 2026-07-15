@@ -34,7 +34,7 @@ export type HistoryRow = {
   txns: HistoryTxn[]; // transactions directement sous le groupe (enveloppe, ou récurrent sans ligne)
 };
 export type HistorySection = {
-  kind: "envelope" | "recurring" | "uncategorized";
+  kind: "income" | "envelope" | "recurring" | "uncategorized";
   rows: HistoryRow[];
   totals: MonthCell[];
   txns?: HistoryTxn[]; // uniquement pour « uncategorized » : liste plate
@@ -186,15 +186,8 @@ export function computeHistory(
     return { id: g.id, name: g.name, kind: g.kind, direction: g.direction, cells, subRows, txns: groupTxns };
   };
 
-  const section = (kind: "envelope" | "recurring"): HistorySection | null => {
-    // Rémunérations (sens « in ») en tête de section, puis les dépenses ; tri
-    // stable pour préserver l'ordre d'origine à l'intérieur de chaque bloc.
-    const rows = groups
-      .filter((g) => g.kind === kind)
-      .map(rowFor)
-      .sort((a, b) => (a.direction === b.direction ? 0 : a.direction === "in" ? -1 : 1));
-    if (rows.length === 0) return null;
-    const totals = months.map((_, i) =>
+  const sumRows = (rows: HistoryRow[]): MonthCell[] =>
+    months.map((_, i) =>
       rows.reduce((acc, r) => {
         const c = r.cells[i];
         return {
@@ -205,7 +198,25 @@ export function computeHistory(
         };
       }, emptyCell()),
     );
-    return { kind, rows, totals };
+
+  // Rémunérations (sens « in ») : présentées au niveau des sections, tout en haut
+  // du tableau, principale avant supplémentaire.
+  const incomeRank = (g: Group) => (g.incomeKind === "principal" ? 0 : g.incomeKind === "supplementary" ? 1 : 2);
+  const incomeSection = (): HistorySection | null => {
+    const rows = groups
+      .filter((g) => g.direction === "in")
+      .sort((a, b) => incomeRank(a) - incomeRank(b))
+      .map(rowFor);
+    if (rows.length === 0) return null;
+    return { kind: "income", rows, totals: sumRows(rows) };
+  };
+
+  // Sections de dépenses : uniquement les groupes de sortie ; les rémunérations
+  // sont sorties dans leur propre section (voir incomeSection).
+  const section = (kind: "envelope" | "recurring"): HistorySection | null => {
+    const rows = groups.filter((g) => g.kind === kind && g.direction === "out").map(rowFor);
+    if (rows.length === 0) return null;
+    return { kind, rows, totals: sumRows(rows) };
   };
 
   // Transactions sans groupe : listées par mois, avec un total Dépensé/Reçu.
@@ -226,7 +237,7 @@ export function computeHistory(
     return { kind: "uncategorized", rows: [], totals, txns: mine.map(toHistoryTxn) };
   };
 
-  return [section("recurring"), section("envelope"), uncategorized()].filter(
+  return [incomeSection(), section("recurring"), section("envelope"), uncategorized()].filter(
     (s): s is HistorySection => s !== null,
   );
 }
