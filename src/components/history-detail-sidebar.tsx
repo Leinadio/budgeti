@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { X, ChevronRight, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CellDetail, DetailNode } from "@/lib/history-explain";
@@ -35,31 +35,48 @@ function NodeRow({ node, path, depth }: { node: DetailNode; path: string; depth:
 }
 
 export function HistoryDetailSidebar({ detail, onClose }: { detail: CellDetail | null; onClose: () => void }) {
-  if (!detail) return null;
+  // On garde le panneau monté et on conserve le dernier détail affiché pour que
+  // la fermeture (slide-out) reste fluide même quand `detail` repasse à null.
+  const [shown, setShown] = useState<CellDetail | null>(detail);
+  useEffect(() => {
+    if (detail) setShown(detail);
+  }, [detail]);
+  const open = detail !== null;
   return (
-    <aside className="bg-background fixed top-0 right-0 z-40 flex h-screen w-[400px] max-w-[90vw] flex-col border-l shadow-xl">
-      <div className="flex items-start justify-between gap-2 border-b p-4">
-        <div className="min-w-0">
-          <h2 className="font-semibold">{detail.title}</h2>
-          {detail.subtitle && <p className="text-muted-foreground text-sm">{detail.subtitle}</p>}
-          <p className={cn("mt-1 text-lg font-semibold tabular-nums", detail.result < 0 && "text-red-600")}>{fmtSigned(detail.result)}</p>
-        </div>
-        <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground shrink-0 rounded p-1" aria-label="Fermer">
-          <X className="size-4" />
-        </button>
-      </div>
-      <div className="flex-1 overflow-y-auto p-4" key={`${detail.title}·${detail.subtitle ?? ""}·${detail.result}`}>
-        {detail.nodes.map((n, i) => (
-          <NodeRow key={i} node={n} path={`${i}`} depth={0} />
-        ))}
-        <div className="mt-2 flex items-center gap-2 border-t pt-2 text-sm font-semibold">
-          <span className="w-3 shrink-0" />
-          <span className="w-4 shrink-0 text-center">=</span>
-          <span className={cn("w-24 shrink-0 text-right tabular-nums", detail.result < 0 && "text-red-600")}>{fmtAbs(detail.result)}</span>
-          <span className="min-w-0 flex-1 truncate">Total</span>
-        </div>
-        {detail.note && <p className="text-muted-foreground mt-3 text-xs">{detail.note}</p>}
-      </div>
+    <aside
+      aria-hidden={!open}
+      className={cn(
+        "bg-background fixed top-0 right-0 z-40 flex h-screen w-[400px] max-w-[90vw] flex-col border-l shadow-xl",
+        "transition-transform duration-300 ease-in-out",
+        open ? "translate-x-0" : "pointer-events-none translate-x-full",
+      )}
+    >
+      {shown && (
+        <>
+          <div className="flex items-start justify-between gap-2 border-b p-4">
+            <div className="min-w-0">
+              <h2 className="font-semibold">{shown.title}</h2>
+              {shown.subtitle && <p className="text-muted-foreground text-sm">{shown.subtitle}</p>}
+              <p className={cn("mt-1 text-lg font-semibold tabular-nums", shown.result < 0 && "text-red-600")}>{fmtSigned(shown.result)}</p>
+            </div>
+            <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground shrink-0 rounded p-1" aria-label="Fermer">
+              <X className="size-4" />
+            </button>
+          </div>
+          <div className="flex-1 overflow-y-auto p-4" key={`${shown.title}·${shown.subtitle ?? ""}·${shown.result}`}>
+            {shown.nodes.map((n, i) => (
+              <NodeRow key={i} node={n} path={`${i}`} depth={0} />
+            ))}
+            <div className="mt-2 flex items-center gap-2 border-t pt-2 text-sm font-semibold">
+              <span className="w-3 shrink-0" />
+              <span className="w-4 shrink-0 text-center">=</span>
+              <span className={cn("w-24 shrink-0 text-right tabular-nums", shown.result < 0 && "text-red-600")}>{fmtAbs(shown.result)}</span>
+              <span className="min-w-0 flex-1 truncate">Total</span>
+            </div>
+            {shown.note && <p className="text-muted-foreground mt-3 text-xs">{shown.note}</p>}
+          </div>
+        </>
+      )}
     </aside>
   );
 }
