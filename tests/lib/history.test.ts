@@ -68,6 +68,34 @@ test("income group fills recu, not depense", () => {
   expect(sections[0].rows[0].cells[0]).toEqual({ budgeted: 2000, depense: 0, recu: 2000, balance: 0 });
 });
 
+test("le Reste de section ignore l'argent reçu (rémunération sans budget)", () => {
+  const remu: Group = {
+    id: 21, accountId: "a1", name: "Rémunération", direction: "in", kind: "recurring",
+    monthlyAmount: null, keywords: [], lines: [],
+  };
+  const txns = [
+    tx({ id: "1", date: "2026-07-01", amount: 652.09, label: "VIR", groupId: 21 }),
+    tx({ id: "2", date: "2026-07-05", amount: -10, label: "SPOTIFY", groupId: 2, lineId: 11 }),
+  ];
+  const sections = computeHistory([remu, abo], txns, ["2026-07"], "2026-07");
+  const rec = sections.find((s) => s.kind === "recurring")!;
+  const remuRow = rec.rows.find((r) => r.direction === "in")!;
+  // La rémunération n'a pas de budget de dépense : son Reste est nul, l'argent reçu n'y entre pas.
+  expect(remuRow.cells[0].balance).toBe(0);
+  // Total de section = Reste des dépenses seulement (abo : budget 25 - dépensé 10 = 15).
+  expect(rec.totals[0].balance).toBe(15);
+});
+
+test("le Reste des non catégorisés est nul (aucun budget)", () => {
+  const txns = [
+    tx({ id: "1", date: "2026-07-01", amount: 500, label: "DIVERS", groupId: null }),
+    tx({ id: "2", date: "2026-07-05", amount: -80, label: "DIVERS2", groupId: null }),
+  ];
+  const sections = computeHistory([], txns, ["2026-07"], "2026-07");
+  const uncat = sections.find((s) => s.kind === "uncategorized")!;
+  expect(uncat.totals[0].balance).toBe(0);
+});
+
 test("future projection within budget: spent = budgeted, balance = 0", () => {
   const txns = [tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 })];
   const sections = computeHistory([courses], txns, ["2026-07", "2026-08"], "2026-07");
@@ -202,7 +230,8 @@ test("transactions with no group go to the uncategorized section with per-month 
   const uncat = sections.find((s) => s.kind === "uncategorized")!;
   expect(uncat.txns!.map((t) => t.id).sort()).toEqual(["1", "2"]);
   expect(uncat.txns!.every((t) => t.groupId === null)).toBe(true);
-  expect(uncat.totals[0]).toEqual({ budgeted: 0, depense: 40, recu: 100, balance: 60 });
+  // balance (Reste) = 0 : les non catégorisés n'ont pas de budget, le reçu n'y entre pas.
+  expect(uncat.totals[0]).toEqual({ budgeted: 0, depense: 40, recu: 100, balance: 0 });
 });
 
 test("no uncategorized section when every transaction has a group", () => {

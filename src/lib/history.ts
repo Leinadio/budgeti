@@ -2,7 +2,9 @@ import { resolveOwnership, type OwnableGroup, type OwnedTxn } from "./ownership"
 import type { Group, Txn } from "./forecast";
 
 // depense et recu séparés selon le sens du groupe (une seule des deux est non nulle
-// pour une ligne ; les sous-totaux additionnent les deux). balance = budgeted - réalisé.
+// pour une ligne ; les sous-totaux additionnent les deux). balance = « Reste » de
+// budget = budget − dépensé pour les dépenses, 0 pour les entrées et le non catégorisé
+// (une entrée d'argent n'a pas de budget, donc pas de reste).
 export type MonthCell = { budgeted: number; depense: number; recu: number; balance: number };
 // Une transaction détaillée, rattachée à un groupe ou à un sous-groupe (ligne).
 // group_id / line_id portés pour alimenter le menu de (ré)assignation.
@@ -144,7 +146,10 @@ export function computeHistory(
         budgeted,
         depense: isOut ? realized : 0,
         recu: isOut ? 0 : realized,
-        balance: budgeted - realized,
+        // Le Reste ne concerne que les dépenses (budget − dépensé). Une entrée
+        // d'argent n'a pas de budget, donc son Reste est nul : le reçu ne doit
+        // jamais être soustrait d'un « reste de budget ».
+        balance: isOut ? budgeted - realized : 0,
       };
     });
 
@@ -214,7 +219,9 @@ export function computeHistory(
       const monthTxns = mine.filter((t) => t.date.slice(0, 7) === m);
       const depense = monthTxns.filter((t) => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
       const recu = monthTxns.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
-      return { budgeted: 0, depense, recu, balance: recu - depense };
+      // Aucun budget sur les non catégorisés : pas de « reste » (0), et surtout
+      // l'argent reçu n'est pas soustrait.
+      return { budgeted: 0, depense, recu, balance: 0 };
     });
     return { kind: "uncategorized", rows: [], totals, txns: mine.map(toHistoryTxn) };
   };
