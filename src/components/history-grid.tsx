@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { formatEur } from "@/lib/money";
 import { monthLabel } from "@/lib/transactions-view";
 import type { AccountForecast } from "@/lib/forecast";
-import { monthsDiff, type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn } from "@/lib/history";
+import { monthsDiff, type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn, type SoldeColumn } from "@/lib/history";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TruncatedText } from "@/components/truncated-text";
 import { GroupSelectField } from "@/components/group-select-field";
@@ -35,8 +35,10 @@ function FirstColBox({ children, indent = 0 }: { children: React.ReactNode; inde
   );
 }
 
-// mode : "out" (dépense), "in" (entrée) ou "total" (sous-total, montre les deux colonnes).
-function AmountCells({ cells, mode }: { cells: MonthCell[]; mode: "out" | "in" | "total" }) {
+// mode : "out" (dépense), "in" (entrée) ou "total" (sous-total, montre les deux
+// colonnes). La colonne Solde affiche le solde du compte cumulé, fourni par
+// `solde` (une valeur par mois) ; absente ou null => cellule vide.
+function AmountCells({ cells, mode, solde }: { cells: MonthCell[]; mode: "out" | "in" | "total"; solde?: (number | null)[] }) {
   return (
     <>
       {cells.map((c, i) => (
@@ -46,8 +48,11 @@ function AmountCells({ cells, mode }: { cells: MonthCell[]; mode: "out" | "in" |
           </TableCell>
           <TableCell className="text-right tabular-nums">{mode === "in" ? "—" : fmt(c.depense)}</TableCell>
           <TableCell className="text-right tabular-nums">{mode === "out" ? "—" : fmt(c.recu)}</TableCell>
-          <TableCell className={cn("text-right tabular-nums", mode === "out" && c.balance < 0 && "text-red-600")}>
-            {mode === "in" ? `+${fmt(c.recu)}` : fmt(c.balance)}
+          <TableCell className={cn("text-right tabular-nums", mode !== "in" && c.balance < 0 && "text-red-600")}>
+            {mode === "in" ? "" : fmt(c.balance)}
+          </TableCell>
+          <TableCell className={cn("text-right tabular-nums", solde?.[i] != null && solde[i]! < 0 && "text-red-600")}>
+            {solde?.[i] != null ? fmt(solde[i]!) : ""}
           </TableCell>
         </Fragment>
       ))}
@@ -170,7 +175,7 @@ function TxnRow({ txn, months, groups, indent }: {
   );
 }
 
-export function HistoryGrid({ months, currentMonth, forecast, sections, overspend, grand, groups }: {
+export function HistoryGrid({ months, currentMonth, forecast, sections, overspend, grand, groups, solde }: {
   months: string[];
   currentMonth: string;
   forecast: AccountForecast;
@@ -178,6 +183,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
   overspend: number[];
   grand: MonthCell[];
   groups: SelectGroup[];
+  solde: SoldeColumn;
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const isOpen = (k: string) => open.has(k);
@@ -204,7 +210,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
             )}
             <span className="min-w-0 truncate font-medium">{r.name}</span>
           </NameCell>
-          <AmountCells cells={r.cells} mode={r.direction} />
+          <AmountCells cells={r.cells} mode={r.direction} solde={solde.rowRunning[r.id]} />
         </TableRow>
         {gOpen && (
           <>
@@ -243,7 +249,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
             <FirstColBox>Catégorie</FirstColBox>
           </TableHead>
           {months.map((m, i) => (
-            <TableHead key={m} colSpan={4} className="border-l align-bottom font-normal">
+            <TableHead key={m} colSpan={5} className="border-l align-bottom font-normal">
               <ForecastCard month={m} currentMonth={currentMonth} f={forecast} overspend={overspend[i]} />
             </TableHead>
           ))}
@@ -252,7 +258,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
           {months.map((m) => (
             <TableHead
               key={m}
-              colSpan={4}
+              colSpan={5}
               data-current-month={m === currentMonth ? "" : undefined}
               className={cn(
                 "border-l text-center whitespace-nowrap",
@@ -271,12 +277,27 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
               <TableHead className="border-l text-right">Budg.</TableHead>
               <TableHead className="text-right">Dép.</TableHead>
               <TableHead className="text-right">Reçu</TableHead>
+              <TableHead className="text-right">Reste</TableHead>
               <TableHead className="text-right">Solde</TableHead>
             </Fragment>
           ))}
         </TableRow>
       </TableHeader>
       <TableBody>
+        <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
+          <TableCell className={cn("sticky left-0 z-10 p-0", MUTED40)}>
+            <FirstColBox>Argent de départ</FirstColBox>
+          </TableCell>
+          {solde.openings.map((v, i) => (
+            <Fragment key={i}>
+              <TableCell className="border-l" />
+              <TableCell />
+              <TableCell />
+              <TableCell />
+              <TableCell className={cn("text-right tabular-nums", v < 0 && "text-red-600")}>{fmt(v)}</TableCell>
+            </Fragment>
+          ))}
+        </TableRow>
         {sections.map((sec) => {
           if (sec.kind === "uncategorized") {
             const uKey = "s:uncat";
@@ -288,7 +309,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                   <NameCell indent={0} bg={MUTED40} expandable={hasTxns} expanded={uOpen} onToggle={hasTxns ? () => toggle(uKey) : undefined}>
                     <span className="min-w-0 truncate">Non catégorisés</span>
                   </NameCell>
-                  <AmountCells cells={sec.totals} mode="total" />
+                  <AmountCells cells={sec.totals} mode="total" solde={solde.uncategorizedRunning ?? undefined} />
                 </TableRow>
                 {uOpen && sec.txns?.map((t) => (
                   <TxnRow key={t.id} txn={t} months={months} groups={groups} indent={1} />
@@ -310,9 +331,9 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
         })}
         <TableRow className="bg-muted/60 hover:bg-muted/60 font-semibold">
           <TableCell className="sticky left-0 z-10 bg-[color-mix(in_oklab,var(--muted)_60%,var(--background))] p-0">
-            <FirstColBox>Total</FirstColBox>
+            <FirstColBox>Solde actuel</FirstColBox>
           </TableCell>
-          <AmountCells cells={grand} mode="total" />
+          <AmountCells cells={grand} mode="total" solde={solde.closings} />
         </TableRow>
       </TableBody>
     </Table>

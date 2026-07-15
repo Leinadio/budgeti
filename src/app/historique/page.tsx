@@ -3,7 +3,7 @@ import { listAccounts } from "../../db/repositories/accounts";
 import { listTransactions } from "../../db/repositories/transactions";
 import { listGroups } from "../../db/repositories/groups";
 import {
-  computeHistory, grandTotals, monthlyOverspend, monthsWithData,
+  computeHistory, grandTotals, monthlyOverspend, monthsWithData, computeSolde,
   addMonthsKey, monthRange, isMonthKey, clampMonth,
 } from "../../lib/history";
 import { computeForecast, type Group, type Txn } from "../../lib/forecast";
@@ -87,6 +87,7 @@ export default async function HistoriquePage({
           const remunMonths = months.map((m) => monthRemuneration(groups, txns, m));
           const overspend = monthlyOverspend(sections, months.length);
           const grand = grandTotals(sections, months.length);
+          const solde = computeSolde(sections, months, currentMonth, a.balance);
           const selectGroups = groups.map((g) => ({
             id: g.id,
             name: g.name,
@@ -111,6 +112,7 @@ export default async function HistoriquePage({
                     overspend={overspend}
                     grand={grand}
                     groups={selectGroups}
+                    solde={solde}
                   />
                 </CenterScroll>
               )}
