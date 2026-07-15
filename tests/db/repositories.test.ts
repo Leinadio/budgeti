@@ -118,3 +118,15 @@ test("setTransactionGroup attaches and detaches", () => {
   setTransactionGroup(db, "t1", null);
   expect(listTransactions(db)[0].groupId).toBeNull();
 });
+
+test("groups carry income_kind for income classification", () => {
+  const db = getDb(":memory:");
+  upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
+  const p = insertRecurringGroup(db, "a1", "Rémunération principale", "in", "principal");
+  const s = insertEnvelopeGroup(db, "a1", "Rémunération supplémentaire", "in", 0, "supplementary");
+  const c = insertEnvelopeGroup(db, "a1", "Courses", "out", 300);
+  const byId = Object.fromEntries(listGroups(db).map((g) => [g.id, g]));
+  expect(byId[p].incomeKind).toBe("principal");
+  expect(byId[s].incomeKind).toBe("supplementary");
+  expect(byId[c].incomeKind).toBeNull();
+});
