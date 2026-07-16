@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { addGroup } from "@/app/groupes/actions";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -28,13 +28,15 @@ export function NewGroupForm({
 
   const existing = remuByAccount[accountId] ?? { principal: false, supplementary: false };
 
-  function onAccountChange(id: string) {
-    setAccountId(id);
-    const nextExisting = remuByAccount[id] ?? { principal: false, supplementary: false };
-    if ((nature === "principal" && nextExisting.principal) || (nature === "supplementary" && nextExisting.supplementary)) {
+  // Si la rémunération sélectionnée devient indisponible pour le compte courant
+  // (changement de compte, ou rafraîchissement après création réussie qui rend
+  // l'option "déjà créée"), on retombe sur "Dépense" plutôt que de laisser le
+  // select afficher une option désactivée comme sélectionnée.
+  useEffect(() => {
+    if ((nature === "principal" && existing.principal) || (nature === "supplementary" && existing.supplementary)) {
       setNature("expense");
     }
-  }
+  }, [nature, existing.principal, existing.supplementary]);
 
   return (
     <form action={addGroup} className="flex flex-wrap items-end gap-2">
@@ -83,7 +85,7 @@ export function NewGroupForm({
           id="grp-account"
           name="accountId"
           value={accountId}
-          onChange={(e) => onAccountChange(e.target.value)}
+          onChange={(e) => setAccountId(e.target.value)}
           className={selectClass}
         >
           {accounts.map((a) => (
