@@ -19,10 +19,10 @@ export function HistoryWithDetail(props: {
   groups: SelectGroup[];
   solde: SoldeColumn;
 }) {
-  const { setDetail } = useDetailSidebar();
+  const { setDetail, selected } = useDetailSidebar();
   return (
     <CenterScroll>
-      <HistoryGrid {...props} onSelect={setDetail} />
+      <HistoryGrid {...props} onSelect={setDetail} selected={selected} />
     </CenterScroll>
   );
 }

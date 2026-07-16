@@ -1,8 +1,30 @@
+// Colonne d'une case du tableau (un mois = ces 5 colonnes).
+export type Col = "budget" | "depense" | "recu" | "reste" | "solde";
+
+// Identité d'une ligne du tableau, sous forme de préfixe de clé. Sert à composer
+// une clé de case (avec la colonne et le mois) et, pour une transaction, à
+// retrouver la ligne à révéler.
+export const openingRow = "opening";
+export const sectionRow = (kind: string) => `section:${kind}`;
+export const groupRow = (id: number) => `group:${id}`;
+export const subRow = (id: number) => `subrow:${id}`;
+export const txnRow = (id: string) => `txn:${id}`;
+
+// Clé d'une case du tableau : ligne + colonne + index de mois. Sert de comparateur
+// de surbrillance et d'attribut data-cellkey sur la case (repérage pour le
+// défilement). Un nœud du détail porte la clé de la case qui affiche son montant.
+export function cellKey(row: string, col: Col, month: number): string {
+  return `${row}::${col}::${month}`;
+}
+
 // Détail d'un calcul affiché dans la sidebar de l'Historique, sous forme d'arbre :
 // des nœuds signés (Σ = result) dont certains sont dépliables (children), jusqu'aux
-// transactions. Le signe pilote l'opérateur affiché (+ / −).
-export type DetailNode = { label: string; amount: number; children?: DetailNode[] };
-export type CellDetail = { title: string; subtitle?: string; nodes: DetailNode[]; result: number; note?: string };
+// transactions. Le signe pilote l'opérateur affiché (+ / −). ref (optionnel) est la
+// clé de la case du tableau qui affiche ce montant, pour la surbrillance croisée.
+export type DetailNode = { label: string; amount: number; children?: DetailNode[]; ref?: string };
+// cellRef : clé de la case du tableau qui a ouvert ce détail (son résultat). Permet
+// de surligner cette case en cliquant la ligne « Total » du side panel.
+export type CellDetail = { title: string; subtitle?: string; nodes: DetailNode[]; result: number; note?: string; cellRef?: string };
 
 export function sumOf(nodes: DetailNode[]): number {
   return nodes.reduce((s, n) => s + n.amount, 0);
@@ -22,7 +44,8 @@ export function makeDetail(
   };
 }
 
-// Feuille = une transaction : « date · libellé », montant signé.
-export function txnNode(date: string, label: string, signedAmount: number): DetailNode {
-  return { label: `${date} · ${label}`, amount: signedAmount };
+// Feuille = une transaction : « date · libellé », montant signé. ref (optionnel) =
+// clé de la case du tableau qui affiche cette transaction.
+export function txnNode(date: string, label: string, signedAmount: number, ref?: string): DetailNode {
+  return { label: `${date} · ${label}`, amount: signedAmount, ref };
 }

@@ -1,10 +1,16 @@
 "use client";
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import type { CellDetail } from "@/lib/history-explain";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { HistoryDetailSidebar } from "@/components/history-detail-sidebar";
 
-type Ctx = { detail: CellDetail | null; setDetail: (d: CellDetail | null) => void };
+// selected : clé de la case du tableau à surligner, choisie depuis le side panel.
+type Ctx = {
+  detail: CellDetail | null;
+  setDetail: (d: CellDetail | null) => void;
+  selected: string | null;
+  setSelected: (r: string | null) => void;
+};
 const DetailSidebarContext = createContext<Ctx | null>(null);
 
 export function useDetailSidebar(): Ctx {
@@ -25,9 +31,30 @@ export function useDetailSidebar(): Ctx {
 // sélectionné, fermé sinon. Le SidebarTrigger de l'en-tête, rendu à l'intérieur
 // du provider de gauche, continue de piloter la navigation.
 export function DetailSidebarProvider({ children }: { children: React.ReactNode }) {
-  const [detail, setDetail] = useState<CellDetail | null>(null);
+  const [detail, setDetailState] = useState<CellDetail | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  // Ouvrir un nouveau détail réinitialise la sélection de ligne : la surbrillance
+  // n'a de sens que dans le contexte du détail affiché.
+  const setDetail = (d: CellDetail | null) => {
+    setDetailState(d);
+    setSelected(null);
+  };
+  // Cliquer en dehors d'une ligne sélectionnable du side panel efface la
+  // surbrillance (dans le panel et dans le tableau). On écoute au niveau du
+  // document : un clic sur une ligne `data-selectable` (re)pose la sélection via
+  // son propre onClick, donc on ne l'efface pas ; tout autre clic la retire.
+  useEffect(() => {
+    if (selected == null) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Element | null;
+      if (t?.closest("[data-selectable]")) return;
+      setSelected(null);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [selected]);
   return (
-    <DetailSidebarContext.Provider value={{ detail, setDetail }}>
+    <DetailSidebarContext.Provider value={{ detail, setDetail, selected, setSelected }}>
       <SidebarProvider
         open={detail !== null}
         onOpenChange={(open) => {
@@ -45,7 +72,12 @@ export function DetailSidebarProvider({ children }: { children: React.ReactNode 
         style={{ "--sidebar-width": "26rem" } as React.CSSProperties}
       >
         {children}
-        <HistoryDetailSidebar detail={detail} onClose={() => setDetail(null)} />
+        <HistoryDetailSidebar
+          detail={detail}
+          onClose={() => setDetail(null)}
+          selected={selected}
+          onSelectRef={setSelected}
+        />
       </SidebarProvider>
     </DetailSidebarContext.Provider>
   );
