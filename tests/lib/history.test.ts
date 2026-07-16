@@ -268,6 +268,30 @@ test("no uncategorized section when every transaction has a group", () => {
   expect(sections.some((s) => s.kind === "uncategorized")).toBe(false);
 });
 
+test("la rémunération principale projette son montant sur les mois futurs", () => {
+  const principal: Group = {
+    id: 30, accountId: "a1", name: "Rémunération principale", direction: "in",
+    kind: "envelope", monthlyAmount: 2000, keywords: [], lines: [], incomeKind: "principal",
+  };
+  const sections = computeHistory([principal], [], ["2026-07", "2026-08"], "2026-07");
+  const row = sections.find((s) => s.kind === "income")!.rows[0];
+  expect(row.incomeKind).toBe("principal");
+  expect(row.cells[1].recu).toBe(2000); // mois futur projeté
+  expect(row.cells[1].budgeted).toBe(2000);
+});
+
+test("la rémunération supplémentaire n'est pas projetée (Reçu futur = 0)", () => {
+  const supp: Group = {
+    id: 31, accountId: "a1", name: "Rémunération supplémentaire", direction: "in",
+    kind: "envelope", monthlyAmount: 500, keywords: [], lines: [], incomeKind: "supplementary",
+  };
+  const sections = computeHistory([supp], [], ["2026-07", "2026-08"], "2026-07");
+  const row = sections.find((s) => s.kind === "income")!.rows[0];
+  expect(row.incomeKind).toBe("supplementary");
+  expect(row.cells[1].recu).toBe(0); // mois futur : rien
+  expect(row.cells[1].budgeted).toBe(500); // le montant reste stocké (masqué à l'affichage)
+});
+
 const salaire: Group = {
   id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "envelope",
   monthlyAmount: 2000, keywords: ["REMU"], lines: [],
