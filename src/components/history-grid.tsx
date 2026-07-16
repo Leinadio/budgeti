@@ -290,7 +290,7 @@ function AmountCells({ cells, mode, solde, onSelect, subtitleOf, detailRow, mont
         return (
           <Fragment key={i}>
             <CellAmount className="border-l text-right tabular-nums text-muted-foreground" detail={budgetDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
-              {mode === "in" ? "" : fmt(c.budgeted)}
+              {mode === "in" ? (r?.incomeKind === "principal" ? fmt(c.budgeted) : "") : fmt(c.budgeted)}
             </CellAmount>
             <CellAmount className="text-right tabular-nums" detail={depDetail} onSelect={onSelect} cellKey={ck("depense")} selCellKey={selCellKey}>
               {mode === "in" ? "—" : fmt(c.depense)}
@@ -451,7 +451,16 @@ function IncomeTotalCells({ sec, months, onSelect, selCellKey }: {
             : null;
         return (
           <Fragment key={i}>
-            <TableCell className="border-l" />
+            {(() => {
+              const principalBudget = sec.rows
+                .filter((r) => r.incomeKind === "principal")
+                .reduce((s, r) => s + r.cells[i].budgeted, 0);
+              return (
+                <TableCell className="border-l text-right tabular-nums text-muted-foreground">
+                  {principalBudget !== 0 ? fmt(principalBudget) : ""}
+                </TableCell>
+              );
+            })()}
             <TableCell className="text-right tabular-nums text-muted-foreground">—</TableCell>
             <CellAmount className="text-right tabular-nums" detail={recuDetail} onSelect={onSelect} cellKey={cellKey(sectionRow("income"), "recu", i)} selCellKey={selCellKey}>
               {fmt(c.recu)}
