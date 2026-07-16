@@ -181,3 +181,23 @@ test("next month starts from current estimate and applies full amounts", () => {
   // suivant : 2675 + (2000 - 10 - 15 - 300) = 4350
   expect(f.nextEstimate).toBe(4350);
 });
+
+test("rémunération principale : ajoutée à l'estimé du mois courant ET du mois suivant", () => {
+  const principal: Group = {
+    id: 40, accountId: "a1", name: "Rémunération principale", direction: "in",
+    kind: "envelope", monthlyAmount: 2000, keywords: [], lines: [], incomeKind: "principal",
+  };
+  const f = computeForecast("a1", 100, [principal], [], "2026-07");
+  expect(f.currentEstimate).toBe(2100); // 100 + 2000 attendus
+  expect(f.nextEstimate).toBe(4100); // + 2000 le mois suivant
+});
+
+test("rémunération supplémentaire : mois courant seulement, pas de projection au mois suivant", () => {
+  const supp: Group = {
+    id: 41, accountId: "a1", name: "Rémunération supplémentaire", direction: "in",
+    kind: "envelope", monthlyAmount: 500, keywords: [], lines: [], incomeKind: "supplementary",
+  };
+  const f = computeForecast("a1", 100, [supp], [], "2026-07");
+  expect(f.currentEstimate).toBe(600); // 100 + 500 attendus ce mois
+  expect(f.nextEstimate).toBe(600); // pas d'ajout au mois suivant
+});

@@ -124,13 +124,15 @@ export function computeForecast(
       const remaining = Math.max(0, amount - spent);
       // Le sens compte : une sortie retire, une entrée ajoute.
       current += sign * remaining;
-      nextDelta += sign * amount;
+      // La supplémentaire couvre le mois courant mais n'est pas projetée au mois suivant.
+      const projectNext = !(g.direction === "in" && g.incomeKind === "supplementary");
+      if (projectNext) nextDelta += sign * amount;
       if (remaining > 0)
         currentSteps.push({
           label: `${g.name} — ${g.direction === "in" ? "reste à recevoir" : "reste à dépenser"} ce mois-ci`,
           amount: sign * remaining,
         });
-      if (amount > 0)
+      if (amount > 0 && projectNext)
         nextSteps.push({
           label: `${g.name} — ${g.direction === "in" ? "revenu mensuel" : "budget mensuel"}`,
           amount: sign * amount,
