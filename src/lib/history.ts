@@ -220,7 +220,14 @@ export function computeHistory(
       .sort((a, b) => incomeRank(a) - incomeRank(b))
       .map(rowFor);
     if (rows.length === 0) return null;
-    return { kind: "income", rows, totals: sumRows(rows) };
+    // Le Budget du total de la section ne porte que la rémunération principale
+    // (cf. Global Constraints : colonne Budget, supplémentaire = vide). Les
+    // autres colonnes (dépensé/reçu/reste) restent la somme de toutes les lignes.
+    const totals = sumRows(rows).map((c, i) => ({
+      ...c,
+      budgeted: rows.filter((r) => r.incomeKind === "principal").reduce((s, r) => s + r.cells[i].budgeted, 0),
+    }));
+    return { kind: "income", rows, totals };
   };
 
   // Sections de dépenses : uniquement les groupes de sortie ; les rémunérations
