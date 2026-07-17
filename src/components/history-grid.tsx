@@ -786,24 +786,8 @@ function GrandTotalsCells({ sections, grand, solde, planned, overspend, months, 
           sections.map((sec) => sectionNode(sec, i, month, "recu")).filter((n) => n.amount !== 0),
           { subtitle, result: c.recu },
         );
-        const resteDetail: CellDetail = makeDetail(
-          "Reste",
-          Math.abs(c.budgeted - c.depense - c.balance) < 0.005
-            ? [
-                { label: "Budget", amount: c.budgeted, ref: ck("budget") },
-                {
-                  label: "Dépensé",
-                  amount: -c.depense,
-                  ref: ck("depense"),
-                  children: sections
-                    .map((sec) => sectionNode(sec, i, month, "depense"))
-                    .filter((n) => n.amount !== 0)
-                    .map(negateNode),
-                },
-              ]
-            : [],
-          { subtitle, result: c.balance },
-        );
+        // Reste : non affiché sur la ligne « Solde actuel » (grand total) — un reste
+        // agrégé toutes catégories confondues n'est pas parlant.
         const soldeDetail: CellDetail = soldeActuelDetail(sections, solde, i, month, { title: "Solde actuel", result: solde.closings[i] });
 
         // --- Détails des colonnes de projection du grand total ------------------
@@ -902,11 +886,7 @@ function GrandTotalsCells({ sections, grand, solde, planned, overspend, months, 
               {fmt(c.recu)}
             </CellAmount>
           ),
-          reste: (b) => (
-            <CellAmount key="reste" className={cn(b && "border-l", "text-right tabular-nums", c.balance < 0 && "text-red-600")} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
-              {fmt(c.balance)}
-            </CellAmount>
-          ),
+          reste: (b) => blankCol("reste", b),
           depassement: (b) => (
             <CellAmount key="depassement" className={cn(b && "border-l", "text-right tabular-nums", overspend[i] > 0 && "text-red-600")} detail={depassDetail} onSelect={onSelect} cellKey={ck("depassement")} selCellKey={selCellKey}>
               {overspend[i] > 0 ? fmt(overspend[i]) : "—"}
