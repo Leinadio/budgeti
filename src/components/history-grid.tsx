@@ -351,8 +351,10 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
 
         const budgetDetail: CellDetail | null = (() => {
           if (mode === "in" || c.budgeted === 0 || !r) return null;
-          const nodes = budgetNodes(r, i);
-          return nodes ? makeDetail("Budget", nodes, { subtitle, result: c.budgeted }) : null;
+          // Postes du récurrent si présents, sinon un nœud unique (enveloppe, ou
+          // sous-ligne synthétisée sans postes) : la case Budg. reste cliquable.
+          const nodes = budgetNodes(r, i) ?? [{ label: r.name, amount: c.budgeted }];
+          return makeDetail("Budget", nodes, { subtitle, result: c.budgeted });
         })();
 
         const depDetail: CellDetail | null = (() => {
@@ -405,11 +407,13 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
           return makeDetail("Budget", nodes, { subtitle, result: c.budgeted });
         })();
 
-        // Revenus de projection (rémunération) : la supplémentaire vaut 0 en
-        // projection (non cliquable) ; la principale porte son montant projeté.
+        // Revenus de projection (rémunération) : la supplémentaire affiche 0 en
+        // projection, la principale son montant projeté. Cliquable dès qu'un nombre
+        // est affiché (y compris 0,00), avec un détail trivial à un nœud.
+        const revenusValue = incomeKind === "supplementary" ? 0 : c.budgeted;
         const revenusDetail: CellDetail | null =
-          mode === "in" && incomeKind !== "supplementary" && c.budgeted !== 0 && r
-            ? makeDetail("Revenus", [{ label: r.name, amount: c.budgeted }], { subtitle, result: c.budgeted })
+          mode === "in" && r
+            ? makeDetail("Revenus", [{ label: r.name, amount: revenusValue }], { subtitle, result: revenusValue })
             : null;
 
         // Dépassement (ligne de dépense) : Dépensé − Budget, quand > 0.
@@ -916,7 +920,7 @@ function GrandTotalsCells({ sections, grand, solde, planned, overspend, months, 
 
 // Cellules d'une transaction : son montant tombe dans la colonne Dép. (sortie)
 // ou Reçu (entrée), selon son signe, du mois où elle a lieu ; le reste est vide.
-function TxnCells({ txn, months, currentMonth, selCellKey }: { txn: HistoryTxn; months: string[]; currentMonth: string; selCellKey?: string | null }) {
+function TxnCells({ txn, months, currentMonth, onSelect, selCellKey }: { txn: HistoryTxn; months: string[]; currentMonth: string; onSelect?: (d: CellDetail) => void; selCellKey?: string | null }) {
   const isOut = txn.amount < 0;
   return (
     <>
@@ -927,21 +931,35 @@ function TxnCells({ txn, months, currentMonth, selCellKey }: { txn: HistoryTxn; 
         // La transaction n'occupe qu'une case : Dép. si sortie, Reçu si entrée. En
         // mois de projection, ni Dép. ni Reçu n'existent : la ligne reste vide.
         const ck = here ? cellKey(txnRow(txn.id), isOut ? "depense" : "recu", i) : undefined;
-        const hl = ck != null && ck === selCellKey;
+        // Détail minimal d'une transaction : une seule feuille (elle-même), pour que
+        // sa case chiffrée soit cliquable comme les montants agrégés.
+        const detail: CellDetail | null = here
+          ? makeDetail(
+              "Transaction",
+              [{ label: `${txn.date} · ${txn.label}`, amount: Math.abs(txn.amount) }],
+              { subtitle: monthLabel(m), result: Math.abs(txn.amount) },
+            )
+          : null;
         const slots: Record<ColKey, (border: boolean) => React.ReactNode> = {
           budg: (b) => blankCol("budg", b),
           budget: (b) => blankCol("budget", b),
           revenus: (b) => blankCol("revenus", b),
-          dep: (b) => (
-            <TableCell key="dep" data-cellkey={here && isOut ? ck : undefined} className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground", isOut && hl && CELL_HL)}>
-              {here && isOut ? val : ""}
-            </TableCell>
-          ),
-          recu: (b) => (
-            <TableCell key="recu" data-cellkey={here && !isOut ? ck : undefined} className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground", !isOut && hl && CELL_HL)}>
-              {here && !isOut ? val : ""}
-            </TableCell>
-          ),
+          dep: (b) =>
+            here && isOut ? (
+              <CellAmount key="dep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} detail={detail} onSelect={onSelect} cellKey={ck} selCellKey={selCellKey}>
+                {val}
+              </CellAmount>
+            ) : (
+              <TableCell key="dep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} />
+            ),
+          recu: (b) =>
+            here && !isOut ? (
+              <CellAmount key="recu" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} detail={detail} onSelect={onSelect} cellKey={ck} selCellKey={selCellKey}>
+                {val}
+              </CellAmount>
+            ) : (
+              <TableCell key="recu" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} />
+            ),
           reste: (b) => blankCol("reste", b),
           depassement: (b) => blankCol("depassement", b),
           soldeReel: (b) => blankCol("soldeReel", b),
@@ -982,12 +1000,13 @@ function NameCell({ children, indent, expandable, expanded, onToggle, bg = "bg-b
 
 // Ligne de transaction : « date · libellé » puis, en dessous, le menu de
 // (ré)assignation de groupe. Le montant tombe dans la colonne de son mois.
-function TxnRow({ txn, months, currentMonth, groups, indent, selCellKey }: {
+function TxnRow({ txn, months, currentMonth, groups, indent, onSelect, selCellKey }: {
   txn: HistoryTxn;
   months: string[];
   currentMonth: string;
   groups: SelectGroup[];
   indent: number;
+  onSelect?: (d: CellDetail) => void;
   selCellKey?: string | null;
 }) {
   return (
@@ -1009,7 +1028,7 @@ function TxnRow({ txn, months, currentMonth, groups, indent, selCellKey }: {
           />
         </div>
       </TableCell>
-      <TxnCells txn={txn} months={months} currentMonth={currentMonth} selCellKey={selCellKey} />
+      <TxnCells txn={txn} months={months} currentMonth={currentMonth} onSelect={onSelect} selCellKey={selCellKey} />
     </TableRow>
   );
 }
@@ -1141,24 +1160,48 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
               const lKey = `l:${sub.id}`;
               const lOpen = isOpen(lKey);
               const subHasTxns = sub.txns.length > 0;
+              // Ligne synthétisée à partir du poste : réutilise les helpers de détail
+              // (budgetNodes → nœud unique, txnChildren → transactions du poste). Sans
+              // subRows ni chaîne de solde, les cases Solde restent vides/non cliquables.
+              const subAsRow: HistoryRow = {
+                id: sub.id,
+                name: sub.name,
+                kind: "recurring",
+                direction: r.direction,
+                incomeKind: null,
+                cells: sub.cells,
+                subRows: [],
+                txns: sub.txns,
+              };
               return (
                 <Fragment key={sub.id}>
                   <TableRow className={cn("text-sm", subHasTxns && "hover:bg-muted/50")}>
                     <NameCell indent={1} expandable={subHasTxns} expanded={lOpen} onToggle={subHasTxns ? () => toggle(lKey) : undefined}>
                       <span className="min-w-0 truncate">{sub.name}</span>
                     </NameCell>
-                    {/* Sous-ligne (poste d'un récurrent) : cellules non cliquables, mais leur
-                        case Budg. peut être surlignée depuis le détail « Budget » d'un récurrent. */}
-                    <AmountCells cells={sub.cells} mode={r.direction} months={months} currentMonth={currentMonth} rowKey={subRow(sub.id)} selCellKey={selCellKey} incomeKind={r.incomeKind} />
+                    {/* Sous-ligne (poste d'un récurrent) : cellules désormais cliquables
+                        (détail dérivé du poste). Les cases Solde restent vides. */}
+                    <AmountCells
+                      cells={sub.cells}
+                      mode={r.direction}
+                      onSelect={onSelect}
+                      subtitleOf={(i) => `${sub.name} · ${monthLabel(months[i])}`}
+                      detailRow={subAsRow}
+                      months={months}
+                      currentMonth={currentMonth}
+                      rowKey={subRow(sub.id)}
+                      selCellKey={selCellKey}
+                      incomeKind={r.incomeKind}
+                    />
                   </TableRow>
                   {lOpen && sub.txns.map((t) => (
-                    <TxnRow key={t.id} txn={t} months={months} currentMonth={currentMonth} groups={groups} indent={2} selCellKey={selCellKey} />
+                    <TxnRow key={t.id} txn={t} months={months} currentMonth={currentMonth} groups={groups} indent={2} onSelect={onSelect} selCellKey={selCellKey} />
                   ))}
                 </Fragment>
               );
             })}
             {r.txns.map((t) => (
-              <TxnRow key={t.id} txn={t} months={months} currentMonth={currentMonth} groups={groups} indent={1} selCellKey={selCellKey} />
+              <TxnRow key={t.id} txn={t} months={months} currentMonth={currentMonth} groups={groups} indent={1} onSelect={onSelect} selCellKey={selCellKey} />
             ))}
           </>
         )}
@@ -1312,7 +1355,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                   <SectionTotalsCells sec={sec} months={months} currentMonth={currentMonth} onSelect={onSelect} solde={solde.uncategorizedRunning ?? undefined} selCellKey={selCellKey} prevRowKey={prevSoldeRowKey.get(sectionRow("uncategorized"))} />
                 </TableRow>
                 {uOpen && sec.txns?.map((t) => (
-                  <TxnRow key={t.id} txn={t} months={months} currentMonth={currentMonth} groups={groups} indent={1} selCellKey={selCellKey} />
+                  <TxnRow key={t.id} txn={t} months={months} currentMonth={currentMonth} groups={groups} indent={1} onSelect={onSelect} selCellKey={selCellKey} />
                 ))}
               </Fragment>
             );
