@@ -648,6 +648,10 @@ function GrandTotalsCells({ sections, grand, solde, planned, overspend, months, 
           .flatMap((s) => s.rows)
           .reduce((a, r) => a + (r.direction === "in" ? (r.incomeKind === "supplementary" ? 0 : r.cells[i].budgeted) : 0), 0);
 
+        // Budget des dépenses seulement (excluant les rémunérations) pour la colonne
+        // projection « Budget » du grand total.
+        const expenseBudget = sections.reduce((s, sec) => s + (sec.kind === "income" ? 0 : sec.totals[i].budgeted), 0);
+
         const budgetDetail: CellDetail | null =
           c.budgeted !== 0
             ? makeDetail("Budget", sections.map((sec) => sectionNode(sec, i, month, "budget")), { subtitle, result: c.budgeted })
@@ -697,7 +701,7 @@ function GrandTotalsCells({ sections, grand, solde, planned, overspend, months, 
           ),
           budget: (b) => (
             <TableCell key="budget" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>
-              {fmt(c.budgeted)}
+              {fmt(expenseBudget)}
             </TableCell>
           ),
           revenus: (b) => (
