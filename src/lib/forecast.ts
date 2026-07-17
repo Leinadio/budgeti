@@ -49,7 +49,10 @@ export type GroupView = {
   prevOverspend: number;
 };
 
-export type ForecastStep = { label: string; amount: number };
+// groupId / lineId (optionnels) : le groupe (et éventuellement la ligne du
+// récurrent) d'où vient l'étape, pour relier l'étape à sa case du tableau
+// Historique (surbrillance croisée depuis le side panel).
+export type ForecastStep = { label: string; amount: number; groupId?: number; lineId?: number };
 
 export type AccountForecast = {
   accountId: string;
@@ -131,11 +134,13 @@ export function computeForecast(
         currentSteps.push({
           label: `${g.name} — ${g.direction === "in" ? "reste à recevoir" : "reste à dépenser"} ce mois-ci`,
           amount: sign * remaining,
+          groupId: g.id,
         });
       if (amount > 0 && projectNext)
         nextSteps.push({
           label: `${g.name} — ${g.direction === "in" ? "revenu mensuel" : "budget mensuel"}`,
           amount: sign * amount,
+          groupId: g.id,
         });
       // Le dépassement (et sa suggestion) n'a de sens que pour une dépense.
       const overspend = g.direction === "out" ? Math.max(0, spent - amount) : 0;
@@ -154,10 +159,10 @@ export function computeForecast(
         const seen = mine.some((t) => t.lineId === line.id);
         if (!seen) {
           current += sign * line.amount;
-          currentSteps.push({ label: `${g.name} · ${line.name} — pas encore passé (le ${line.day})`, amount: sign * line.amount });
+          currentSteps.push({ label: `${g.name} · ${line.name} — pas encore passé (le ${line.day})`, amount: sign * line.amount, groupId: g.id, lineId: line.id });
         }
         if (seen) seenSum += line.amount;
-        nextSteps.push({ label: `${g.name} · ${line.name}`, amount: sign * line.amount });
+        nextSteps.push({ label: `${g.name} · ${line.name}`, amount: sign * line.amount, groupId: g.id, lineId: line.id });
         timeline.push({ day: line.day, name: line.name, amount: sign * line.amount, seen });
       }
       groupViews.push({ id: g.id, name: g.name, direction: g.direction, kind: g.kind, total, spent: seenSum, overspend: 0, prevSpent: 0, prevOverspend: 0 });
@@ -170,7 +175,7 @@ export function computeForecast(
   // ce mois-ci dépassent encore d'autant.
   const overspendSteps: ForecastStep[] = groupViews
     .filter((g) => g.overspend > 0)
-    .map((g) => ({ label: `${g.name} — dépassement maintenu`, amount: -g.overspend }));
+    .map((g) => ({ label: `${g.name} — dépassement maintenu`, amount: -g.overspend, groupId: g.id }));
   const overspendTotal = groupViews.reduce((s, g) => s + g.overspend, 0);
   return {
     accountId,

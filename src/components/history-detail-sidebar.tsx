@@ -80,11 +80,16 @@ function DetailRow({ row, selected, onToggle, onSelect }: {
 
 // Corps du détail : monté sous une clé liée au détail (voir plus bas), de sorte que
 // l'état de dépliage (open) repart de zéro à chaque nouveau montant cliqué.
-function DetailBody({ detail, onClose, selected, onSelectRef }: {
+// Identité de la ligne « Total » du panneau (distincte des chemins de nœuds « 0.1 »).
+const TOTAL_ROW = "__total__";
+
+function DetailBody({ detail, onClose, selectedPanel, onSelectRow }: {
   detail: CellDetail;
   onClose: () => void;
-  selected?: string | null;
-  onSelectRef?: (ref: string) => void;
+  // Ligne du panneau actuellement active (identité propre : chemin de nœud ou TOTAL_ROW).
+  selectedPanel?: string | null;
+  // Sélection : (case du tableau à surligner | null, identité de la ligne du panneau).
+  onSelectRow?: (cell: string | null, panel: string) => void;
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const toggle = (p: string) =>
@@ -113,28 +118,29 @@ function DetailBody({ detail, onClose, selected, onSelectRef }: {
         <Table>
           <TableBody>
             {rows.map((r) => {
-              // Toute ligne est cliquable ET surligne une case du tableau. Si la ligne
-              // porte un ref, elle surligne sa case dédiée ; sinon (valeur intermédiaire
-              // sans case propre, ex. « Mouvement prévu du mois »), elle retombe sur la
-              // case d'origine du détail (celle dont on montre le calcul), qu'elle
-              // compose. Repli ultime « panel:: » (jamais en collision avec une vraie
-              // clé row::col::mois) si le détail n'a pas de case d'origine.
-              const selKey = r.node.ref ?? detail.cellRef ?? `panel::${r.path}`;
+              // Toute ligne est cliquable et surligne une case du tableau : sa case
+              // dédiée si elle porte un ref, sinon la case d'origine du détail (celle
+              // dont on montre le calcul), qu'elle compose. La ligne active du panneau
+              // est identifiée par son propre chemin (r.path), donc cliquer une ligne
+              // n'active jamais aussi la ligne « Total » — même si elles surlignent la
+              // même case du tableau.
+              const cell = r.node.ref ?? detail.cellRef ?? null;
               return (
                 <DetailRow
                   key={r.path}
                   row={r}
-                  selected={selected === selKey}
+                  selected={selectedPanel === r.path}
                   onToggle={() => toggle(r.path)}
-                  onSelect={onSelectRef ? () => onSelectRef(selKey) : undefined}
+                  onSelect={onSelectRow ? () => onSelectRow(cell, r.path) : undefined}
                 />
               );
             })}
             {(() => {
               // Le total correspond à la case du tableau qui a ouvert ce détail
-              // (cellRef) : la cliquer surligne cette case comme n'importe quelle ligne.
-              const onTotal = detail.cellRef && onSelectRef ? () => onSelectRef(detail.cellRef!) : undefined;
-              const totalSelected = detail.cellRef != null && selected === detail.cellRef;
+              // (cellRef) : la cliquer surligne cette case. Identité propre (TOTAL_ROW)
+              // pour n'activer que cette ligne.
+              const onTotal = onSelectRow ? () => onSelectRow(detail.cellRef ?? null, TOTAL_ROW) : undefined;
+              const totalSelected = selectedPanel === TOTAL_ROW;
               return (
                 <TableRow
                   data-selectable={onTotal ? "" : undefined}
@@ -161,11 +167,11 @@ function DetailBody({ detail, onClose, selected, onSelectRef }: {
 // gauche) au lieu de le recouvrir. Le contenu affiché vient de `detail` ; le
 // glissement (offcanvas) est piloté par le SidebarProvider qui l'englobe. La clé
 // sur DetailBody réinitialise son état de dépliage à chaque nouveau détail.
-export function HistoryDetailSidebar({ detail, onClose, selected, onSelectRef }: {
+export function HistoryDetailSidebar({ detail, onClose, selectedPanel, onSelectRow }: {
   detail: CellDetail | null;
   onClose: () => void;
-  selected?: string | null;
-  onSelectRef?: (ref: string) => void;
+  selectedPanel?: string | null;
+  onSelectRow?: (cell: string | null, panel: string) => void;
 }) {
   return (
     <Sidebar side="right" variant="inset" collapsible="offcanvas">
@@ -174,8 +180,8 @@ export function HistoryDetailSidebar({ detail, onClose, selected, onSelectRef }:
           key={`${detail.title}·${detail.subtitle ?? ""}·${detail.result}`}
           detail={detail}
           onClose={onClose}
-          selected={selected}
-          onSelectRef={onSelectRef}
+          selectedPanel={selectedPanel}
+          onSelectRow={onSelectRow}
         />
       )}
     </Sidebar>

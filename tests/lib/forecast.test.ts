@@ -153,7 +153,7 @@ test("overspend projection: next month keeps the overspend", () => {
   expect(f.overspendTotal).toBe(150); // 450 - 300
   // avec dépassement maintenu : 700 - 150 = 550
   expect(f.nextEstimateWithOverspend).toBe(550);
-  expect(f.overspendSteps).toEqual([{ label: "Courses — dépassement maintenu", amount: -150 }]);
+  expect(f.overspendSteps).toEqual([{ label: "Courses — dépassement maintenu", amount: -150, groupId: 1 }]);
 });
 
 test("no overspend: with-overspend estimate equals next estimate", () => {

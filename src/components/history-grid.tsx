@@ -3,7 +3,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, ArrowDownRight, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { monthLabel } from "@/lib/transactions-view";
-import type { AccountForecast } from "@/lib/forecast";
+import type { AccountForecast, ForecastStep } from "@/lib/forecast";
 import { type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn, type SoldeColumn, type PlannedSoldes } from "@/lib/history";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TruncatedText } from "@/components/truncated-text";
@@ -468,7 +468,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
                 "Solde prévu",
                 [
                   { label: "Solde prévu précédent", amount: sp - mouvementPrevu, ref: prevRowKey ? cellKey(prevRowKey, "soldePrevu", i) : undefined },
-                  { label: "Mouvement prévu du mois", amount: mouvementPrevu, children: mouvementChildren.length ? mouvementChildren : undefined },
+                  { label: "Mouvement prévu du mois", amount: mouvementPrevu, ref: mode === "out" ? ck("budget") : mode === "in" ? ck("revenus") : undefined, children: mouvementChildren.length ? mouvementChildren : undefined },
                 ],
                 { subtitle, result: sp },
               )
@@ -849,8 +849,8 @@ function GrandTotalsCells({ sections, grand, solde, planned, overspend, months, 
           label: "Mouvement prévu du mois",
           amount: prevuClose != null ? prevuClose - prevuPrev : 0,
           children: [
-            { label: "Revenus prévus", amount: budgetRemTotal, children: revenusChildren },
-            { label: "Budget", amount: -expenseBudget, children: budgetChildren },
+            { label: "Revenus prévus", amount: budgetRemTotal, ref: ck("revenus"), children: revenusChildren },
+            { label: "Budget", amount: -expenseBudget, ref: ck("budget"), children: budgetChildren },
           ],
         };
         const soldePrevuDetail: CellDetail | null =
@@ -1041,6 +1041,22 @@ function TxnRow({ txn, months, currentMonth, groups, indent, onSelect, selCellKe
   );
 }
 
+// Premier ancêtre réellement défilant sur un axe (x = horizontal, y = vertical).
+// Sert à amener une case dans la vue sans scrollIntoView (qui ne tient pas compte
+// de la colonne collante et défile parfois le mauvais conteneur).
+function scrollableAncestor(el: HTMLElement, axis: "x" | "y"): HTMLElement | null {
+  let node = el.parentElement;
+  while (node) {
+    const style = getComputedStyle(node);
+    const overflow = axis === "x" ? style.overflowX : style.overflowY;
+    const scrollable =
+      axis === "x" ? node.scrollWidth > node.clientWidth : node.scrollHeight > node.clientHeight;
+    if ((overflow === "auto" || overflow === "scroll") && scrollable) return node;
+    node = node.parentElement;
+  }
+  return null;
+}
+
 export function HistoryGrid({ months, currentMonth, forecast, sections, overspend, grand, groups, solde, planned, onSelect, selected }: {
   months: string[];
   currentMonth: string;
@@ -1066,24 +1082,29 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
     });
 
   const selCellKey = selected ?? null;
-  // Transaction sélectionnée : son id est encodé dans la clé « txn:<id>::col::mois ».
-  const selTxnId = selCellKey?.startsWith("txn:") ? selCellKey.slice(4, selCellKey.indexOf("::")) : null;
+  // Ligne porteuse de la case sélectionnée : préfixe de la clé « <ligne>::col::mois »
+  // (ex. txn:<id>, subrow:<id>). Sert à retrouver les dépliages qui la révèlent.
+  const selRowKey = selCellKey ? selCellKey.slice(0, selCellKey.indexOf("::")) : null;
   // Conteneur du tableau (display:contents) : sert à repérer, par data-cellkey, la
   // case sélectionnée pour la faire défiler dans la vue — sans être lui-même un
   // conteneur de mise en page.
   const gridRef = useRef<HTMLDivElement>(null);
 
-  // Pour une transaction : clés de dépliage de ses ancêtres (groupe, et éventuelle
-  // ligne), afin de la révéler dans le tableau quand on la sélectionne.
-  const txnOpenKeys = useMemo(() => {
+  // Pour chaque ligne masquable (transaction, sous-ligne d'un récurrent) : clés de
+  // dépliage de ses ancêtres (groupe, et éventuelle ligne), afin de la révéler dans
+  // le tableau quand on la sélectionne depuis le side panel.
+  const revealOpenKeys = useMemo(() => {
     const m = new Map<string, string[]>();
     for (const sec of sections) {
       if (sec.kind === "uncategorized") {
-        for (const t of sec.txns ?? []) m.set(t.id, ["s:uncat"]);
+        for (const t of sec.txns ?? []) m.set(txnRow(t.id), ["s:uncat"]);
       } else {
         for (const r of sec.rows) {
-          for (const t of r.txns) m.set(t.id, [`g:${r.id}`]);
-          for (const sub of r.subRows) for (const t of sub.txns) m.set(t.id, [`g:${r.id}`, `l:${sub.id}`]);
+          for (const t of r.txns) m.set(txnRow(t.id), [`g:${r.id}`]);
+          for (const sub of r.subRows) {
+            m.set(subRow(sub.id), [`g:${r.id}`]);
+            for (const t of sub.txns) m.set(txnRow(t.id), [`g:${r.id}`, `l:${sub.id}`]);
+          }
         }
       }
     }
@@ -1135,25 +1156,72 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
     return map;
   }, [sections, ciSafe]);
 
-  // Dépliage effectif = dépliage utilisateur, plus les ancêtres de la transaction
-  // sélectionnée (pour la révéler sans muter l'état de dépliage manuel). Dérivé
-  // plutôt que posé dans un effet : pas de setState en cascade.
+  // Groupes par id, pour retrouver le sens (entrée/sortie) d'une étape du
+  // prévisionnel et la relier à sa case du tableau.
+  const rowById = useMemo(() => {
+    const m = new Map<number, HistoryRow>();
+    for (const sec of sections) for (const r of sec.rows) m.set(r.id, r);
+    return m;
+  }, [sections]);
+
+  // Case du tableau correspondant à une étape du prévisionnel (« Estimé fin de
+  // mois ») : un poste de récurrent « pas encore passé » → sa case Budget dép. ;
+  // une enveloppe « reste à dépenser » → sa case Reste ; une rémunération « reste
+  // à recevoir » → sa case Budget rém.
+  const stepRef = (s: ForecastStep, i: number): string | undefined => {
+    if (s.lineId != null) return cellKey(subRow(s.lineId), "budget", i);
+    if (s.groupId == null) return undefined;
+    const r = rowById.get(s.groupId);
+    if (!r) return undefined;
+    return r.direction === "in" ? cellKey(groupRow(s.groupId), "revenus", i) : cellKey(groupRow(s.groupId), "reste", i);
+  };
+
+  // Dépliage effectif = dépliage utilisateur, plus les ancêtres de la ligne
+  // sélectionnée (transaction ou sous-ligne, pour la révéler sans muter l'état de
+  // dépliage manuel). Dérivé plutôt que posé dans un effet : pas de setState en cascade.
   const effectiveOpen = useMemo(() => {
-    if (!selTxnId) return open;
-    const keys = txnOpenKeys.get(selTxnId);
+    if (!selRowKey) return open;
+    const keys = revealOpenKeys.get(selRowKey);
     if (!keys || keys.every((k) => open.has(k))) return open;
     const next = new Set(open);
     for (const k of keys) next.add(k);
     return next;
-  }, [open, selTxnId, txnOpenKeys]);
+  }, [open, selRowKey, revealOpenKeys]);
   const isOpen = (k: string) => effectiveOpen.has(k);
 
   // Faire défiler la case sélectionnée dans la vue (après dépliage éventuel : la
-  // dépendance sur effectiveOpen relance l'effet une fois la ligne montée).
+  // dépendance sur effectiveOpen relance l'effet une fois la ligne montée). On
+  // défile explicitement le conteneur horizontal (CenterScroll) et le conteneur
+  // vertical, plutôt que scrollIntoView, pour tenir compte de la première colonne
+  // collante (sinon la case reste cachée derrière) et défiler le bon conteneur.
   useEffect(() => {
     if (!selCellKey) return;
     const el = gridRef.current?.querySelector<HTMLElement>(`[data-cellkey="${selCellKey}"]`);
-    el?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
+    if (!el) return;
+    const pad = 12;
+
+    // Horizontal : révéler la case à droite de la colonne collante de gauche.
+    const hx = scrollableAncestor(el, "x");
+    if (hx) {
+      const cRect = hx.getBoundingClientRect();
+      const eRect = el.getBoundingClientRect();
+      const sticky = hx.querySelector<HTMLElement>("thead th.sticky, tbody td.sticky");
+      const stickyW = sticky ? sticky.getBoundingClientRect().width : 0;
+      const visLeft = cRect.left + stickyW;
+      // behavior "auto" (instantané) : le défilement "smooth" est ignoré sur ce
+      // conteneur (colonne collante), la case n'était alors jamais révélée.
+      if (eRect.left < visLeft) hx.scrollBy({ left: eRect.left - visLeft - pad, behavior: "auto" });
+      else if (eRect.right > cRect.right) hx.scrollBy({ left: eRect.right - cRect.right + pad, behavior: "auto" });
+    }
+
+    // Vertical : révéler la ligne dans le conteneur qui défile en hauteur.
+    const vy = scrollableAncestor(el, "y");
+    if (vy) {
+      const cRect = vy.getBoundingClientRect();
+      const eRect = el.getBoundingClientRect();
+      if (eRect.top < cRect.top) vy.scrollBy({ top: eRect.top - cRect.top - pad, behavior: "auto" });
+      else if (eRect.bottom > cRect.bottom) vy.scrollBy({ top: eRect.bottom - cRect.bottom + pad, behavior: "auto" });
+    }
   }, [selCellKey, effectiveOpen]);
 
   // topLevel : ligne au niveau des sections (rémunérations), bande grise comme
@@ -1432,7 +1500,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                   "Estimé fin de mois",
                   [
                     { label: "Solde actuel", amount: forecast.balance, ref: cellKey("grand", "solde", i) },
-                    ...forecast.currentSteps.map((s) => ({ label: s.label, amount: s.amount })),
+                    ...forecast.currentSteps.map((s): DetailNode => ({ label: s.label, amount: s.amount, ref: stepRef(s, i) })),
                   ],
                   { subtitle: monthLabel(m), result: forecast.currentEstimate },
                 )
