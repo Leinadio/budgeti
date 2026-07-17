@@ -4,7 +4,7 @@ import { ArrowUpRight, ArrowDownRight, ChevronDown, ChevronRight } from "lucide-
 import { cn } from "@/lib/utils";
 import { monthLabel } from "@/lib/transactions-view";
 import type { AccountForecast } from "@/lib/forecast";
-import { type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn, type SoldeColumn } from "@/lib/history";
+import { type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn, type SoldeColumn, type PlannedSoldes } from "@/lib/history";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TruncatedText } from "@/components/truncated-text";
 import { GroupSelectField } from "@/components/group-select-field";
@@ -47,6 +47,73 @@ const fmt = (n: number) => NUM.format(Math.abs(n) < 0.005 ? 0 : n).replace(/[  ]
 // (et non un max-width sur la cellule, ignoré en table-auto) garantit que la
 // colonne ne bouge pas quand on déroule des transactions à long libellé.
 const COL1_W = 320;
+
+// --- Modèle de colonnes par type de mois -----------------------------------
+// Les colonnes affichées dépendent de la position du mois par rapport au mois
+// courant : un mois passé garde les colonnes réelles, le mois courant y ajoute
+// les projections (prévu / dépassement), un mois futur ne montre plus le réel.
+type MonthType = "past" | "current" | "future";
+type ColKey =
+  | "budg" | "dep" | "recu" | "reste" | "depassement"
+  | "soldeReel" | "soldePrevu" | "soldeDepass"
+  | "budget" | "revenus";
+
+function monthType(m: string, currentMonth: string): MonthType {
+  return m < currentMonth ? "past" : m === currentMonth ? "current" : "future";
+}
+
+function monthColumns(type: MonthType): ColKey[] {
+  if (type === "past") return ["budg", "dep", "recu", "reste", "soldeReel"];
+  if (type === "current")
+    return ["budg", "dep", "recu", "reste", "depassement", "soldeReel", "soldePrevu", "soldeDepass"];
+  return ["budget", "revenus", "depassement", "soldePrevu", "soldeDepass"];
+}
+
+const COL_LABEL: Record<ColKey, string> = {
+  budg: "Budg.",
+  dep: "Dép.",
+  recu: "Reçu",
+  reste: "Reste",
+  depassement: "Dépass.",
+  soldeReel: "Solde",
+  soldePrevu: "Solde prévu",
+  soldeDepass: "Solde dépass.",
+  budget: "Budget",
+  revenus: "Revenus",
+};
+
+// Cellule vide (colonne non renseignée pour cette ligne), avec bordure de mois si
+// c'est la première colonne du mois.
+function blankCol(key: string, border: boolean) {
+  return <TableCell key={key} className={cn(border && "border-l")} />;
+}
+
+// Cellule de solde « plan » (prévu / si dépassement) : affichage simple, non
+// cliquable, rouge si négatif ; vide si la valeur est nulle (mois avant le courant).
+function plannedSoldeCol(key: string, val: number | null | undefined, border: boolean) {
+  return (
+    <TableCell key={key} className={cn(border && "border-l", "text-right tabular-nums", val != null && val < -0.005 && "text-red-600")}>
+      {val != null ? fmt(val) : ""}
+    </TableCell>
+  );
+}
+
+// Jeu de slots (une fonction de rendu par colonne) toutes vides : sert de base aux
+// lignes qui ne renseignent qu'une ou deux colonnes (ouverture, lignes du bas).
+function blankSlots(): Record<ColKey, (border: boolean) => React.ReactNode> {
+  return {
+    budg: (b) => blankCol("budg", b),
+    dep: (b) => blankCol("dep", b),
+    recu: (b) => blankCol("recu", b),
+    reste: (b) => blankCol("reste", b),
+    depassement: (b) => blankCol("depassement", b),
+    soldeReel: (b) => blankCol("soldeReel", b),
+    soldePrevu: (b) => blankCol("soldePrevu", b),
+    soldeDepass: (b) => blankCol("soldeDepass", b),
+    budget: (b) => blankCol("budget", b),
+    revenus: (b) => blankCol("revenus", b),
+  };
+}
 
 // Boîte à largeur fixe placée dans la cellule de gauche. Le retrait (indent) est
 // appliqué à l'intérieur, donc toutes les cellules gardent la même largeur.
@@ -218,14 +285,19 @@ function soldeActuelDetail(
 // detailRow : ligne de groupe (transactions/postes) permettant de construire le
 // détail cliquable des cellules. Absente pour les sous-lignes (postes d'un
 // récurrent) : ces cellules restent non cliquables (hors périmètre, cf. ci-dessous).
-function AmountCells({ cells, mode, solde, onSelect, subtitleOf, detailRow, months, rowKey, selCellKey, prevRowKey }: {
+function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, subtitleOf, detailRow, months, currentMonth, rowKey, selCellKey, prevRowKey, incomeKind }: {
   cells: MonthCell[];
   mode: "out" | "in" | "total";
   solde?: (number | null)[];
+  // Chaînes de solde « plan » de cette ligne (prévu / si dépassement), une valeur
+  // par mois, nulles avant le mois courant. Absentes pour les sous-lignes.
+  soldePrevu?: (number | null)[];
+  soldeDepass?: (number | null)[];
   onSelect?: (d: CellDetail) => void;
   subtitleOf?: (i: number) => string;
   detailRow?: HistoryRow;
   months: string[];
+  currentMonth: string;
   // Clé de ligne de ces cellules (group:… ou subrow:…), pour composer les data-cellkey.
   rowKey: string;
   // Case sélectionnée depuis le side panel (pour la surbrillance).
@@ -233,10 +305,14 @@ function AmountCells({ cells, mode, solde, onSelect, subtitleOf, detailRow, mont
   // Ligne dont le solde est le « Solde précédent » de celle-ci (prédécesseur dans
   // l'accumulation) : pour surligner sa case Solde depuis le side panel.
   prevRowKey?: string;
+  // Classe de revenu (pour les colonnes Budg./Revenus des rémunérations).
+  incomeKind?: "principal" | "supplementary" | null;
 }) {
   return (
     <>
       {cells.map((c, i) => {
+        const type = monthType(months[i], currentMonth);
+        const cols = monthColumns(type);
         const month = months[i];
         const subtitle = subtitleOf?.(i);
         const r = detailRow;
@@ -287,37 +363,54 @@ function AmountCells({ cells, mode, solde, onSelect, subtitleOf, detailRow, mont
               )
             : null;
 
-        return (
-          <Fragment key={i}>
-            <CellAmount className="border-l text-right tabular-nums text-muted-foreground" detail={budgetDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
-              {mode === "in" ? (r?.incomeKind === "principal" ? fmt(c.budgeted) : "") : fmt(c.budgeted)}
+        // Colonnes réelles : cliquables (détail + surbrillance) comme avant.
+        // Nouvelles colonnes de projection : affichage simple.
+        const slots: Record<ColKey, (border: boolean) => React.ReactNode> = {
+          budg: (b) => (
+            <CellAmount key="budg" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} detail={budgetDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
+              {mode === "in" ? (incomeKind === "principal" ? fmt(c.budgeted) : "") : fmt(c.budgeted)}
             </CellAmount>
-            <CellAmount className="text-right tabular-nums" detail={depDetail} onSelect={onSelect} cellKey={ck("depense")} selCellKey={selCellKey}>
+          ),
+          budget: (b) => (
+            <TableCell key="budget" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>
+              {mode === "out" ? fmt(c.budgeted) : "—"}
+            </TableCell>
+          ),
+          revenus: (b) => (
+            <TableCell key="revenus" className={cn(b && "border-l", "text-right tabular-nums")}>
+              {mode === "out" ? "—" : incomeKind === "supplementary" ? fmt(0) : fmt(c.budgeted)}
+            </TableCell>
+          ),
+          dep: (b) => (
+            <CellAmount key="dep" className={cn(b && "border-l", "text-right tabular-nums")} detail={depDetail} onSelect={onSelect} cellKey={ck("depense")} selCellKey={selCellKey}>
               {mode === "in" ? "—" : fmt(c.depense)}
             </CellAmount>
-            <CellAmount className="text-right tabular-nums" detail={recuDetail} onSelect={onSelect} cellKey={ck("recu")} selCellKey={selCellKey}>
+          ),
+          recu: (b) => (
+            <CellAmount key="recu" className={cn(b && "border-l", "text-right tabular-nums")} detail={recuDetail} onSelect={onSelect} cellKey={ck("recu")} selCellKey={selCellKey}>
               {mode === "out" ? "—" : fmt(c.recu)}
             </CellAmount>
-            <CellAmount
-              className={cn("text-right tabular-nums", mode !== "in" && c.balance < 0 && "text-red-600")}
-              detail={resteDetail}
-              onSelect={onSelect}
-              cellKey={ck("reste")}
-              selCellKey={selCellKey}
-            >
+          ),
+          reste: (b) => (
+            <CellAmount key="reste" className={cn(b && "border-l", "text-right tabular-nums", mode !== "in" && c.balance < 0 && "text-red-600")} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
               {mode === "in" ? "" : fmt(c.balance)}
             </CellAmount>
-            <CellAmount
-              className={cn("text-right tabular-nums", s != null && s < -0.005 && "text-red-600")}
-              detail={soldeDetail}
-              onSelect={onSelect}
-              cellKey={ck("solde")}
-              selCellKey={selCellKey}
-            >
+          ),
+          depassement: (b) => (
+            <TableCell key="depassement" className={cn(b && "border-l", "text-right tabular-nums")}>
+              {mode === "out" ? fmt(Math.max(0, c.depense - c.budgeted)) : "—"}
+            </TableCell>
+          ),
+          soldeReel: (b) => (
+            <CellAmount key="soldeReel" className={cn(b && "border-l", "text-right tabular-nums", s != null && s < -0.005 && "text-red-600")} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
               {s != null ? fmt(s) : ""}
             </CellAmount>
-          </Fragment>
-        );
+          ),
+          soldePrevu: (b) => plannedSoldeCol("soldePrevu", soldePrevu?.[i] ?? null, b),
+          soldeDepass: (b) => plannedSoldeCol("soldeDepass", soldeDepass?.[i] ?? null, b),
+        };
+
+        return <Fragment key={i}>{cols.map((col, idx) => slots[col](idx === 0))}</Fragment>;
       })}
     </>
   );
@@ -332,9 +425,10 @@ function AmountCells({ cells, mode, solde, onSelect, subtitleOf, detailRow, mont
 // donc leur somme aussi) : toujours cliquable. Pour les non catégorisés, budget et
 // balance sont toujours à 0 : l'invariant ne tient que si dépensé == 0, donc en
 // pratique non cliquable (comme documenté au Task 3 pour ce cas).
-function SectionTotalsCells({ sec, months, onSelect, solde, selCellKey, prevRowKey }: {
+function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, selCellKey, prevRowKey }: {
   sec: HistorySection;
   months: string[];
+  currentMonth: string;
   onSelect?: (d: CellDetail) => void;
   solde?: (number | null)[];
   selCellKey?: string | null;
@@ -346,6 +440,8 @@ function SectionTotalsCells({ sec, months, onSelect, solde, selCellKey, prevRowK
   return (
     <>
       {sec.totals.map((c, i) => {
+        const type = monthType(months[i], currentMonth);
+        const cols = monthColumns(type);
         const month = months[i];
         const subtitle = `${labelOfSection(sec.kind)} · ${monthLabel(month)}`;
         const ck = (col: Col) => cellKey(rowKey, col, i);
@@ -401,31 +497,57 @@ function SectionTotalsCells({ sec, months, onSelect, solde, selCellKey, prevRowK
               )
             : null;
 
-        return (
-          <Fragment key={i}>
-            <CellAmount className="border-l text-right tabular-nums text-muted-foreground" detail={budgetDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
+        // Dépassement de la section = somme des dépassements de ses lignes de dépense
+        // (les non catégorisés n'ont pas de budget, donc pas de dépassement).
+        const secDepass = sec.rows.reduce(
+          (a, r) => a + (r.direction === "out" ? Math.max(0, r.cells[i].depense - r.cells[i].budgeted) : 0),
+          0,
+        );
+
+        const slots: Record<ColKey, (border: boolean) => React.ReactNode> = {
+          budg: (b) => (
+            <CellAmount key="budg" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} detail={budgetDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
               {fmt(c.budgeted)}
             </CellAmount>
-            <CellAmount className="text-right tabular-nums" detail={depDetail} onSelect={onSelect} cellKey={ck("depense")} selCellKey={selCellKey}>
+          ),
+          budget: (b) => (
+            <TableCell key="budget" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>
+              {isUncat ? "—" : fmt(c.budgeted)}
+            </TableCell>
+          ),
+          revenus: (b) => (
+            <TableCell key="revenus" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>—</TableCell>
+          ),
+          dep: (b) => (
+            <CellAmount key="dep" className={cn(b && "border-l", "text-right tabular-nums")} detail={depDetail} onSelect={onSelect} cellKey={ck("depense")} selCellKey={selCellKey}>
               {fmt(c.depense)}
             </CellAmount>
-            <CellAmount className="text-right tabular-nums" detail={recuDetail} onSelect={onSelect} cellKey={ck("recu")} selCellKey={selCellKey}>
+          ),
+          recu: (b) => (
+            <CellAmount key="recu" className={cn(b && "border-l", "text-right tabular-nums")} detail={recuDetail} onSelect={onSelect} cellKey={ck("recu")} selCellKey={selCellKey}>
               {fmt(c.recu)}
             </CellAmount>
-            <CellAmount className={cn("text-right tabular-nums", c.balance < 0 && "text-red-600")} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
+          ),
+          reste: (b) => (
+            <CellAmount key="reste" className={cn(b && "border-l", "text-right tabular-nums", c.balance < 0 && "text-red-600")} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
               {fmt(c.balance)}
             </CellAmount>
-            <CellAmount
-              className={cn("text-right tabular-nums", s != null && s < -0.005 && "text-red-600")}
-              detail={soldeDetail}
-              onSelect={onSelect}
-              cellKey={ck("solde")}
-              selCellKey={selCellKey}
-            >
+          ),
+          depassement: (b) => (
+            <TableCell key="depassement" className={cn(b && "border-l", "text-right tabular-nums", secDepass > 0 && "text-red-600")}>
+              {isUncat ? "—" : fmt(secDepass)}
+            </TableCell>
+          ),
+          soldeReel: (b) => (
+            <CellAmount key="soldeReel" className={cn(b && "border-l", "text-right tabular-nums", s != null && s < -0.005 && "text-red-600")} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
               {s != null ? fmt(s) : ""}
             </CellAmount>
-          </Fragment>
-        );
+          ),
+          soldePrevu: (b) => plannedSoldeCol("soldePrevu", null, b),
+          soldeDepass: (b) => plannedSoldeCol("soldeDepass", null, b),
+        };
+
+        return <Fragment key={i}>{cols.map((col, idx) => slots[col](idx === 0))}</Fragment>;
       })}
     </>
   );
@@ -434,41 +556,62 @@ function SectionTotalsCells({ sec, months, onSelect, solde, selCellKey, prevRowK
 // Ligne « Total rémunérations » : somme des rémunérations principale et
 // supplémentaire. Seule la colonne Reçu est renseignée (les rémunérations n'ont ni
 // budget ni dépense) ; cliquable → détail dépliable jusqu'aux transactions.
-function IncomeTotalCells({ sec, months, onSelect, selCellKey }: {
+function IncomeTotalCells({ sec, months, currentMonth, onSelect, selCellKey }: {
   sec: HistorySection;
   months: string[];
+  currentMonth: string;
   onSelect?: (d: CellDetail) => void;
   selCellKey?: string | null;
 }) {
   return (
     <>
       {sec.totals.map((c, i) => {
+        const type = monthType(months[i], currentMonth);
+        const cols = monthColumns(type);
         const month = months[i];
         const subtitle = `Rémunérations · ${monthLabel(month)}`;
         const recuDetail: CellDetail | null =
           c.recu !== 0
             ? makeDetail("Rémunérations", sec.rows.map((r) => groupNode(r, i, month, "recu")).filter((n) => n.amount !== 0), { subtitle, result: c.recu })
             : null;
-        return (
-          <Fragment key={i}>
-            {(() => {
-              const principalBudget = sec.rows
-                .filter((r) => r.incomeKind === "principal")
-                .reduce((s, r) => s + r.cells[i].budgeted, 0);
-              return (
-                <TableCell className="border-l text-right tabular-nums text-muted-foreground">
-                  {principalBudget !== 0 ? fmt(principalBudget) : ""}
-                </TableCell>
-              );
-            })()}
-            <TableCell className="text-right tabular-nums text-muted-foreground">—</TableCell>
-            <CellAmount className="text-right tabular-nums" detail={recuDetail} onSelect={onSelect} cellKey={cellKey(sectionRow("income"), "recu", i)} selCellKey={selCellKey}>
+        // Revenu projeté total = rémunération principale (la supplémentaire n'est pas
+        // projetée sur les mois futurs). Aussi la valeur du Budget principal-only.
+        const principalBudget = sec.rows
+          .filter((r) => r.incomeKind === "principal")
+          .reduce((s, r) => s + r.cells[i].budgeted, 0);
+
+        const slots: Record<ColKey, (border: boolean) => React.ReactNode> = {
+          budg: (b) => (
+            <TableCell key="budg" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>
+              {principalBudget !== 0 ? fmt(principalBudget) : ""}
+            </TableCell>
+          ),
+          budget: (b) => (
+            <TableCell key="budget" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>—</TableCell>
+          ),
+          revenus: (b) => (
+            <TableCell key="revenus" className={cn(b && "border-l", "text-right tabular-nums")}>
+              {fmt(principalBudget)}
+            </TableCell>
+          ),
+          dep: (b) => (
+            <TableCell key="dep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>—</TableCell>
+          ),
+          recu: (b) => (
+            <CellAmount key="recu" className={cn(b && "border-l", "text-right tabular-nums")} detail={recuDetail} onSelect={onSelect} cellKey={cellKey(sectionRow("income"), "recu", i)} selCellKey={selCellKey}>
               {fmt(c.recu)}
             </CellAmount>
-            <TableCell />
-            <TableCell />
-          </Fragment>
-        );
+          ),
+          reste: (b) => blankCol("reste", b),
+          depassement: (b) => (
+            <TableCell key="depassement" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>—</TableCell>
+          ),
+          soldeReel: (b) => blankCol("soldeReel", b),
+          soldePrevu: (b) => blankCol("soldePrevu", b),
+          soldeDepass: (b) => blankCol("soldeDepass", b),
+        };
+
+        return <Fragment key={i}>{cols.map((col, idx) => slots[col](idx === 0))}</Fragment>;
       })}
     </>
   );
@@ -480,20 +623,30 @@ function IncomeTotalCells({ sec, months, onSelect, selCellKey }: {
 // Reste : cliquable seulement si l'invariant budget − dépensé == balance tient
 // (souvent faux au global : la section Rémunérations a un budget mais pas de
 // dépense, donc généralement non cliquable — ce qui est acceptable, cf. brief).
-function GrandTotalsCells({ sections, grand, solde, months, onSelect, selCellKey }: {
+function GrandTotalsCells({ sections, grand, solde, planned, overspend, months, currentMonth, onSelect, selCellKey }: {
   sections: HistorySection[];
   grand: MonthCell[];
   solde: SoldeColumn;
+  planned: PlannedSoldes;
+  overspend: number[];
   months: string[];
+  currentMonth: string;
   onSelect?: (d: CellDetail) => void;
   selCellKey?: string | null;
 }) {
   return (
     <>
       {grand.map((c, i) => {
+        const type = monthType(months[i], currentMonth);
+        const cols = monthColumns(type);
         const month = months[i];
         const subtitle = monthLabel(month);
         const ck = (col: Col) => cellKey("grand", col, i);
+        // Revenu projeté total = somme des rémunérations principales (supplémentaire
+        // non projetée sur les mois futurs).
+        const revenusTotal = sections
+          .flatMap((s) => s.rows)
+          .reduce((a, r) => a + (r.direction === "in" ? (r.incomeKind === "supplementary" ? 0 : r.cells[i].budgeted) : 0), 0);
 
         const budgetDetail: CellDetail | null =
           c.budgeted !== 0
@@ -536,31 +689,52 @@ function GrandTotalsCells({ sections, grand, solde, months, onSelect, selCellKey
             : null;
         const soldeDetail: CellDetail = soldeActuelDetail(sections, solde, i, month, { title: "Solde actuel", result: solde.closings[i] });
 
-        return (
-          <Fragment key={i}>
-            <CellAmount className="border-l text-right tabular-nums text-muted-foreground" detail={budgetDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
+        const slots: Record<ColKey, (border: boolean) => React.ReactNode> = {
+          budg: (b) => (
+            <CellAmount key="budg" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} detail={budgetDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
               {fmt(c.budgeted)}
             </CellAmount>
-            <CellAmount className="text-right tabular-nums" detail={depDetail} onSelect={onSelect} cellKey={ck("depense")} selCellKey={selCellKey}>
+          ),
+          budget: (b) => (
+            <TableCell key="budget" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>
+              {fmt(c.budgeted)}
+            </TableCell>
+          ),
+          revenus: (b) => (
+            <TableCell key="revenus" className={cn(b && "border-l", "text-right tabular-nums")}>
+              {fmt(revenusTotal)}
+            </TableCell>
+          ),
+          dep: (b) => (
+            <CellAmount key="dep" className={cn(b && "border-l", "text-right tabular-nums")} detail={depDetail} onSelect={onSelect} cellKey={ck("depense")} selCellKey={selCellKey}>
               {fmt(c.depense)}
             </CellAmount>
-            <CellAmount className="text-right tabular-nums" detail={recuDetail} onSelect={onSelect} cellKey={ck("recu")} selCellKey={selCellKey}>
+          ),
+          recu: (b) => (
+            <CellAmount key="recu" className={cn(b && "border-l", "text-right tabular-nums")} detail={recuDetail} onSelect={onSelect} cellKey={ck("recu")} selCellKey={selCellKey}>
               {fmt(c.recu)}
             </CellAmount>
-            <CellAmount className={cn("text-right tabular-nums", c.balance < 0 && "text-red-600")} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
+          ),
+          reste: (b) => (
+            <CellAmount key="reste" className={cn(b && "border-l", "text-right tabular-nums", c.balance < 0 && "text-red-600")} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
               {fmt(c.balance)}
             </CellAmount>
-            <CellAmount
-              className={cn("text-right tabular-nums", solde.closings[i] < -0.005 && "text-red-600")}
-              detail={soldeDetail}
-              onSelect={onSelect}
-              cellKey={ck("solde")}
-              selCellKey={selCellKey}
-            >
+          ),
+          depassement: (b) => (
+            <TableCell key="depassement" className={cn(b && "border-l", "text-right tabular-nums", overspend[i] > 0 && "text-red-600")}>
+              {overspend[i] > 0 ? fmt(overspend[i]) : "—"}
+            </TableCell>
+          ),
+          soldeReel: (b) => (
+            <CellAmount key="soldeReel" className={cn(b && "border-l", "text-right tabular-nums", solde.closings[i] < -0.005 && "text-red-600")} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
               {fmt(solde.closings[i])}
             </CellAmount>
-          </Fragment>
-        );
+          ),
+          soldePrevu: (b) => plannedSoldeCol("soldePrevu", planned.prevuClosings[i], b),
+          soldeDepass: (b) => plannedSoldeCol("soldeDepass", planned.depassClosings[i], b),
+        };
+
+        return <Fragment key={i}>{cols.map((col, idx) => slots[col](idx === 0))}</Fragment>;
       })}
     </>
   );
@@ -568,29 +742,39 @@ function GrandTotalsCells({ sections, grand, solde, months, onSelect, selCellKey
 
 // Cellules d'une transaction : son montant tombe dans la colonne Dép. (sortie)
 // ou Reçu (entrée), selon son signe, du mois où elle a lieu ; le reste est vide.
-function TxnCells({ txn, months, selCellKey }: { txn: HistoryTxn; months: string[]; selCellKey?: string | null }) {
+function TxnCells({ txn, months, currentMonth, selCellKey }: { txn: HistoryTxn; months: string[]; currentMonth: string; selCellKey?: string | null }) {
   const isOut = txn.amount < 0;
   return (
     <>
       {months.map((m, i) => {
+        const cols = monthColumns(monthType(m, currentMonth));
         const here = txn.month === m;
         const val = here ? fmt(Math.abs(txn.amount)) : "";
-        // La transaction n'occupe qu'une case : Dép. si sortie, Reçu si entrée.
+        // La transaction n'occupe qu'une case : Dép. si sortie, Reçu si entrée. En
+        // mois de projection, ni Dép. ni Reçu n'existent : la ligne reste vide.
         const ck = here ? cellKey(txnRow(txn.id), isOut ? "depense" : "recu", i) : undefined;
         const hl = ck != null && ck === selCellKey;
-        return (
-          <Fragment key={i}>
-            <TableCell className="border-l" />
-            <TableCell data-cellkey={here && isOut ? ck : undefined} className={cn("text-right tabular-nums text-muted-foreground", isOut && hl && CELL_HL)}>
+        const slots: Record<ColKey, (border: boolean) => React.ReactNode> = {
+          budg: (b) => blankCol("budg", b),
+          budget: (b) => blankCol("budget", b),
+          revenus: (b) => blankCol("revenus", b),
+          dep: (b) => (
+            <TableCell key="dep" data-cellkey={here && isOut ? ck : undefined} className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground", isOut && hl && CELL_HL)}>
               {here && isOut ? val : ""}
             </TableCell>
-            <TableCell data-cellkey={here && !isOut ? ck : undefined} className={cn("text-right tabular-nums text-muted-foreground", !isOut && hl && CELL_HL)}>
+          ),
+          recu: (b) => (
+            <TableCell key="recu" data-cellkey={here && !isOut ? ck : undefined} className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground", !isOut && hl && CELL_HL)}>
               {here && !isOut ? val : ""}
             </TableCell>
-            <TableCell />
-            <TableCell />
-          </Fragment>
-        );
+          ),
+          reste: (b) => blankCol("reste", b),
+          depassement: (b) => blankCol("depassement", b),
+          soldeReel: (b) => blankCol("soldeReel", b),
+          soldePrevu: (b) => blankCol("soldePrevu", b),
+          soldeDepass: (b) => blankCol("soldeDepass", b),
+        };
+        return <Fragment key={i}>{cols.map((col, idx) => slots[col](idx === 0))}</Fragment>;
       })}
     </>
   );
@@ -624,9 +808,10 @@ function NameCell({ children, indent, expandable, expanded, onToggle, bg = "bg-b
 
 // Ligne de transaction : « date · libellé » puis, en dessous, le menu de
 // (ré)assignation de groupe. Le montant tombe dans la colonne de son mois.
-function TxnRow({ txn, months, groups, indent, selCellKey }: {
+function TxnRow({ txn, months, currentMonth, groups, indent, selCellKey }: {
   txn: HistoryTxn;
   months: string[];
+  currentMonth: string;
   groups: SelectGroup[];
   indent: number;
   selCellKey?: string | null;
@@ -650,12 +835,12 @@ function TxnRow({ txn, months, groups, indent, selCellKey }: {
           />
         </div>
       </TableCell>
-      <TxnCells txn={txn} months={months} selCellKey={selCellKey} />
+      <TxnCells txn={txn} months={months} currentMonth={currentMonth} selCellKey={selCellKey} />
     </TableRow>
   );
 }
 
-export function HistoryGrid({ months, currentMonth, forecast, sections, overspend, grand, groups, solde, onSelect, selected }: {
+export function HistoryGrid({ months, currentMonth, forecast, sections, overspend, grand, groups, solde, planned, onSelect, selected }: {
   months: string[];
   currentMonth: string;
   forecast: AccountForecast;
@@ -664,6 +849,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
   grand: MonthCell[];
   groups: SelectGroup[];
   solde: SoldeColumn;
+  planned: PlannedSoldes;
   // Clic sur un montant : remonté au parent, qui l'affiche dans la sidebar.
   onSelect: (d: CellDetail) => void;
   // Case à surligner, sélectionnée depuis le side panel (clé data-cellkey, null = aucune).
@@ -762,13 +948,17 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
             cells={r.cells}
             mode={r.direction}
             solde={solde.rowRunning[r.id]}
+            soldePrevu={planned.prevuRowRunning[r.id]}
+            soldeDepass={planned.depassRowRunning[r.id]}
             onSelect={onSelect}
             subtitleOf={(i) => `${r.name} · ${monthLabel(months[i])}`}
             detailRow={r}
             months={months}
+            currentMonth={currentMonth}
             rowKey={selfKey}
             selCellKey={selCellKey}
             prevRowKey={prevSoldeRowKey.get(selfKey)}
+            incomeKind={r.incomeKind}
           />
         </TableRow>
         {gOpen && (
@@ -785,16 +975,16 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                     </NameCell>
                     {/* Sous-ligne (poste d'un récurrent) : cellules non cliquables, mais leur
                         case Budg. peut être surlignée depuis le détail « Budget » d'un récurrent. */}
-                    <AmountCells cells={sub.cells} mode={r.direction} months={months} rowKey={subRow(sub.id)} selCellKey={selCellKey} />
+                    <AmountCells cells={sub.cells} mode={r.direction} months={months} currentMonth={currentMonth} rowKey={subRow(sub.id)} selCellKey={selCellKey} incomeKind={r.incomeKind} />
                   </TableRow>
                   {lOpen && sub.txns.map((t) => (
-                    <TxnRow key={t.id} txn={t} months={months} groups={groups} indent={2} selCellKey={selCellKey} />
+                    <TxnRow key={t.id} txn={t} months={months} currentMonth={currentMonth} groups={groups} indent={2} selCellKey={selCellKey} />
                   ))}
                 </Fragment>
               );
             })}
             {r.txns.map((t) => (
-              <TxnRow key={t.id} txn={t} months={months} groups={groups} indent={1} selCellKey={selCellKey} />
+              <TxnRow key={t.id} txn={t} months={months} currentMonth={currentMonth} groups={groups} indent={1} selCellKey={selCellKey} />
             ))}
           </>
         )}
@@ -816,30 +1006,33 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
           <TableHead rowSpan={2} className="bg-background sticky left-0 z-10 p-0 align-bottom">
             <FirstColBox>Catégorie</FirstColBox>
           </TableHead>
-          {months.map((m) => (
-            <TableHead
-              key={m}
-              colSpan={5}
-              data-current-month={m === currentMonth ? "" : undefined}
-              className={cn(
-                "border-l text-center whitespace-nowrap",
-                m === currentMonth && "text-foreground font-semibold",
-                m > currentMonth && "text-muted-foreground italic",
-              )}
-            >
-              {monthLabel(m)}
-              {m > currentMonth ? " · projection" : ""}
-            </TableHead>
-          ))}
+          {months.map((m) => {
+            const cols = monthColumns(monthType(m, currentMonth));
+            return (
+              <TableHead
+                key={m}
+                colSpan={cols.length}
+                data-current-month={m === currentMonth ? "" : undefined}
+                className={cn(
+                  "border-l text-center whitespace-nowrap",
+                  m === currentMonth && "text-foreground font-semibold",
+                  m > currentMonth && "text-muted-foreground italic",
+                )}
+              >
+                {monthLabel(m)}
+                {m > currentMonth ? " · projection" : ""}
+              </TableHead>
+            );
+          })}
         </TableRow>
         <TableRow>
           {months.map((m) => (
             <Fragment key={m}>
-              <TableHead className="border-l text-right">Budg.</TableHead>
-              <TableHead className="text-right">Dép.</TableHead>
-              <TableHead className="text-right">Reçu</TableHead>
-              <TableHead className="text-right">Reste</TableHead>
-              <TableHead className="text-right">Solde</TableHead>
+              {monthColumns(monthType(m, currentMonth)).map((col, idx) => (
+                <TableHead key={col} className={cn(idx === 0 && "border-l", "text-right")}>
+                  {COL_LABEL[col]}
+                </TableHead>
+              ))}
             </Fragment>
           ))}
         </TableRow>
@@ -872,17 +1065,25 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                     [{ label: "Solde de fin du mois précédent", amount: solde.closings[i - 1] }],
                     { subtitle: monthLabel(months[i]), result: solde.openings[i] },
                   );
-            return (
-              <Fragment key={i}>
-                <TableCell className="border-l" />
-                <TableCell />
-                <TableCell />
-                <TableCell />
-                <CellAmount className={cn("text-right tabular-nums", v < -0.005 && "text-red-600")} detail={detail} onSelect={onSelect} cellKey={cellKey(openingRow, "solde", i)} selCellKey={selCellKey}>
-                  {fmt(v)}
-                </CellAmount>
-              </Fragment>
+            const type = monthType(months[i], currentMonth);
+            const cols = monthColumns(type);
+            // L'ouverture est commune aux trois chaînes au mois courant. En
+            // projection, l'ouverture d'une chaîne = clôture (prévue / si dépassement)
+            // du mois précédent ; repli sur l'argent de départ réel au 1er mois.
+            const prevuOpen =
+              months[i] === currentMonth ? v : i > 0 && planned.prevuClosings[i - 1] != null ? planned.prevuClosings[i - 1] : v;
+            const depassOpen =
+              months[i] === currentMonth ? v : i > 0 && planned.depassClosings[i - 1] != null ? planned.depassClosings[i - 1] : v;
+            const openingCell = (b: boolean) => (
+              <CellAmount key="soldeReel" className={cn(b && "border-l", "text-right tabular-nums", v < -0.005 && "text-red-600")} detail={detail} onSelect={onSelect} cellKey={cellKey(openingRow, "solde", i)} selCellKey={selCellKey}>
+                {fmt(v)}
+              </CellAmount>
             );
+            const slots = blankSlots();
+            slots.soldeReel = openingCell;
+            slots.soldePrevu = (b) => plannedSoldeCol("soldePrevu", prevuOpen, b);
+            slots.soldeDepass = (b) => plannedSoldeCol("soldeDepass", depassOpen, b);
+            return <Fragment key={i}>{cols.map((col, idx) => slots[col](idx === 0))}</Fragment>;
           })}
         </TableRow>
         {sections.map((sec) => {
@@ -896,7 +1097,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                   <TableCell className={cn("sticky left-0 z-10 p-0", MUTED40)}>
                     <FirstColBox>Total rémunérations</FirstColBox>
                   </TableCell>
-                  <IncomeTotalCells sec={sec} months={months} onSelect={onSelect} selCellKey={selCellKey} />
+                  <IncomeTotalCells sec={sec} months={months} currentMonth={currentMonth} onSelect={onSelect} selCellKey={selCellKey} />
                 </TableRow>
               </Fragment>
             );
@@ -911,10 +1112,10 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                   <NameCell indent={0} bg={MUTED40} expandable={hasTxns} expanded={uOpen} onToggle={hasTxns ? () => toggle(uKey) : undefined}>
                     <span className="min-w-0 truncate">Non catégorisés</span>
                   </NameCell>
-                  <SectionTotalsCells sec={sec} months={months} onSelect={onSelect} solde={solde.uncategorizedRunning ?? undefined} selCellKey={selCellKey} prevRowKey={prevSoldeRowKey.get(sectionRow("uncategorized"))} />
+                  <SectionTotalsCells sec={sec} months={months} currentMonth={currentMonth} onSelect={onSelect} solde={solde.uncategorizedRunning ?? undefined} selCellKey={selCellKey} prevRowKey={prevSoldeRowKey.get(sectionRow("uncategorized"))} />
                 </TableRow>
                 {uOpen && sec.txns?.map((t) => (
-                  <TxnRow key={t.id} txn={t} months={months} groups={groups} indent={1} selCellKey={selCellKey} />
+                  <TxnRow key={t.id} txn={t} months={months} currentMonth={currentMonth} groups={groups} indent={1} selCellKey={selCellKey} />
                 ))}
               </Fragment>
             );
@@ -925,7 +1126,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                 <TableCell className={cn("sticky left-0 z-10 p-0", MUTED40)}>
                   <FirstColBox>{sec.kind === "envelope" ? "Enveloppes" : "Récurrents"}</FirstColBox>
                 </TableCell>
-                <SectionTotalsCells sec={sec} months={months} onSelect={onSelect} selCellKey={selCellKey} />
+                <SectionTotalsCells sec={sec} months={months} currentMonth={currentMonth} onSelect={onSelect} selCellKey={selCellKey} />
               </TableRow>
               {sec.rows.map((r) => renderGroup(r))}
             </Fragment>
@@ -935,7 +1136,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
           <TableCell className="sticky left-0 z-10 bg-[color-mix(in_oklab,var(--muted)_60%,var(--background))] p-0">
             <FirstColBox>Solde actuel</FirstColBox>
           </TableCell>
-          <GrandTotalsCells sections={sections} grand={grand} solde={solde} months={months} onSelect={onSelect} selCellKey={selCellKey} />
+          <GrandTotalsCells sections={sections} grand={grand} solde={solde} planned={planned} overspend={overspend} months={months} currentMonth={currentMonth} onSelect={onSelect} selCellKey={selCellKey} />
         </TableRow>
         {/* Estimé fin de mois : mois courant = solde projeté fin de mois
             (`forecast.currentEstimate`, distinct du solde « maintenant » sur la
@@ -958,17 +1159,18 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                   { subtitle: monthLabel(m), result: forecast.currentEstimate },
                 )
               : soldeActuelDetail(sections, solde, i, m, { title: "Estimé fin de mois", result: solde.closings[i] });
-            return (
-              <Fragment key={i}>
-                <TableCell className="border-l" />
-                <TableCell />
-                <TableCell />
-                <TableCell />
-                <CellAmount className={cn("text-right tabular-nums", v < -0.005 && "text-red-600")} detail={detail} onSelect={onSelect} cellKey={cellKey("estime", "solde", i)} selCellKey={selCellKey}>
-                  {fmt(v)}
-                </CellAmount>
-              </Fragment>
+            const type = monthType(m, currentMonth);
+            const cols = monthColumns(type);
+            const estCell = (b: boolean) => (
+              <CellAmount key="est" className={cn(b && "border-l", "text-right tabular-nums", v < -0.005 && "text-red-600")} detail={detail} onSelect={onSelect} cellKey={cellKey("estime", "solde", i)} selCellKey={selCellKey}>
+                {fmt(v)}
+              </CellAmount>
             );
+            const slots = blankSlots();
+            // En projection (pas de colonne Solde réel), l'estimé retombe sous « Solde prévu ».
+            if (type === "future") slots.soldePrevu = estCell;
+            else slots.soldeReel = estCell;
+            return <Fragment key={i}>{cols.map((col, idx) => slots[col](idx === 0))}</Fragment>;
           })}
         </TableRow>
         {/* Dépassement : total des dépassements de budget (somme des Reste rouges). */}
@@ -989,17 +1191,19 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                     { subtitle: monthLabel(month), result: overspend[i] },
                   )
                 : null;
-            return (
-              <Fragment key={i}>
-                <TableCell className="border-l" />
-                <TableCell />
-                <TableCell />
-                <CellAmount className={cn("text-right tabular-nums", overspend[i] > 0 && "text-red-600")} detail={detail} onSelect={onSelect} cellKey={cellKey("overspend", "reste", i)} selCellKey={selCellKey}>
-                  {overspend[i] > 0 ? fmt(overspend[i]) : "—"}
-                </CellAmount>
-                <TableCell />
-              </Fragment>
+            const type = monthType(months[i], currentMonth);
+            const cols = monthColumns(type);
+            const depCell = (b: boolean) => (
+              <CellAmount key="dep" className={cn(b && "border-l", "text-right tabular-nums", overspend[i] > 0 && "text-red-600")} detail={detail} onSelect={onSelect} cellKey={cellKey("overspend", "reste", i)} selCellKey={selCellKey}>
+                {overspend[i] > 0 ? fmt(overspend[i]) : "—"}
+              </CellAmount>
             );
+            const slots = blankSlots();
+            // Sous la colonne Dépassement quand elle existe (courant / projection),
+            // sinon sous Reste (mois passés).
+            if (type === "past") slots.reste = depCell;
+            else slots.depassement = depCell;
+            return <Fragment key={i}>{cols.map((col, idx) => slots[col](idx === 0))}</Fragment>;
           })}
         </TableRow>
       </TableBody>
