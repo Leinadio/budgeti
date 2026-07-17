@@ -8,6 +8,7 @@ import {
   insertLine,
   updateLine,
   deleteLine,
+  hasIncomeGroup,
 } from "../../db/repositories/groups";
 import { revalidatePath } from "next/cache";
 
@@ -18,16 +19,24 @@ function refresh() {
   revalidatePath("/");
 }
 
+const REMU_NAMES = {
+  principal: "Rémunération principale",
+  supplementary: "Rémunération supplémentaire",
+} as const;
+
 export async function addGroup(formData: FormData) {
   const accountId = String(formData.get("accountId") ?? "").trim();
-  const name = String(formData.get("name") ?? "").trim();
   const nature = String(formData.get("nature") ?? "");
-  if (!accountId || !name) return;
-  if (nature === "principal") {
-    insertRecurringGroup(db(), accountId, name, "in", "principal");
-  } else if (nature === "supplementary") {
-    insertEnvelopeGroup(db(), accountId, name, "in", 0, "supplementary");
+  if (!accountId) return;
+
+  if (nature === "principal" || nature === "supplementary") {
+    if (hasIncomeGroup(db(), accountId, nature)) return; // une seule de chaque
+    const parsed = Number.parseFloat(String(formData.get("monthlyAmount")));
+    const amount = Number.isFinite(parsed) ? Math.abs(parsed) : 0;
+    insertEnvelopeGroup(db(), accountId, REMU_NAMES[nature], "in", amount, nature);
   } else if (nature === "expense") {
+    const name = String(formData.get("name") ?? "").trim();
+    if (!name) return;
     const kind = String(formData.get("kind") ?? "");
     if (kind === "envelope") {
       const parsed = Number.parseFloat(String(formData.get("monthlyAmount")));

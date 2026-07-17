@@ -20,6 +20,15 @@ export default function GroupesPage() {
     const a = accounts.find((acc) => acc.id === id);
     return a ? accountDisplayName(a) : id;
   };
+  const remuByAccount = Object.fromEntries(
+    accounts.map((a) => [
+      a.id,
+      {
+        principal: groups.some((g) => g.accountId === a.id && g.incomeKind === "principal"),
+        supplementary: groups.some((g) => g.accountId === a.id && g.incomeKind === "supplementary"),
+      },
+    ]),
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -33,7 +42,10 @@ export default function GroupesPage() {
               Aucun compte. Synchronise d&apos;abord dans Réglages.
             </p>
           ) : (
-            <NewGroupForm accounts={accounts.map((a) => ({ id: a.id, name: accountDisplayName(a) }))} />
+            <NewGroupForm
+              accounts={accounts.map((a) => ({ id: a.id, name: accountDisplayName(a) }))}
+              remuByAccount={remuByAccount}
+            />
           )}
         </CardContent>
       </Card>
@@ -52,7 +64,14 @@ export default function GroupesPage() {
           <Card key={g.id}>
             <CardHeader>
               <EditableGroupHeader
-                group={{ id: g.id, name: g.name, direction: g.direction, kind: g.kind, monthlyAmount: g.monthlyAmount }}
+                group={{
+                  id: g.id,
+                  name: g.name,
+                  direction: g.direction,
+                  kind: g.kind,
+                  monthlyAmount: g.monthlyAmount,
+                  incomeKind: g.incomeKind,
+                }}
                 accountName={accountName(g.accountId)}
                 total={total}
               />

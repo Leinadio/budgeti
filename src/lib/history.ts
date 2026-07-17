@@ -29,6 +29,7 @@ export type HistoryRow = {
   name: string;
   kind: "envelope" | "recurring";
   direction: "in" | "out";
+  incomeKind: "principal" | "supplementary" | null; // classe de revenu (null hors rémunération)
   cells: MonthCell[]; // alignées sur la liste des mois passée à computeHistory
   subRows: HistorySubRow[]; // lignes des récurrents (vide pour une enveloppe)
   txns: HistoryTxn[]; // transactions directement sous le groupe (enveloppe, ou récurrent sans ligne)
@@ -139,9 +140,18 @@ export function computeHistory(
   // On ne liste que les transactions des mois affichés.
   const inRange = (t: Txn) => months.includes(t.date.slice(0, 7));
 
-  const cellsFor = (budgeted: number, isOut: boolean, overspend: number, realizedOf: (m: string) => number): MonthCell[] =>
+  // projectFuture=false : la ligne n'est pas anticipée sur les mois futurs (réalisé
+  // projeté = 0). Utilisé pour la rémunération supplémentaire (couvre le mois courant,
+  // pas les suivants).
+  const cellsFor = (
+    budgeted: number,
+    isOut: boolean,
+    overspend: number,
+    realizedOf: (m: string) => number,
+    projectFuture = true,
+  ): MonthCell[] =>
     months.map((m) => {
-      const realized = m > currentMonth ? budgeted + overspend : realizedOf(m);
+      const realized = m > currentMonth ? (projectFuture ? budgeted + overspend : 0) : realizedOf(m);
       return {
         budgeted,
         depense: isOut ? realized : 0,
@@ -156,6 +166,8 @@ export function computeHistory(
   const rowFor = (g: Group): HistoryRow => {
     const budgeted = budgetOf(g);
     const isOut = g.direction === "out";
+    // La supplémentaire n'est pas projetée sur les mois futurs (cf. Global Constraints).
+    const projectFuture = !(g.direction === "in" && g.incomeKind === "supplementary");
     // Transactions du groupe (possédées, non exclues), récentes d'abord.
     const mine = owned
       .filter((o) => o.ownerId === g.id)
@@ -163,7 +175,7 @@ export function computeHistory(
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
     // Dépassement du mois courant, reporté sur les projections (comme le Prévisionnel).
     const overspend = isOut ? Math.max(0, spent(g.id, currentMonth) - budgeted) : 0;
-    const cells = cellsFor(budgeted, isOut, overspend, (m) => spent(g.id, m));
+    const cells = cellsFor(budgeted, isOut, overspend, (m) => spent(g.id, m), projectFuture);
 
     // Sous-groupes : une ligne par poste du récurrent ; les projections gardent
     // juste le budget de la ligne (pas de dépassement au niveau ligne).
@@ -183,7 +195,7 @@ export function computeHistory(
     // récurrent dont la transaction ne matche aucune ligne.
     const groupTxns = mine.filter((t) => lineOf(g, t) === null && inRange(t)).map(toHistoryTxn);
 
-    return { id: g.id, name: g.name, kind: g.kind, direction: g.direction, cells, subRows, txns: groupTxns };
+    return { id: g.id, name: g.name, kind: g.kind, direction: g.direction, incomeKind: g.incomeKind ?? null, cells, subRows, txns: groupTxns };
   };
 
   const sumRows = (rows: HistoryRow[]): MonthCell[] =>
@@ -208,7 +220,14 @@ export function computeHistory(
       .sort((a, b) => incomeRank(a) - incomeRank(b))
       .map(rowFor);
     if (rows.length === 0) return null;
-    return { kind: "income", rows, totals: sumRows(rows) };
+    // Le Budget du total de la section ne porte que la rémunération principale
+    // (cf. Global Constraints : colonne Budget, supplémentaire = vide). Les
+    // autres colonnes (dépensé/reçu/reste) restent la somme de toutes les lignes.
+    const totals = sumRows(rows).map((c, i) => ({
+      ...c,
+      budgeted: rows.filter((r) => r.incomeKind === "principal").reduce((s, r) => s + r.cells[i].budgeted, 0),
+    }));
+    return { kind: "income", rows, totals };
   };
 
   // Sections de dépenses : uniquement les groupes de sortie ; les rémunérations

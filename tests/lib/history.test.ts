@@ -181,7 +181,7 @@ test("clampMonth bounds within [min, max]", () => {
 });
 
 test("grandTotals sum all sections per month (expenses and income)", () => {
-  const salaire: Group = { id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "recurring", monthlyAmount: null, keywords: [], lines: [{ id: 91, name: "Paie", amount: 2000, day: 1, keyword: "REMU" }] };
+  const salaire: Group = { id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "recurring", monthlyAmount: null, keywords: [], lines: [{ id: 91, name: "Paie", amount: 2000, day: 1, keyword: "REMU" }], incomeKind: "principal" };
   const txns = [
     tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
     tx({ id: "2", date: "2026-07-01", amount: 2000, label: "VIR REMU", groupId: 9 }),
@@ -268,6 +268,30 @@ test("no uncategorized section when every transaction has a group", () => {
   expect(sections.some((s) => s.kind === "uncategorized")).toBe(false);
 });
 
+test("la rémunération principale projette son montant sur les mois futurs", () => {
+  const principal: Group = {
+    id: 30, accountId: "a1", name: "Rémunération principale", direction: "in",
+    kind: "envelope", monthlyAmount: 2000, keywords: [], lines: [], incomeKind: "principal",
+  };
+  const sections = computeHistory([principal], [], ["2026-07", "2026-08"], "2026-07");
+  const row = sections.find((s) => s.kind === "income")!.rows[0];
+  expect(row.incomeKind).toBe("principal");
+  expect(row.cells[1].recu).toBe(2000); // mois futur projeté
+  expect(row.cells[1].budgeted).toBe(2000);
+});
+
+test("la rémunération supplémentaire n'est pas projetée (Reçu futur = 0)", () => {
+  const supp: Group = {
+    id: 31, accountId: "a1", name: "Rémunération supplémentaire", direction: "in",
+    kind: "envelope", monthlyAmount: 500, keywords: [], lines: [], incomeKind: "supplementary",
+  };
+  const sections = computeHistory([supp], [], ["2026-07", "2026-08"], "2026-07");
+  const row = sections.find((s) => s.kind === "income")!.rows[0];
+  expect(row.incomeKind).toBe("supplementary");
+  expect(row.cells[1].recu).toBe(0); // mois futur : rien
+  expect(row.cells[1].budgeted).toBe(500); // le montant reste stocké (masqué à l'affichage)
+});
+
 const salaire: Group = {
   id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "envelope",
   monthlyAmount: 2000, keywords: ["REMU"], lines: [],
@@ -315,6 +339,23 @@ test("computeSolde: un mois futur part du solde de fin du mois courant", () => {
   // août projeté : salaire reçu 2000, courses dépensé = budget 300 -> net 1700
   expect(solde.openings[1]).toBe(1500); // = fin de juillet
   expect(solde.closings[1]).toBe(3200); // 1500 + 1700
+});
+
+test("Total rémunérations, colonne Budget : ne compte que la principale (pas la supplémentaire)", () => {
+  const principal: Group = {
+    id: 40, accountId: "a1", name: "Rémunération principale", direction: "in",
+    kind: "envelope", monthlyAmount: 2000, keywords: [], lines: [], incomeKind: "principal",
+  };
+  const supplementaire: Group = {
+    id: 41, accountId: "a1", name: "Rémunération supplémentaire", direction: "in",
+    kind: "envelope", monthlyAmount: 500, keywords: [], lines: [], incomeKind: "supplementary",
+  };
+  const sections = computeHistory([principal, supplementaire], [], ["2026-07"], "2026-07");
+  const income = sections.find((s) => s.kind === "income")!;
+  // Le total de la section income n'inclut que le budget de la principale.
+  expect(income.totals[0].budgeted).toBe(2000);
+  // Le total général (« Solde actuel ») doit refléter la même règle.
+  expect(grandTotals(sections, 1)[0].budgeted).toBe(2000);
 });
 
 test("computeSolde: fenêtre entièrement future ancre l'ouverture sur le solde d'aujourd'hui", () => {

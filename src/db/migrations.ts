@@ -120,3 +120,22 @@ export function migrateGroupIncomeKind(db: Database.Database): void {
   if (!cols.some((c) => c.name === "income_kind"))
     db.exec(`ALTER TABLE groups ADD COLUMN income_kind TEXT`);
 }
+
+// Convertit les rémunérations principales de l'ancien modèle (récurrent + lignes)
+// vers une enveloppe portant un montant unique = somme des lignes, puis supprime
+// ces lignes. Idempotent : ne cible que income_kind='principal' encore en 'recurring'.
+export function migrateRemunerationPrincipalToEnvelope(db: Database.Database): void {
+  const cols = db.prepare("PRAGMA table_info(groups)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "income_kind")) return;
+  const rows = db
+    .prepare(`SELECT id FROM groups WHERE income_kind = 'principal' AND kind = 'recurring'`)
+    .all() as { id: number }[];
+  if (rows.length === 0) return;
+  db.transaction(() => {
+    for (const { id } of rows) {
+      const sum = (db.prepare(`SELECT COALESCE(SUM(amount), 0) AS s FROM group_lines WHERE group_id = ?`).get(id) as { s: number }).s;
+      db.prepare(`UPDATE groups SET kind = 'envelope', monthly_amount = ? WHERE id = ?`).run(sum, id);
+      db.prepare(`DELETE FROM group_lines WHERE group_id = ?`).run(id);
+    }
+  })();
+}

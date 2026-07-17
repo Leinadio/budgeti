@@ -15,6 +15,7 @@ type Group = {
   direction: "in" | "out";
   kind: "envelope" | "recurring";
   monthlyAmount: number | null;
+  incomeKind?: "principal" | "supplementary" | null;
 };
 
 // En-tête de groupe : affichage, ou formulaire d'édition (nom, sens, montant si enveloppe).
@@ -40,21 +41,35 @@ export function EditableGroupHeader({
   }
 
   if (editing) {
+    const isRemu = group.incomeKind != null;
     return (
       <form onSubmit={onSubmit} className="flex w-full flex-wrap items-end gap-2">
         <input type="hidden" name="id" value={group.id} />
         <input type="hidden" name="kind" value={group.kind} />
-        <div className="flex flex-col gap-1">
-          <Label className="font-normal">Nom</Label>
-          <Input name="name" defaultValue={group.name} required className="max-w-48" />
-        </div>
-        <div className="flex flex-col gap-1">
-          <Label className="font-normal">Sens</Label>
-          <select name="direction" defaultValue={group.direction} className={selectClass}>
-            <option value="out">Sortie</option>
-            <option value="in">Entrée</option>
-          </select>
-        </div>
+        {isRemu ? (
+          <>
+            <div className="flex flex-col gap-1">
+              <Label className="font-normal">Nom</Label>
+              <span className="text-sm">{group.name}</span>
+              <input type="hidden" name="name" value={group.name} />
+            </div>
+            <input type="hidden" name="direction" value="in" />
+          </>
+        ) : (
+          <>
+            <div className="flex flex-col gap-1">
+              <Label className="font-normal">Nom</Label>
+              <Input name="name" defaultValue={group.name} required className="max-w-48" />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label className="font-normal">Sens</Label>
+              <select name="direction" defaultValue={group.direction} className={selectClass}>
+                <option value="out">Sortie</option>
+                <option value="in">Entrée</option>
+              </select>
+            </div>
+          </>
+        )}
         {group.kind === "envelope" && (
           <div className="flex flex-col gap-1">
             <Label className="font-normal">Montant €</Label>

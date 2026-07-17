@@ -70,6 +70,18 @@ export function insertRecurringGroup(
   return Number(info.lastInsertRowid);
 }
 
+// Vrai si le compte possède déjà une rémunération de ce type (principal / supplémentaire).
+export function hasIncomeGroup(
+  db: Database.Database,
+  accountId: string,
+  incomeKind: "principal" | "supplementary",
+): boolean {
+  const row = db
+    .prepare(`SELECT 1 FROM groups WHERE account_id = ? AND income_kind = ? LIMIT 1`)
+    .get(accountId, incomeKind);
+  return row !== undefined;
+}
+
 export function deleteGroup(db: Database.Database, id: number): void {
   db.prepare(`DELETE FROM groups WHERE id = ?`).run(id);
 }

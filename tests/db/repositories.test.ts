@@ -11,6 +11,7 @@ import {
   addKeyword,
   insertLine,
   deleteLine,
+  hasIncomeGroup,
 } from "../../src/db/repositories/groups";
 
 test("transaction upsert dedupes by id and lists back", () => {
@@ -129,4 +130,14 @@ test("groups carry income_kind for income classification", () => {
   expect(byId[p].incomeKind).toBe("principal");
   expect(byId[s].incomeKind).toBe("supplementary");
   expect(byId[c].incomeKind).toBeNull();
+});
+
+test("hasIncomeGroup détecte une rémunération existante du même type", () => {
+  const db = getDb(":memory:");
+  upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
+  upsertAccount(db, { id: "a2", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
+  insertEnvelopeGroup(db, "a1", "Rémunération principale", "in", 2000, "principal");
+  expect(hasIncomeGroup(db, "a1", "principal")).toBe(true);
+  expect(hasIncomeGroup(db, "a1", "supplementary")).toBe(false);
+  expect(hasIncomeGroup(db, "a2", "principal")).toBe(false);
 });

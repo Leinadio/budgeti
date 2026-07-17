@@ -139,3 +139,57 @@ test("migrateGroupIncomeKind adds income_kind to groups idempotently", () => {
   migrateGroupIncomeKind(db); // idempotent
   expect(db.prepare("SELECT COUNT(*) AS n FROM groups").get()).toEqual({ n: 1 });
 });
+
+import { migrateRemunerationPrincipalToEnvelope } from "../../src/db/migrations";
+
+function groupsSchemaWithIncomeKind(db: Database.Database) {
+  db.exec(`
+    CREATE TABLE accounts (id TEXT PRIMARY KEY, name TEXT);
+    CREATE TABLE groups (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      account_id TEXT NOT NULL,
+      name TEXT NOT NULL,
+      direction TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      monthly_amount REAL,
+      income_kind TEXT
+    );
+    CREATE TABLE group_lines (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      amount REAL NOT NULL,
+      day INTEGER,
+      keyword TEXT NOT NULL
+    );
+    INSERT INTO accounts (id, name) VALUES ('a1', 'Compte');
+  `);
+}
+
+test("migrateRemunerationPrincipal convertit un récurrent principal en enveloppe (montant = somme des lignes)", () => {
+  const db = new Database(":memory:");
+  groupsSchemaWithIncomeKind(db);
+  db.exec(`
+    INSERT INTO groups (id, account_id, name, direction, kind, monthly_amount, income_kind)
+      VALUES (1, 'a1', 'Rémunération principale', 'in', 'recurring', NULL, 'principal');
+    INSERT INTO group_lines (group_id, name, amount, day, keyword) VALUES
+      (1, 'Base', 500, 1, ''), (1, 'Prime', 152.09, 1, '');
+  `);
+  migrateRemunerationPrincipalToEnvelope(db);
+  const g = db.prepare("SELECT kind, monthly_amount AS m FROM groups WHERE id = 1").get() as { kind: string; m: number };
+  expect(g.kind).toBe("envelope");
+  expect(g.m).toBeCloseTo(652.09, 2);
+  const lines = db.prepare("SELECT COUNT(*) AS n FROM group_lines WHERE group_id = 1").get() as { n: number };
+  expect(lines.n).toBe(0);
+});
+
+test("migrateRemunerationPrincipal est un no-op si déjà en enveloppe", () => {
+  const db = new Database(":memory:");
+  groupsSchemaWithIncomeKind(db);
+  db.exec(`INSERT INTO groups (id, account_id, name, direction, kind, monthly_amount, income_kind)
+    VALUES (1, 'a1', 'Rémunération principale', 'in', 'envelope', 2000, 'principal');`);
+  migrateRemunerationPrincipalToEnvelope(db);
+  const g = db.prepare("SELECT kind, monthly_amount AS m FROM groups WHERE id = 1").get() as { kind: string; m: number };
+  expect(g.kind).toBe("envelope");
+  expect(g.m).toBe(2000);
+});
