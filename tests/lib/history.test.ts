@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde } from "../../src/lib/history";
+import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde, computePlannedSoldes } from "../../src/lib/history";
 import type { Group, Txn } from "../../src/lib/forecast";
 
 const courses: Group = {
@@ -371,4 +371,36 @@ test("computeSolde: fenêtre entièrement future ancre l'ouverture sur le solde 
   expect(solde.closings[0]).toBe(3200); // 1500 + 1700
   expect(solde.openings[1]).toBe(3200); // enchaînement
   expect(solde.closings[1]).toBe(4900); // 3200 + 1700
+});
+
+test("computePlannedSoldes: prévu = départ + revenus − budget ; si dépassement retire le dépassement", () => {
+  // Principale 2000 (in), une dépense budget 300 dont on a dépensé 350 ce mois (dépassement 50).
+  const principal: Group = { id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", kind: "envelope", monthlyAmount: 2000, keywords: [], lines: [], incomeKind: "principal" };
+  const courses2: Group = { id: 2, accountId: "a1", name: "Courses", direction: "out", kind: "envelope", monthlyAmount: 300, keywords: [], lines: [], incomeKind: null };
+  const txns = [
+    tx({ id: "s", date: "2026-07-01", amount: 2000, label: "REMU", groupId: 1 }),
+    tx({ id: "c", date: "2026-07-10", amount: -350, label: "CARREFOUR", groupId: 2 }),
+  ];
+  const months = ["2026-07", "2026-08"];
+  const sections = computeHistory([principal, courses2], txns, months, "2026-07");
+  const solde = computeSolde(sections, months, "2026-07", 5000);
+  const p = computePlannedSoldes(sections, months, "2026-07", solde.openings);
+  const open = solde.openings[0]; // argent de départ réel du mois courant
+  // Mois courant : prévu = open + 2000 − 300 ; si dépass = prévu − 50.
+  expect(p.prevuClosings[0]).toBeCloseTo(open + 2000 - 300, 2);
+  expect(p.depassClosings[0]).toBeCloseTo(open + 2000 - 300 - 50, 2);
+  // Mois futur : chaîne à partir de la clôture du mois courant (même net planifié).
+  expect(p.prevuClosings[1]).toBeCloseTo((open + 2000 - 300) + (2000 - 300), 2);
+  expect(p.depassClosings[1]).toBeCloseTo((open + 2000 - 300 - 50) + (2000 - 300 - 50), 2);
+});
+
+test("computePlannedSoldes: la supplémentaire compte au mois courant mais pas en projection", () => {
+  const supp: Group = { id: 3, accountId: "a1", name: "Rémunération supplémentaire", direction: "in", kind: "envelope", monthlyAmount: 500, keywords: [], lines: [], incomeKind: "supplementary" };
+  const months = ["2026-07", "2026-08"];
+  const sections = computeHistory([supp], [], months, "2026-07");
+  const solde = computeSolde(sections, months, "2026-07", 1000);
+  const p = computePlannedSoldes(sections, months, "2026-07", solde.openings);
+  const open = solde.openings[0];
+  expect(p.prevuClosings[0]).toBeCloseTo(open + 500, 2); // courant : +500
+  expect(p.prevuClosings[1]).toBeCloseTo(open + 500, 2); // futur : +0 (pas de projection)
 });
