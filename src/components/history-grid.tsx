@@ -82,6 +82,11 @@ const COL_LABEL: Record<ColKey, string> = {
   revenus: "Revenus",
 };
 
+function labelFor(col: ColKey, type: MonthType): string {
+  if (col === "soldeReel" && type === "current") return "Solde réel";
+  return COL_LABEL[col];
+}
+
 // Cellule vide (colonne non renseignée pour cette ligne), avec bordure de mois si
 // c'est la première colonne du mois.
 function blankCol(key: string, border: boolean) {
@@ -1030,15 +1035,19 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
           })}
         </TableRow>
         <TableRow>
-          {months.map((m) => (
-            <Fragment key={m}>
-              {monthColumns(monthType(m, currentMonth)).map((col, idx) => (
-                <TableHead key={col} className={cn(idx === 0 && "border-l", "text-right")}>
-                  {COL_LABEL[col]}
-                </TableHead>
-              ))}
-            </Fragment>
-          ))}
+          {months.map((m) => {
+            const type = monthType(m, currentMonth);
+            const cols = monthColumns(type);
+            return (
+              <Fragment key={m}>
+                {cols.map((col, idx) => (
+                  <TableHead key={col} className={cn(idx === 0 && "border-l", "text-right")}>
+                    {labelFor(col, type)}
+                  </TableHead>
+                ))}
+              </Fragment>
+            );
+          })}
         </TableRow>
       </TableHeader>
       <TableBody>
