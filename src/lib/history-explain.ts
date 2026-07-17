@@ -1,5 +1,9 @@
-// Colonne d'une case du tableau (un mois = ces 5 colonnes).
-export type Col = "budget" | "depense" | "recu" | "reste" | "solde";
+// Colonne d'une case du tableau. Colonnes réelles (mois passés / courant) plus les
+// colonnes de projection (mois courant / futurs) : revenus, dépassement, solde prévu
+// et solde si dépassement.
+export type Col =
+  | "budget" | "depense" | "recu" | "reste" | "solde"
+  | "revenus" | "depassement" | "soldePrevu" | "soldeDepass";
 
 // Identité d'une ligne du tableau, sous forme de préfixe de clé. Sert à composer
 // une clé de case (avec la colonne et le mois) et, pour une transaction, à
