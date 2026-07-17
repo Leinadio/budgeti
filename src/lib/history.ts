@@ -365,3 +365,70 @@ export function computeSolde(
 
   return { openings, closings, rowRunning, uncategorizedRunning };
 }
+
+// Revenu projeté d'une ligne pour un mois : montant de la principale (tous mois),
+// montant de la supplémentaire au mois courant seulement, 0 pour une dépense.
+function rowRevenus(r: HistoryRow, i: number, isCurrent: boolean): number {
+  if (r.direction !== "in") return 0;
+  if (r.incomeKind === "supplementary") return isCurrent ? r.cells[i].budgeted : 0;
+  return r.cells[i].budgeted;
+}
+
+// Budget de dépense d'une ligne (0 pour une entrée). budgeted est constant sur les mois.
+function rowBudget(r: HistoryRow, i: number): number {
+  return r.direction === "out" ? r.cells[i].budgeted : 0;
+}
+
+// Dépassement maintenu d'une ligne = dépassement réel constaté au mois courant.
+function rowOverspend(r: HistoryRow, ci: number): number {
+  if (r.direction !== "out") return 0;
+  return Math.max(0, r.cells[ci].depense - r.cells[ci].budgeted);
+}
+
+export type PlannedSoldes = {
+  prevuClosings: (number | null)[];
+  depassClosings: (number | null)[];
+  prevuRowRunning: Record<number, (number | null)[]>;
+  depassRowRunning: Record<number, (number | null)[]>;
+};
+
+// Chaînes de solde « plan » : prévu (revenus − budget) et « si dépassement »
+// (prévu − dépassement), ancrées à l'argent de départ réel du mois courant et
+// enchaînées vers le futur. Nulles avant le mois courant (colonnes non affichées).
+export function computePlannedSoldes(
+  sections: HistorySection[], months: string[], currentMonth: string, openingsReal: number[],
+): PlannedSoldes {
+  const n = months.length;
+  let ci = months.indexOf(currentMonth);
+  if (ci === -1) ci = n > 0 && currentMonth < months[0] ? 0 : n - 1;
+
+  const prevuClosings = new Array<number | null>(n).fill(null);
+  const depassClosings = new Array<number | null>(n).fill(null);
+  const prevuRowRunning: Record<number, (number | null)[]> = {};
+  const depassRowRunning: Record<number, (number | null)[]> = {};
+  for (const sec of sections) for (const r of sec.rows) {
+    prevuRowRunning[r.id] = new Array<number | null>(n).fill(null);
+    depassRowRunning[r.id] = new Array<number | null>(n).fill(null);
+  }
+  if (n === 0 || ci >= n) return { prevuClosings, depassClosings, prevuRowRunning, depassRowRunning };
+
+  for (let i = ci; i < n; i++) {
+    const isCurrent = months[i] === currentMonth;
+    let runP = i === ci ? openingsReal[ci] : prevuClosings[i - 1]!;
+    let runD = i === ci ? openingsReal[ci] : depassClosings[i - 1]!;
+    for (const sec of sections) {
+      // Non catégorisés exclus du plan (aucun budget/revenu planifié).
+      if (sec.kind === "uncategorized") continue;
+      for (const r of sec.rows) {
+        const net = rowRevenus(r, i, isCurrent) - rowBudget(r, i);
+        runP += net;
+        runD += net - rowOverspend(r, ci);
+        prevuRowRunning[r.id][i] = runP;
+        depassRowRunning[r.id][i] = runD;
+      }
+    }
+    prevuClosings[i] = runP;
+    depassClosings[i] = runD;
+  }
+  return { prevuClosings, depassClosings, prevuRowRunning, depassRowRunning };
+}

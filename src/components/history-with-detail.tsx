@@ -1,6 +1,6 @@
 "use client";
 import type { AccountForecast } from "@/lib/forecast";
-import type { MonthCell, HistorySection, SoldeColumn } from "@/lib/history";
+import type { MonthCell, HistorySection, SoldeColumn, PlannedSoldes } from "@/lib/history";
 import { CenterScroll } from "@/components/center-scroll";
 import { HistoryGrid } from "@/components/history-grid";
 import { useDetailSidebar } from "@/components/detail-sidebar";
@@ -18,6 +18,7 @@ export function HistoryWithDetail(props: {
   grand: MonthCell[];
   groups: SelectGroup[];
   solde: SoldeColumn;
+  planned: PlannedSoldes;
 }) {
   const { setDetail, selected } = useDetailSidebar();
   return (
