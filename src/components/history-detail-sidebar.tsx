@@ -113,14 +113,20 @@ function DetailBody({ detail, onClose, selected, onSelectRef }: {
         <Table>
           <TableBody>
             {rows.map((r) => {
-              const ref = r.node.ref;
+              // Toute ligne est cliquable ET surligne une case du tableau. Si la ligne
+              // porte un ref, elle surligne sa case dédiée ; sinon (valeur intermédiaire
+              // sans case propre, ex. « Mouvement prévu du mois »), elle retombe sur la
+              // case d'origine du détail (celle dont on montre le calcul), qu'elle
+              // compose. Repli ultime « panel:: » (jamais en collision avec une vraie
+              // clé row::col::mois) si le détail n'a pas de case d'origine.
+              const selKey = r.node.ref ?? detail.cellRef ?? `panel::${r.path}`;
               return (
                 <DetailRow
                   key={r.path}
                   row={r}
-                  selected={!!ref && selected === ref}
+                  selected={selected === selKey}
                   onToggle={() => toggle(r.path)}
-                  onSelect={ref && onSelectRef ? () => onSelectRef(ref) : undefined}
+                  onSelect={onSelectRef ? () => onSelectRef(selKey) : undefined}
                 />
               );
             })}
