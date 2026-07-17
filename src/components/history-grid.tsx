@@ -349,34 +349,40 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
         const r = detailRow;
         const ck = (col: Col) => cellKey(rowKey, col, i);
 
-        const budgetDetail: CellDetail | null = (() => {
-          if (mode === "in" || c.budgeted === 0 || !r) return null;
-          // Postes du récurrent si présents, sinon un nœud unique (enveloppe, ou
-          // sous-ligne synthétisée sans postes) : la case Budg. reste cliquable.
-          const nodes = budgetNodes(r, i) ?? [{ label: r.name, amount: c.budgeted }];
-          return makeDetail("Budget", nodes, { subtitle, result: c.budgeted });
-        })();
+        // Budg. affiche c.budgeted, sauf pour une rémunération non principale (case
+        // vide) : cliquable dès qu'un nombre est affiché, y compris 0,00. Postes du
+        // récurrent si présents, sinon un nœud unique (enveloppe / sous-ligne).
+        const budgetShown = !(mode === "in" && incomeKind !== "principal");
+        const budgetDetail: CellDetail | null =
+          budgetShown && r
+            ? makeDetail("Budget", budgetNodes(r, i) ?? [{ label: r.name, amount: c.budgeted }], { subtitle, result: c.budgeted })
+            : null;
 
-        const depDetail: CellDetail | null = (() => {
-          if (mode === "in" || c.depense === 0 || !r) return null;
-          const nodes = txnChildren(r, month, 1, i);
-          return nodes ? makeDetail("Dépensé", nodes, { subtitle, result: c.depense }) : null;
-        })();
+        // Dép. affiche c.depense sauf pour une entrée (—) : cliquable même à 0,00,
+        // avec les transactions du mois si présentes, sinon aucune décomposition.
+        const depDetail: CellDetail | null =
+          mode !== "in" && r
+            ? makeDetail("Dépensé", txnChildren(r, month, 1, i) ?? [], { subtitle, result: c.depense })
+            : null;
 
-        const recuDetail: CellDetail | null = (() => {
-          if (mode === "out" || c.recu === 0 || !r) return null;
-          const nodes = txnChildren(r, month, 1, i);
-          return nodes ? makeDetail("Reçu", nodes, { subtitle, result: c.recu }) : null;
-        })();
+        // Reçu affiche c.recu sauf pour une dépense (—) : cliquable même à 0,00.
+        const recuDetail: CellDetail | null =
+          mode !== "out" && r
+            ? makeDetail("Reçu", txnChildren(r, month, 1, i) ?? [], { subtitle, result: c.recu })
+            : null;
 
+        // Reste affiche c.balance sauf pour une entrée (case vide) : cliquable même à
+        // 0,00. Décomposition Budget − Dépensé quand l'invariant tient, sinon aucune.
         const resteDetail: CellDetail | null =
-          mode !== "in" && r && Math.abs(c.budgeted - c.depense - c.balance) < 0.005
+          mode !== "in" && r
             ? makeDetail(
                 "Reste",
-                [
-                  { label: "Budget", amount: c.budgeted, ref: ck("budget") },
-                  { label: "Dépensé", amount: -c.depense, children: txnChildren(r, month, -1, i), ref: ck("depense") },
-                ],
+                Math.abs(c.budgeted - c.depense - c.balance) < 0.005
+                  ? [
+                      { label: "Budget", amount: c.budgeted, ref: ck("budget") },
+                      { label: "Dépensé", amount: -c.depense, children: txnChildren(r, month, -1, i), ref: ck("depense") },
+                    ]
+                  : [],
                 { subtitle, result: c.balance },
               )
             : null;
@@ -401,11 +407,10 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
 
         // Budget de projection (ligne de dépense) : même décomposition par postes
         // que la colonne « Budget » réelle, sinon un nœud unique (enveloppe).
-        const projBudgetDetail: CellDetail | null = (() => {
-          if (mode !== "out" || c.budgeted === 0 || !r) return null;
-          const nodes = budgetNodes(r, i) ?? [{ label: r.name, amount: c.budgeted }];
-          return makeDetail("Budget", nodes, { subtitle, result: c.budgeted });
-        })();
+        const projBudgetDetail: CellDetail | null =
+          mode === "out" && r
+            ? makeDetail("Budget", budgetNodes(r, i) ?? [{ label: r.name, amount: c.budgeted }], { subtitle, result: c.budgeted })
+            : null;
 
         // Revenus de projection (rémunération) : la supplémentaire affiche 0 en
         // projection, la principale son montant projeté. Cliquable dès qu'un nombre
@@ -416,16 +421,20 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
             ? makeDetail("Revenus", [{ label: r.name, amount: revenusValue }], { subtitle, result: revenusValue })
             : null;
 
-        // Dépassement (ligne de dépense) : Dépensé − Budget, quand > 0.
+        // Dépassement (ligne de dépense) : Dépensé − Budget, borné à 0. Cliquable dès
+        // qu'un nombre est affiché (y compris 0,00) ; décomposition seulement s'il y a
+        // un dépassement réel (sinon Dépensé − Budget ne totaliserait pas 0).
         const depassVal = mode === "out" ? Math.max(0, c.depense - c.budgeted) : 0;
         const depassDetail: CellDetail | null =
-          depassVal > 0.005 && r
+          mode === "out" && r
             ? makeDetail(
                 "Dépassement",
-                [
-                  { label: "Dépensé", amount: c.depense, children: txnChildren(r, month, 1, i), ref: ck("depense") },
-                  { label: "Budget", amount: -c.budgeted, ref: ck("budget") },
-                ],
+                depassVal > 0.005
+                  ? [
+                      { label: "Dépensé", amount: c.depense, children: txnChildren(r, month, 1, i), ref: ck("depense") },
+                      { label: "Budget", amount: -c.budgeted, ref: ck("budget") },
+                    ]
+                  : [],
                 { subtitle, result: depassVal },
               )
             : null;
@@ -543,42 +552,41 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, selCel
         const subtitle = `${labelOfSection(sec.kind)} · ${monthLabel(month)}`;
         const ck = (col: Col) => cellKey(rowKey, col, i);
 
-        const budgetDetail: CellDetail | null =
-          c.budgeted !== 0
-            ? makeDetail("Budget", sec.rows.map((r) => groupNode(r, i, month, "budget")), { subtitle, result: c.budgeted })
-            : null;
+        // Budg. affiche toujours un nombre → toujours cliquable (décomposition par
+        // groupe, éventuellement vide pour les non catégorisés qui n'ont pas de budget).
+        const budgetDetail: CellDetail =
+          makeDetail("Budget", sec.rows.map((r) => groupNode(r, i, month, "budget")), { subtitle, result: c.budgeted });
 
         const depNodes = isUncat
           ? sectionTxnChildren(sec.txns, month, true, i)
           : sec.rows.map((r) => groupNode(r, i, month, "depense")).filter((n) => n.amount !== 0);
-        const depDetail: CellDetail | null =
-          c.depense !== 0 && depNodes ? makeDetail("Dépensé", depNodes, { subtitle, result: c.depense }) : null;
+        const depDetail: CellDetail = makeDetail("Dépensé", depNodes ?? [], { subtitle, result: c.depense });
 
         const recuNodes = isUncat
           ? sectionTxnChildren(sec.txns, month, false, i)
           : sec.rows.map((r) => groupNode(r, i, month, "recu")).filter((n) => n.amount !== 0);
-        const recuDetail: CellDetail | null =
-          c.recu !== 0 && recuNodes ? makeDetail("Reçu", recuNodes, { subtitle, result: c.recu }) : null;
+        const recuDetail: CellDetail = makeDetail("Reçu", recuNodes ?? [], { subtitle, result: c.recu });
 
-        const resteDetail: CellDetail | null =
+        // Reste toujours affiché → toujours cliquable ; décomposition Budget − Dépensé
+        // quand l'invariant tient (Récurrents/Enveloppes), sinon aucune (non catégorisés).
+        const resteDetail: CellDetail = makeDetail(
+          "Reste",
           Math.abs(c.budgeted - c.depense - c.balance) < 0.005
-            ? makeDetail(
-                "Reste",
-                [
-                  { label: "Budget", amount: c.budgeted, ref: ck("budget") },
-                  {
-                    label: "Dépensé",
-                    amount: -c.depense,
-                    ref: ck("depense"),
-                    children: sec.rows
-                      .map((r) => groupNode(r, i, month, "depense"))
-                      .filter((n) => n.amount !== 0)
-                      .map(negateNode),
-                  },
-                ],
-                { subtitle, result: c.balance },
-              )
-            : null;
+            ? [
+                { label: "Budget", amount: c.budgeted, ref: ck("budget") },
+                {
+                  label: "Dépensé",
+                  amount: -c.depense,
+                  ref: ck("depense"),
+                  children: sec.rows
+                    .map((r) => groupNode(r, i, month, "depense"))
+                    .filter((n) => n.amount !== 0)
+                    .map(negateNode),
+                },
+              ]
+            : [],
+          { subtitle, result: c.balance },
+        );
 
         const s = solde?.[i];
         const net = c.recu - c.depense;
@@ -605,10 +613,10 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, selCel
           .filter((r) => r.direction === "out")
           .map((r): DetailNode => ({ label: r.name, amount: Math.max(0, r.cells[i].depense - r.cells[i].budgeted), ref: cellKey(groupRow(r.id), "depassement", i) }))
           .filter((n) => n.amount > 0.005);
+        // Dépassement : « — » (non cliquable) pour les non catégorisés (sans budget),
+        // sinon toujours cliquable même à 0,00 (nœuds seulement pour les groupes qui dépassent).
         const depassDetail: CellDetail | null =
-          !isUncat && secDepass > 0.005 && secDepassNodes.length > 0
-            ? makeDetail("Dépassement", secDepassNodes, { subtitle, result: secDepass })
-            : null;
+          isUncat ? null : makeDetail("Dépassement", secDepassNodes, { subtitle, result: secDepass });
 
         const slots: Record<ColKey, (border: boolean) => React.ReactNode> = {
           budg: (b) => (
@@ -617,7 +625,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, selCel
             </CellAmount>
           ),
           budget: (b) => (
-            <CellAmount key="budget" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} detail={budgetDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
+            <CellAmount key="budget" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} detail={isUncat ? null : budgetDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
               {isUncat ? "—" : fmt(c.budgeted)}
             </CellAmount>
           ),
@@ -676,10 +684,12 @@ function IncomeTotalCells({ sec, months, currentMonth, onSelect, selCellKey }: {
         const cols = monthColumns(type);
         const month = months[i];
         const subtitle = `Rémunérations · ${monthLabel(month)}`;
-        const recuDetail: CellDetail | null =
-          c.recu !== 0
-            ? makeDetail("Rémunérations", sec.rows.map((r) => groupNode(r, i, month, "recu")).filter((n) => n.amount !== 0), { subtitle, result: c.recu })
-            : null;
+        // Reçu toujours affiché → toujours cliquable (décomposition par rémunération).
+        const recuDetail: CellDetail = makeDetail(
+          "Rémunérations",
+          sec.rows.map((r) => groupNode(r, i, month, "recu")).filter((n) => n.amount !== 0),
+          { subtitle, result: c.recu },
+        );
         // Revenu projeté total = rémunération principale (la supplémentaire n'est pas
         // projetée sur les mois futurs). Aussi la valeur du Budget principal-only.
         const principalBudget = sec.rows
@@ -690,16 +700,24 @@ function IncomeTotalCells({ sec, months, currentMonth, onSelect, selCellKey }: {
           .filter((r) => r.incomeKind === "principal")
           .map((r): DetailNode => ({ label: r.name, amount: r.cells[i].budgeted, ref: cellKey(groupRow(r.id), "revenus", i) }))
           .filter((n) => n.amount !== 0);
-        const revenusDetail: CellDetail | null =
-          principalBudget !== 0 && revenusNodes.length > 0
-            ? makeDetail("Revenus", revenusNodes, { subtitle, result: principalBudget })
+        // Revenus (projection) toujours affiché → toujours cliquable, même à 0,00.
+        const revenusDetail: CellDetail = makeDetail("Revenus", revenusNodes, { subtitle, result: principalBudget });
+        // Budg. de la ligne « Total rémunérations » : cliquable seulement quand un
+        // nombre est affiché (case vide quand le budget principal est nul).
+        const principalBudgetNodes = sec.rows
+          .filter((r) => r.incomeKind === "principal")
+          .map((r): DetailNode => ({ label: r.name, amount: r.cells[i].budgeted, ref: cellKey(groupRow(r.id), "budget", i) }))
+          .filter((n) => n.amount !== 0);
+        const budgetDetail: CellDetail | null =
+          principalBudget !== 0
+            ? makeDetail("Budget", principalBudgetNodes, { subtitle, result: principalBudget })
             : null;
 
         const slots: Record<ColKey, (border: boolean) => React.ReactNode> = {
           budg: (b) => (
-            <TableCell key="budg" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>
+            <CellAmount key="budg" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} detail={budgetDetail} onSelect={onSelect} cellKey={cellKey(sectionRow("income"), "budget", i)} selCellKey={selCellKey}>
               {principalBudget !== 0 ? fmt(principalBudget) : ""}
-            </TableCell>
+            </CellAmount>
           ),
           budget: (b) => (
             <TableCell key="budget" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>—</TableCell>
@@ -767,64 +785,52 @@ function GrandTotalsCells({ sections, grand, solde, planned, overspend, months, 
         // projection « Budget » du grand total.
         const expenseBudget = sections.reduce((s, sec) => s + (sec.kind === "income" ? 0 : sec.totals[i].budgeted), 0);
 
-        const budgetDetail: CellDetail | null =
-          c.budgeted !== 0
-            ? makeDetail("Budget", sections.map((sec) => sectionNode(sec, i, month, "budget")), { subtitle, result: c.budgeted })
-            : null;
-        const depDetail: CellDetail | null =
-          c.depense !== 0
-            ? makeDetail(
-                "Dépensé",
-                sections.map((sec) => sectionNode(sec, i, month, "depense")).filter((n) => n.amount !== 0),
-                { subtitle, result: c.depense },
-              )
-            : null;
-        const recuDetail: CellDetail | null =
-          c.recu !== 0
-            ? makeDetail(
-                "Reçu",
-                sections.map((sec) => sectionNode(sec, i, month, "recu")).filter((n) => n.amount !== 0),
-                { subtitle, result: c.recu },
-              )
-            : null;
-        const resteDetail: CellDetail | null =
+        // Budg./Dép./Reçu/Reste du grand total : toujours un nombre affiché → toujours
+        // cliquables (décomposition par section, éventuellement vide).
+        const budgetDetail: CellDetail =
+          makeDetail("Budget", sections.map((sec) => sectionNode(sec, i, month, "budget")), { subtitle, result: c.budgeted });
+        const depDetail: CellDetail = makeDetail(
+          "Dépensé",
+          sections.map((sec) => sectionNode(sec, i, month, "depense")).filter((n) => n.amount !== 0),
+          { subtitle, result: c.depense },
+        );
+        const recuDetail: CellDetail = makeDetail(
+          "Reçu",
+          sections.map((sec) => sectionNode(sec, i, month, "recu")).filter((n) => n.amount !== 0),
+          { subtitle, result: c.recu },
+        );
+        const resteDetail: CellDetail = makeDetail(
+          "Reste",
           Math.abs(c.budgeted - c.depense - c.balance) < 0.005
-            ? makeDetail(
-                "Reste",
-                [
-                  { label: "Budget", amount: c.budgeted, ref: ck("budget") },
-                  {
-                    label: "Dépensé",
-                    amount: -c.depense,
-                    ref: ck("depense"),
-                    children: sections
-                      .map((sec) => sectionNode(sec, i, month, "depense"))
-                      .filter((n) => n.amount !== 0)
-                      .map(negateNode),
-                  },
-                ],
-                { subtitle, result: c.balance },
-              )
-            : null;
+            ? [
+                { label: "Budget", amount: c.budgeted, ref: ck("budget") },
+                {
+                  label: "Dépensé",
+                  amount: -c.depense,
+                  ref: ck("depense"),
+                  children: sections
+                    .map((sec) => sectionNode(sec, i, month, "depense"))
+                    .filter((n) => n.amount !== 0)
+                    .map(negateNode),
+                },
+              ]
+            : [],
+          { subtitle, result: c.balance },
+        );
         const soldeDetail: CellDetail = soldeActuelDetail(sections, solde, i, month, { title: "Solde actuel", result: solde.closings[i] });
 
         // --- Détails des colonnes de projection du grand total ------------------
         // Budget de projection : seules les sections de dépense (cohérent avec la
         // valeur affichée expenseBudget, qui exclut les rémunérations).
-        const expenseBudgetDetail: CellDetail | null =
-          expenseBudget !== 0
-            ? makeDetail("Budget", sections.filter((sec) => sec.kind !== "income").map((sec) => sectionNode(sec, i, month, "budget")), { subtitle, result: expenseBudget })
-            : null;
+        const expenseBudgetDetail: CellDetail =
+          makeDetail("Budget", sections.filter((sec) => sec.kind !== "income").map((sec) => sectionNode(sec, i, month, "budget")), { subtitle, result: expenseBudget });
         // Revenus projetés : un nœud par rémunération principale (supplémentaire = 0).
         const revenusNodes = sections
           .flatMap((s) => s.rows)
           .filter((r) => r.direction === "in" && r.incomeKind !== "supplementary")
           .map((r): DetailNode => ({ label: r.name, amount: r.cells[i].budgeted, ref: cellKey(groupRow(r.id), "revenus", i) }))
           .filter((n) => n.amount !== 0);
-        const revenusDetail: CellDetail | null =
-          revenusTotal !== 0 && revenusNodes.length > 0
-            ? makeDetail("Revenus", revenusNodes, { subtitle, result: revenusTotal })
-            : null;
+        const revenusDetail: CellDetail = makeDetail("Revenus", revenusNodes, { subtitle, result: revenusTotal });
         // Dépassement : un nœud par groupe qui dépasse (comme la ligne « Dépassement »).
         const depassDetail: CellDetail | null =
           overspend[i] > 0
