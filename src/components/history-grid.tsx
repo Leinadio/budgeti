@@ -1194,7 +1194,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
             const type = monthType(months[i], currentMonth);
             const cols = monthColumns(type);
             const depCell = (b: boolean) => (
-              <CellAmount key="dep" className={cn(b && "border-l", "text-right tabular-nums", overspend[i] > 0 && "text-red-600")} detail={detail} onSelect={onSelect} cellKey={cellKey("overspend", "reste", i)} selCellKey={selCellKey}>
+              <CellAmount key="overspend" className={cn(b && "border-l", "text-right tabular-nums", overspend[i] > 0 && "text-red-600")} detail={detail} onSelect={onSelect} cellKey={cellKey("overspend", "reste", i)} selCellKey={selCellKey}>
                 {overspend[i] > 0 ? fmt(overspend[i]) : "—"}
               </CellAmount>
             );
