@@ -49,27 +49,20 @@ export default async function HistoriquePage({
     );
   }
 
-  // Bande sélectionnable : du plus ancien mois avec données (au moins le mois
-  // précédent) jusqu'à 12 mois dans le futur pour les projections.
-  const earliest = monthsWithData(allTxns)[0];
+  // Bornes communes : la frise monte jusqu'à 12 mois dans le futur (projections).
+  // La borne basse est propre à chaque compte (premier mois avec des transactions
+  // de ce compte) : pas de mois vides sélectionnables.
   const prevMonth = addMonthsKey(currentMonth, -1);
-  const stripMin = earliest && earliest < prevMonth ? earliest : prevMonth;
   const stripMax = addMonthsKey(currentMonth, 12);
 
-  // Plage retenue depuis l'URL, sinon 3 mois à partir du mois courant (le mois
-  // courant en première colonne, puis les deux mois suivants pour la projection).
+  // Plage demandée dans l'URL (clampée par compte plus bas), sinon 3 mois à partir
+  // du mois courant (le mois courant en première colonne, puis deux mois de projection).
   const sp = await searchParams;
   const rawFrom = Array.isArray(sp.from) ? sp.from[0] : sp.from;
   const rawTo = Array.isArray(sp.to) ? sp.to[0] : sp.to;
-  let from = isMonthKey(rawFrom) ? clampMonth(rawFrom, stripMin, stripMax) : currentMonth;
-  let to = isMonthKey(rawTo) ? clampMonth(rawTo, stripMin, stripMax) : addMonthsKey(currentMonth, 2);
-  if (from > to) [from, to] = [to, from];
-  if (monthRange(from, to).length > MAX_MONTHS) to = addMonthsKey(from, MAX_MONTHS - 1);
-  const months = monthRange(from, to);
 
   return (
     <div className="flex flex-col gap-4">
-      <MonthRangePicker min={stripMin} max={stripMax} from={from} to={to} current={currentMonth} />
       <Tabs defaultValue={accounts[0].id}>
         <TabsList>
           {accounts.map((a) => (
@@ -81,6 +74,16 @@ export default async function HistoriquePage({
         {accounts.map((a) => {
           const groups = allGroups.filter((g) => g.accountId === a.id) as Group[];
           const txns = allTxns.filter((t) => t.accountId === a.id);
+          // Frise du compte : du premier mois avec des transactions de CE compte (au
+          // moins le mois précédent) jusqu'à stripMax. La plage de l'URL est clampée
+          // sur ces bornes : un mois sans montants n'est ni sélectionnable ni affiché.
+          const earliest = monthsWithData(txns)[0];
+          const stripMin = earliest && earliest < prevMonth ? earliest : prevMonth;
+          let from = isMonthKey(rawFrom) ? clampMonth(rawFrom, stripMin, stripMax) : currentMonth;
+          let to = isMonthKey(rawTo) ? clampMonth(rawTo, stripMin, stripMax) : addMonthsKey(currentMonth, 2);
+          if (from > to) [from, to] = [to, from];
+          if (monthRange(from, to).length > MAX_MONTHS) to = addMonthsKey(from, MAX_MONTHS - 1);
+          const months = monthRange(from, to);
           const sections = computeHistory(groups, txns, months, currentMonth);
           const forecast = computeForecast(a.id, a.balance, groups, txns, currentMonth);
           const remunMonths = months.map((m) => monthRemuneration(groups, txns, m));
@@ -96,6 +99,7 @@ export default async function HistoriquePage({
 
           return (
             <TabsContent key={a.id} value={a.id} className="flex flex-col gap-4">
+              <MonthRangePicker min={stripMin} max={stripMax} from={from} to={to} current={currentMonth} />
               <RemunerationSummary months={remunMonths} />
               <div className="flex justify-end">
                 <ForecastDetailSheet label={accountLabel(a)} forecast={forecast} />

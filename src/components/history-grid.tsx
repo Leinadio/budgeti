@@ -74,8 +74,10 @@ function monthType(m: string, currentMonth: string): MonthType {
 }
 
 function monthColumns(type: MonthType): ColKey[] {
-  if (type === "past") return ["budgetRem", "budgetDep", "dep", "recu", "reste", "soldeReel"];
-  if (type === "current")
+  // Mois passés et mois courant : même vue (toutes les colonnes). Les colonnes de
+  // plan (Solde prévu / si dépassement) restent vides sur les mois passés, le plan
+  // n'étant ancré qu'à partir du mois courant.
+  if (type !== "future")
     return ["budgetRem", "budgetDep", "dep", "recu", "depassement", "reste", "soldeReel", "soldePrevu", "soldeDepass"];
   return ["budgetRem", "budgetDep", "depassement", "soldePrevu", "soldeDepass"];
 }
@@ -87,13 +89,12 @@ const COL_LABEL: Record<ColKey, string> = {
   recu: "Reçu",
   reste: "Balance",
   depassement: "Dépass.",
-  soldeReel: "Solde",
+  soldeReel: "Solde réel",
   soldePrevu: "Solde prévu",
   soldeDepass: "Solde dépass.",
 };
 
-function labelFor(col: ColKey, type: MonthType): string {
-  if (col === "soldeReel" && type === "current") return "Solde réel";
+function labelFor(col: ColKey, _type: MonthType): string {
   return COL_LABEL[col];
 }
 
@@ -440,9 +441,10 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
   prevRowKey?: string;
   // Classe de revenu (pour les colonnes Budg./Revenus des rémunérations).
   incomeKind?: "principal" | "supplementary" | null;
-  // Dépassements (par groupe) cumulés jusqu'à cette ligne incluse, pour décomposer
-  // le « Dépassement cumulé » du solde si dépassement. Absent pour les sous-lignes.
-  depassCumulRows?: { id: number; name: string; amount: number }[];
+  // Dépassements (par groupe) cumulés jusqu'à cette ligne incluse, un tableau par
+  // mois, pour décomposer le « Dépassement cumulé » du solde si dépassement.
+  // Absent pour les sous-lignes.
+  depassCumulRows?: { id: number; name: string; amount: number }[][];
 }) {
   return (
     <>
@@ -572,7 +574,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
                   { label: "Solde prévu", amount: sp, ref: ck("soldePrevu") },
                   // Dépassement cumulé = somme des dépassements de budget maintenus,
                   // décomposé par groupe (jusqu'à cette ligne incluse).
-                  { label: "Dépassement cumulé", amount: -(sp - sd), children: overspendChildren(depassCumulRows ?? [], i) },
+                  { label: "Dépassement cumulé", amount: -(sp - sd), children: overspendChildren(depassCumulRows?.[i] ?? [], i) },
                 ],
                 { subtitle, result: sd },
               )
@@ -980,13 +982,14 @@ function GrandTotalsCells({ sections, grand, solde, planned, overspend, months, 
                 { subtitle, result: grandDepass },
               )
             : null;
-        // Soldes de plan (prévu / si dépassement) : structure « précédent + mouvement »
-        // (cf. brief). Le « précédent » = clôture prévue du mois passé, ou l'ouverture
-        // réelle au mois courant. Le mouvement = clôture − précédent (exact par défaut).
+        // Soldes de plan (prévu / si dépassement) : structure « précédent + mouvement ».
+        // Le « précédent » = l'ouverture réelle du mois (passé / courant, où le plan
+        // s'ancre), ou la clôture prévue du mois passé (futur). Le mouvement =
+        // clôture − précédent (exact par défaut).
         const prevuClose = planned.prevuClosings[i];
         const depassClose = planned.depassClosings[i];
         const prevuPrev =
-          month === currentMonth ? solde.openings[i] : i > 0 && planned.prevuClosings[i - 1] != null ? planned.prevuClosings[i - 1]! : solde.openings[i];
+          month <= currentMonth ? solde.openings[i] : i > 0 && planned.prevuClosings[i - 1] != null ? planned.prevuClosings[i - 1]! : solde.openings[i];
         // Décomposition du mouvement prévu du mois = revenus prévus − budget de dépenses.
         const revenusChildren = allRows
           .filter((r) => r.direction === "in")
@@ -1009,7 +1012,7 @@ function GrandTotalsCells({ sections, grand, solde, planned, overspend, months, 
             ? makeDetail(
                 "Solde prévu",
                 [
-                  { label: "Solde prévu précédent", amount: prevuPrev, ref: month === currentMonth ? cellKey(openingRow, "soldePrevu", i) : cellKey("grand", "soldePrevu", i - 1) },
+                  { label: "Solde prévu précédent", amount: prevuPrev, ref: month <= currentMonth ? cellKey(openingRow, "soldePrevu", i) : cellKey("grand", "soldePrevu", i - 1) },
                   mouvementPrevuNode,
                 ],
                 { subtitle, result: prevuClose },
@@ -1304,25 +1307,30 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
   }, [months, currentMonth]);
 
   // Pour chaque ligne porteuse de plan (dans l'ordre d'accumulation de
-  // computePlannedSoldes), la liste des dépassements de budget par groupe cumulés
-  // jusqu'à elle incluse. Sert à décomposer le « Dépassement cumulé » du solde si
-  // dépassement. Le dépassement est « maintenu » (mois courant), donc indépendant
-  // du mois affiché.
+  // computePlannedSoldes) et chaque mois, la liste des dépassements de budget par
+  // groupe cumulés jusqu'à elle incluse. Sert à décomposer le « Dépassement
+  // cumulé » du solde si dépassement. Mois passés / courant : dépassements du mois
+  // affiché (le plan s'y ancre) ; mois futurs : dépassements du mois courant maintenus.
   const depassCumulByRow = useMemo(() => {
-    const map = new Map<number, { id: number; name: string; amount: number }[]>();
+    const map = new Map<number, { id: number; name: string; amount: number }[][]>();
     if (ciSafe < 0) return map;
-    const acc: { id: number; name: string; amount: number }[] = [];
-    for (const sec of sections) {
-      if (sec.kind === "uncategorized") continue;
-      for (const r of sec.rows) {
-        const cell = r.cells[ciSafe];
-        const os = r.direction === "out" && cell ? Math.max(0, cell.depense - cell.budgeted) : 0;
-        if (os > 0.005) acc.push({ id: r.id, name: r.name, amount: os });
-        map.set(r.id, acc.slice());
+    for (let i = 0; i < months.length; i++) {
+      const osMonth = months[i] <= currentMonth ? i : ciSafe;
+      const acc: { id: number; name: string; amount: number }[] = [];
+      for (const sec of sections) {
+        if (sec.kind === "uncategorized") continue;
+        for (const r of sec.rows) {
+          const cell = r.cells[osMonth];
+          const os = r.direction === "out" && cell ? Math.max(0, cell.depense - cell.budgeted) : 0;
+          if (os > 0.005) acc.push({ id: r.id, name: r.name, amount: os });
+          let lists = map.get(r.id);
+          if (!lists) map.set(r.id, (lists = []));
+          lists[i] = acc.slice();
+        }
       }
     }
     return map;
-  }, [sections, ciSafe]);
+  }, [sections, ciSafe, months, currentMonth]);
 
   // Groupes par id, pour retrouver le sens (entrée/sortie) d'une étape du
   // prévisionnel et la relier à sa case du tableau.
@@ -1627,20 +1635,24 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
             // L'ouverture est commune aux trois chaînes au mois courant. En
             // projection, l'ouverture d'une chaîne = clôture (prévue / si dépassement)
             // du mois précédent ; repli sur l'argent de départ réel au 1er mois.
+            // Mois passés et courant : le plan s'ancre sur l'ouverture réelle du mois.
+            // Mois futurs : il enchaîne sur la clôture (prévue / si dépassement) passée.
             const prevuOpen =
-              months[i] === currentMonth ? v : i > 0 && planned.prevuClosings[i - 1] != null ? planned.prevuClosings[i - 1] : v;
+              months[i] <= currentMonth ? v
+              : i > 0 && planned.prevuClosings[i - 1] != null ? planned.prevuClosings[i - 1] : v;
             const depassOpen =
-              months[i] === currentMonth ? v : i > 0 && planned.depassClosings[i - 1] != null ? planned.depassClosings[i - 1] : v;
+              months[i] <= currentMonth ? v
+              : i > 0 && planned.depassClosings[i - 1] != null ? planned.depassClosings[i - 1] : v;
             const openingCell = (b: boolean) => (
               <CellAmount key="soldeReel" className={cn(b && "border-l", "text-right tabular-nums", v < -0.005 && "text-red-600")} detail={detail} onSelect={onSelect} cellKey={cellKey(openingRow, "solde", i)} selCellKey={selCellKey}>
                 {fmt(v)}
               </CellAmount>
             );
-            // Détail des ouvertures de plan : au mois courant, l'ouverture prévue /
-            // si dépassement vaut l'argent de départ réel (même détail). En
+            // Détail des ouvertures de plan : sur un mois passé ou courant, l'ouverture
+            // prévue / si dépassement vaut l'argent de départ réel (même détail). En
             // projection, elle vaut la clôture (prévue / si dépassement) du mois passé.
             const prevuOpenDetail: CellDetail =
-              months[i] === currentMonth
+              months[i] <= currentMonth
                 ? detail
                 : makeDetail(
                     "Argent de départ",
@@ -1648,7 +1660,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                     { subtitle: monthLabel(months[i]), result: prevuOpen ?? 0 },
                   );
             const depassOpenDetail: CellDetail =
-              months[i] === currentMonth
+              months[i] <= currentMonth
                 ? detail
                 : makeDetail(
                     "Argent de départ",

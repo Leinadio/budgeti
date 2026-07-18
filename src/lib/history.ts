@@ -393,8 +393,9 @@ export type PlannedSoldes = {
 };
 
 // Chaînes de solde « plan » : prévu (revenus − budget) et « si dépassement »
-// (prévu − dépassement), ancrées à l'argent de départ réel du mois courant et
-// enchaînées vers le futur. Nulles avant le mois courant (colonnes non affichées).
+// (prévu − dépassement). Mois passés et courant : ancrés à l'argent de départ réel
+// du mois, dépassement du mois lui-même. Mois futurs : enchaînés depuis la clôture
+// du mois précédent, dépassement du mois courant maintenu.
 export function computePlannedSoldes(
   sections: HistorySection[], months: string[], currentMonth: string, openingsReal: number[],
 ): PlannedSoldes {
@@ -412,17 +413,21 @@ export function computePlannedSoldes(
   }
   if (n === 0 || ci >= n) return { prevuClosings, depassClosings, prevuRowRunning, depassRowRunning };
 
-  for (let i = ci; i < n; i++) {
+  for (let i = 0; i < n; i++) {
     const isCurrent = months[i] === currentMonth;
-    let runP = i === ci ? openingsReal[ci] : prevuClosings[i - 1]!;
-    let runD = i === ci ? openingsReal[ci] : depassClosings[i - 1]!;
+    // Passé / courant : ancre sur l'ouverture réelle du mois, dépassement du mois.
+    // Futur : chaîne sur la clôture du plan, dépassement du mois courant maintenu.
+    const anchored = i <= ci;
+    let runP = anchored ? openingsReal[i] : prevuClosings[i - 1]!;
+    let runD = anchored ? openingsReal[i] : depassClosings[i - 1]!;
+    const osMonth = anchored ? i : ci;
     for (const sec of sections) {
       // Non catégorisés exclus du plan (aucun budget/revenu planifié).
       if (sec.kind === "uncategorized") continue;
       for (const r of sec.rows) {
         const net = rowRevenus(r, i, isCurrent) - rowBudget(r, i);
         runP += net;
-        runD += net - rowOverspend(r, ci);
+        runD += net - rowOverspend(r, osMonth);
         prevuRowRunning[r.id][i] = runP;
         depassRowRunning[r.id][i] = runD;
       }
