@@ -20,10 +20,10 @@ export function HistoryWithDetail(props: {
   solde: SoldeColumn;
   planned: PlannedSoldes;
 }) {
-  const { setDetail, selected } = useDetailSidebar();
+  const { setDetail, selected, anchor } = useDetailSidebar();
   return (
     <CenterScroll>
-      <HistoryGrid {...props} onSelect={setDetail} selected={selected} />
+      <HistoryGrid {...props} onSelect={setDetail} selected={selected} anchor={anchor} />
     </CenterScroll>
   );
 }

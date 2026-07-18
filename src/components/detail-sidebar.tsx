@@ -1,15 +1,17 @@
 "use client";
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useState } from "react";
 import type { CellDetail } from "@/lib/history-explain";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { HistoryDetailSidebar } from "@/components/history-detail-sidebar";
 
-// selected : clé de la case du tableau à surligner, choisie depuis le side panel.
+// selected : case active choisie dans le panneau. anchor : montant cliqué dans le
+// tableau, surligné tant que le panneau est ouvert (les deux peuvent l'être à la fois).
 type Ctx = {
   detail: CellDetail | null;
   setDetail: (d: CellDetail | null) => void;
   selected: string | null;
   setSelected: (r: string | null) => void;
+  anchor: string | null;
 };
 const DetailSidebarContext = createContext<Ctx | null>(null);
 
@@ -37,10 +39,15 @@ export function DetailSidebarProvider({ children }: { children: React.ReactNode 
   // case sans aussi activer la ligne « Total » (qui vise la même case).
   const [selected, setSelected] = useState<string | null>(null);
   const [selectedPanel, setSelectedPanel] = useState<string | null>(null);
-  // Ouvrir un nouveau détail réinitialise la sélection : la surbrillance n'a de sens
-  // que dans le contexte du détail affiché.
+  // anchor : le montant cliqué dans le tableau (cellRef du détail). Il reste surligné
+  // tant que le panneau est ouvert, en plus de la case active (selected) éventuelle.
+  const [anchor, setAnchor] = useState<string | null>(null);
+  // Cliquer un montant dans le tableau ouvre son détail : ce montant devient l'ancre
+  // (surligné jusqu'à la fermeture) et la case active est réinitialisée. Fermer le
+  // panneau (d = null) efface tout.
   const setDetail = (d: CellDetail | null) => {
     setDetailState(d);
+    setAnchor(d?.cellRef ?? null);
     setSelected(null);
     setSelectedPanel(null);
   };
@@ -48,23 +55,8 @@ export function DetailSidebarProvider({ children }: { children: React.ReactNode 
     setSelected(cell);
     setSelectedPanel(panel);
   };
-  // Cliquer en dehors d'une ligne sélectionnable du side panel efface la
-  // surbrillance (dans le panel et dans le tableau). On écoute au niveau du
-  // document : un clic sur une ligne `data-selectable` (re)pose la sélection via
-  // son propre onClick, donc on ne l'efface pas ; tout autre clic la retire.
-  useEffect(() => {
-    if (selected == null && selectedPanel == null) return;
-    const onDown = (e: MouseEvent) => {
-      const t = e.target as Element | null;
-      if (t?.closest("[data-selectable]")) return;
-      setSelected(null);
-      setSelectedPanel(null);
-    };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [selected, selectedPanel]);
   return (
-    <DetailSidebarContext.Provider value={{ detail, setDetail, selected, setSelected }}>
+    <DetailSidebarContext.Provider value={{ detail, setDetail, selected, setSelected, anchor }}>
       <SidebarProvider
         open={detail !== null}
         onOpenChange={(open) => {

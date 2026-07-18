@@ -28,10 +28,18 @@ export function cellKey(row: string, col: Col, month: number): string {
 export type DetailNode = { label: string; amount: number; children?: DetailNode[]; ref?: string };
 // cellRef : clé de la case du tableau qui a ouvert ce détail (son résultat). Permet
 // de surligner cette case en cliquant la ligne « Total » du side panel.
-export type CellDetail = { title: string; subtitle?: string; nodes: DetailNode[]; result: number; note?: string; cellRef?: string };
+// description : si présent, le détail est une explication de colonne (texte, un
+// paragraphe par entrée) et non un calcul — le panneau l'affiche alors tel quel.
+export type CellDetail = { title: string; subtitle?: string; nodes: DetailNode[]; result: number; note?: string; cellRef?: string; description?: string[] };
 
 export function sumOf(nodes: DetailNode[]): number {
   return nodes.reduce((s, n) => s + n.amount, 0);
+}
+
+// Détail « explication de colonne » : titre (nom de la colonne) + paragraphes de
+// texte, sans calcul. Affiché tel quel dans le side panel.
+export function makeInfo(title: string, description: string[]): CellDetail {
+  return { title, nodes: [], result: 0, description };
 }
 
 export function makeDetail(

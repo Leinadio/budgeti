@@ -19,6 +19,7 @@ import {
   subRow,
   txnRow,
   makeDetail,
+  makeInfo,
   txnNode,
 } from "@/lib/history-explain";
 
@@ -42,6 +43,17 @@ function colOf(kind: "depense" | "recu" | "budget" | "net", c: MonthCell): Col {
 
 const NUM = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmt = (n: number) => NUM.format(Math.abs(n) < 0.005 ? 0 : n).replace(/[  ]/g, " ");
+
+// Couleur d'un montant « Reste/Manque » : rouge s'il manque (négatif), vert sinon
+// (reste positif ou à zéro).
+function resteColor(v: number): string {
+  return v < -0.005 ? "text-red-600" : "text-green-600";
+}
+
+// Couleur d'un « Dépassement » : rouge s'il y a dépassement, vert s'il est à zéro.
+function depassColor(v: number): string {
+  return v > 0.005 ? "text-red-600" : "text-green-600";
+}
 
 // Largeur fixe de la première colonne. Un conteneur interne à largeur px fixe
 // (et non un max-width sur la cellule, ignoré en table-auto) garantit que la
@@ -73,7 +85,7 @@ const COL_LABEL: Record<ColKey, string> = {
   budgetDep: "Budget dép.",
   dep: "Dép.",
   recu: "Reçu",
-  reste: "Reste",
+  reste: "Reste/Manque",
   depassement: "Dépass.",
   soldeReel: "Solde",
   soldePrevu: "Solde prévu",
@@ -84,6 +96,61 @@ function labelFor(col: ColKey, type: MonthType): string {
   if (col === "soldeReel" && type === "current") return "Solde réel";
   return COL_LABEL[col];
 }
+
+// Explication complète de chaque colonne, affichée dans le side panel quand on clique
+// son en-tête (un paragraphe par entrée).
+const COL_INFO: Record<ColKey, string[]> = {
+  budgetRem: [
+    "C'est l'argent que tu comptes recevoir ce mois-ci : tes rentrées d'argent. C'est une prévision, le montant que tu attends — pas encore celui qui est arrivé sur le compte. Ce qui est vraiment arrivé, tu le vois dans la colonne « Reçu » juste à côté.",
+    "Tu peux avoir deux sortes de rentrées. Celle de tous les mois, ton revenu habituel : on la reporte sur tous les mois du tableau, parce qu'on sait qu'elle va revenir. Et une rentrée exceptionnelle, un coup de pouce que tu te verses quand le mois est serré : celle-là, on ne la compte que ce mois-ci, parce qu'on ne peut pas parier qu'elle reviendra.",
+    "Par exemple : si d'habitude tu reçois 650 € et que ce mois-ci tu ajoutes 500 € exceptionnels, la case affiche 1 150 € ce mois-ci, mais elle repasse à 650 € les mois d'après.",
+  ],
+  budgetDep: [
+    "C'est la limite que tu te fixes pour tes dépenses ce mois-ci : le « je ne veux pas dépenser plus que ça » de chaque poste. Juste à côté, « Dépensé » te dit combien tu as vraiment sorti, et « Reste/Manque » te dit s'il te reste de la marge ou si tu as débordé.",
+    "Il y a deux genres de dépenses là-dedans. Celles qui tombent tous les mois, toujours pareilles, comme les abonnements, le loyer ou les impôts : tu connais le montant à l'avance. Et les enveloppes, une sorte de cagnotte que tu te donnes pour les postes qui bougent, comme les courses, les sorties ou l'essence.",
+    "Cette case ne concerne que ce qui sort de ton compte. Pour l'argent qui rentre, c'est l'autre colonne, le budget rémunération, qui s'en occupe.",
+    "Par exemple : 220 € de dépenses régulières plus 335 € d'enveloppes, ça fait un budget de dépenses de 555 € pour le mois.",
+  ],
+  dep: [
+    "C'est l'argent qui est vraiment parti de ton compte ce mois-ci pour ce poste. Pas une prévision : le vrai, ce que tes achats t'ont coûté.",
+    "À ne pas confondre avec le budget dépense, qui est ce que tu avais prévu de dépenser. En comparant les deux, tu vois d'un coup d'œil si tu es resté dans ton budget ou si tu l'as dépassé — c'est justement ce que t'affiche la colonne « Reste/Manque » juste après.",
+    "Par exemple : si tu as payé 114 € d'abonnements et 100 € d'essence, ces montants s'additionnent dans ce que tu as dépensé sur le mois.",
+  ],
+  recu: [
+    "C'est l'argent qui est vraiment arrivé sur ton compte ce mois-ci pour cette catégorie. Le vrai encaissement, pas la prévision.",
+    "Ça n'a de sens que pour tes rentrées d'argent, comme ta paie ou un virement, et pour les opérations que tu n'as pas encore rangées dans une catégorie. Pour tes enveloppes et tes dépenses régulières, la case reste vide : ce sont des postes de dépense, tu n'y reçois jamais rien.",
+    "Par exemple : tu attends 650 €. Tant qu'ils ne sont pas là, cette case affiche 0. Dès qu'ils tombent sur le compte, elle passe à 650 €.",
+  ],
+  reste: [
+    "Ça répond à une question toute simple : sur ce budget, est-ce qu'il me reste de la marge, ou est-ce que j'ai trop dépensé ?",
+    "Si le chiffre est positif, c'est ce qu'il te reste à dépenser avant d'épuiser le budget. S'il est négatif et en rouge, c'est que tu as dépensé plus que prévu, et le chiffre te dit de combien tu as débordé.",
+    "Par exemple : un budget de 250 € où tu as dépensé 144 €, il te reste 106 €. Un budget de 85 € où tu as dépensé 100 €, tu es à −15 € : tu as débordé de 15 €.",
+  ],
+  depassement: [
+    "C'est seulement la partie où tu as dépensé plus que ton budget. Si tu es resté dans les clous, elle vaut 0. Si tu as débordé, elle te dit de combien.",
+    "En gros, c'est la mauvaise moitié du « Reste » mise de côté à part, pour bien la voir : on ne garde que les dépassements.",
+    "Ce mois-ci, c'est ton dépassement réel. Sur les mois à venir, on suppose que tu déborderas encore d'autant — une façon prudente de ne pas se raconter d'histoires.",
+    "Par exemple : un budget essence de 85 € dépensé à 100 €, ça fait un dépassement de 15 €.",
+  ],
+  soldeReel: [
+    "C'est l'argent que tu as vraiment sur ton compte, reconstitué étape par étape.",
+    "On part du vrai solde de ta banque aujourd'hui, et on remonte le fil des opérations pour retrouver où tu en étais à chaque mois. Chaque rentrée le fait monter, chaque dépense le fait descendre.",
+    "C'est le chiffre le plus sûr, parce qu'il ne repose sur aucune supposition : que du réel. C'est ce qui le différencie des deux colonnes « Solde prévu » et « Solde si dépassement », qui sont des estimations.",
+    "Il ne s'affiche que pour les mois déjà passés et le mois en cours. Pour les mois à venir, il n'y a pas encore de réel, alors on passe aux soldes prévisionnels.",
+  ],
+  soldePrevu: [
+    "Ça répond à : combien me restera-t-il si je dépense pile ce que j'ai prévu, sans aucun dérapage ?",
+    "On prend ce que tu as au départ, on ajoute ce que tu comptes recevoir, on enlève ce que tu comptes dépenser, et on enchaîne mois après mois : ce qui reste à la fin d'un mois devient ton point de départ pour le suivant.",
+    "Sur le mois en cours, il peut être différent du solde réel. Le solde réel tient compte de ce que tu as déjà fait, alors que celui-ci applique ton plan en entier. Comparer les deux te dit si tu es en avance ou en retard sur ton plan.",
+    "Par exemple : tu démarres à −120 €, tu attends 650 €, tu prévois 555 € de dépenses. Il te resterait −25 € en fin de mois.",
+  ],
+  soldeDepass: [
+    "C'est la version prudente du solde prévu : au lieu de supposer que tu dépenses pile ton budget, on suppose que tu continues de déborder comme ce mois-ci.",
+    "On part du solde prévu et on enlève, en plus, tous tes dépassements du mois. Et on garde ces dépassements sur les mois suivants, comme si ça se reproduisait.",
+    "C'est ton garde-fou : il te montre où tu tombes dans le pire des cas raisonnables. L'écart entre « Solde prévu » et cette colonne, c'est exactement le total de tes dépassements.",
+    "Par exemple : si le solde prévu de fin de mois est de −25 € et que tu as 165 € de dépassements, tu tombes à −190 €.",
+  ],
+};
 
 // Cellule vide (colonne non renseignée pour cette ligne), avec bordure de mois si
 // c'est la première colonne du mois.
@@ -139,9 +206,9 @@ function CellAmount({ children, className, detail, onSelect, cellKey: ck, selCel
   detail?: CellDetail | null;
   onSelect?: (d: CellDetail) => void;
   cellKey?: string;
-  selCellKey?: string | null;
+  selCellKey?: ReadonlySet<string>;
 }) {
-  const cls = cn(className, ck != null && ck === selCellKey && CELL_HL);
+  const cls = cn(className, ck != null && selCellKey?.has(ck) && CELL_HL);
   if (!detail || !onSelect) return <TableCell data-cellkey={ck} className={cls}>{children}</TableCell>;
   // On rattache la clé de cette case au détail (cellRef), pour pouvoir la surligner
   // depuis la ligne « Total » du side panel.
@@ -168,7 +235,7 @@ function plannedSoldeCell(
   detail: CellDetail | null,
   onSelect: ((d: CellDetail) => void) | undefined,
   ck: string,
-  selCellKey?: string | null,
+  selCellKey?: ReadonlySet<string>,
 ): React.ReactNode {
   return (
     <CellAmount
@@ -344,7 +411,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
   // Clé de ligne de ces cellules (group:… ou subrow:…), pour composer les data-cellkey.
   rowKey: string;
   // Case sélectionnée depuis le side panel (pour la surbrillance).
-  selCellKey?: string | null;
+  selCellKey?: ReadonlySet<string>;
   // Ligne dont le solde est le « Solde précédent » de celle-ci (prédécesseur dans
   // l'accumulation) : pour surligner sa case Solde depuis le side panel.
   prevRowKey?: string;
@@ -512,12 +579,12 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
             </CellAmount>
           ),
           reste: (b) => (
-            <CellAmount key="reste" className={cn(b && "border-l", "text-right tabular-nums", mode !== "in" && c.balance < 0 && "text-red-600")} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
+            <CellAmount key="reste" className={cn(b && "border-l", "text-right tabular-nums", mode !== "in" && resteColor(c.balance))} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
               {mode === "in" ? "" : fmt(c.balance)}
             </CellAmount>
           ),
           depassement: (b) => (
-            <CellAmount key="depassement" className={cn(b && "border-l", "text-right tabular-nums")} detail={depassDetail} onSelect={onSelect} cellKey={ck("depassement")} selCellKey={selCellKey}>
+            <CellAmount key="depassement" className={cn(b && "border-l", "text-right tabular-nums", mode === "out" && depassColor(Math.max(0, c.depense - c.budgeted)))} detail={depassDetail} onSelect={onSelect} cellKey={ck("depassement")} selCellKey={selCellKey}>
               {mode === "out" ? fmt(Math.max(0, c.depense - c.budgeted)) : "—"}
             </CellAmount>
           ),
@@ -551,7 +618,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, selCel
   currentMonth: string;
   onSelect?: (d: CellDetail) => void;
   solde?: (number | null)[];
-  selCellKey?: string | null;
+  selCellKey?: ReadonlySet<string>;
   // Ligne dont le solde est le « Solde précédent » de cette section (prédécesseur).
   prevRowKey?: string;
 }) {
@@ -646,18 +713,23 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, selCel
               {fmt(c.depense)}
             </CellAmount>
           ),
-          recu: (b) => (
-            <CellAmount key="recu" className={cn(b && "border-l", "text-right tabular-nums")} detail={recuDetail} onSelect={onSelect} cellKey={ck("recu")} selCellKey={selCellKey}>
-              {fmt(c.recu)}
-            </CellAmount>
-          ),
+          // Récurrents / Enveloppes sont des dépenses : jamais de reçu → « — ». Les non
+          // catégorisés peuvent contenir un revenu non classé → on garde la valeur.
+          recu: (b) =>
+            isUncat ? (
+              <CellAmount key="recu" className={cn(b && "border-l", "text-right tabular-nums")} detail={recuDetail} onSelect={onSelect} cellKey={ck("recu")} selCellKey={selCellKey}>
+                {fmt(c.recu)}
+              </CellAmount>
+            ) : (
+              <TableCell key="recu" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>—</TableCell>
+            ),
           reste: (b) => (
-            <CellAmount key="reste" className={cn(b && "border-l", "text-right tabular-nums", c.balance < 0 && "text-red-600")} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
+            <CellAmount key="reste" className={cn(b && "border-l", "text-right tabular-nums", resteColor(c.balance))} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
               {fmt(c.balance)}
             </CellAmount>
           ),
           depassement: (b) => (
-            <CellAmount key="depassement" className={cn(b && "border-l", "text-right tabular-nums", secDepass > 0 && "text-red-600")} detail={depassDetail} onSelect={onSelect} cellKey={ck("depassement")} selCellKey={selCellKey}>
+            <CellAmount key="depassement" className={cn(b && "border-l", "text-right tabular-nums", !isUncat && depassColor(secDepass))} detail={depassDetail} onSelect={onSelect} cellKey={ck("depassement")} selCellKey={selCellKey}>
               {isUncat ? "—" : fmt(secDepass)}
             </CellAmount>
           ),
@@ -684,7 +756,7 @@ function IncomeTotalCells({ sec, months, currentMonth, onSelect, selCellKey }: {
   months: string[];
   currentMonth: string;
   onSelect?: (d: CellDetail) => void;
-  selCellKey?: string | null;
+  selCellKey?: ReadonlySet<string>;
 }) {
   return (
     <>
@@ -755,7 +827,7 @@ function GrandTotalsCells({ sections, grand, solde, planned, overspend, months, 
   months: string[];
   currentMonth: string;
   onSelect?: (d: CellDetail) => void;
-  selCellKey?: string | null;
+  selCellKey?: ReadonlySet<string>;
 }) {
   return (
     <>
@@ -909,7 +981,7 @@ function GrandTotalsCells({ sections, grand, solde, planned, overspend, months, 
 
 // Cellules d'une transaction : son montant tombe dans la colonne Dép. (sortie)
 // ou Reçu (entrée), selon son signe, du mois où elle a lieu ; le reste est vide.
-function TxnCells({ txn, months, currentMonth, onSelect, selCellKey }: { txn: HistoryTxn; months: string[]; currentMonth: string; onSelect?: (d: CellDetail) => void; selCellKey?: string | null }) {
+function TxnCells({ txn, months, currentMonth, onSelect, selCellKey }: { txn: HistoryTxn; months: string[]; currentMonth: string; onSelect?: (d: CellDetail) => void; selCellKey?: ReadonlySet<string> }) {
   const isOut = txn.amount < 0;
   return (
     <>
@@ -995,7 +1067,7 @@ function TxnRow({ txn, months, currentMonth, groups, indent, onSelect, selCellKe
   groups: SelectGroup[];
   indent: number;
   onSelect?: (d: CellDetail) => void;
-  selCellKey?: string | null;
+  selCellKey?: ReadonlySet<string>;
 }) {
   return (
     <TableRow className="align-top text-sm text-muted-foreground">
@@ -1037,7 +1109,7 @@ function scrollableAncestor(el: HTMLElement, axis: "x" | "y"): HTMLElement | nul
   return null;
 }
 
-export function HistoryGrid({ months, currentMonth, forecast, sections, overspend, grand, groups, solde, planned, onSelect, selected }: {
+export function HistoryGrid({ months, currentMonth, forecast, sections, overspend, grand, groups, solde, planned, onSelect, selected, anchor }: {
   months: string[];
   currentMonth: string;
   forecast: AccountForecast;
@@ -1049,8 +1121,11 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
   planned: PlannedSoldes;
   // Clic sur un montant : remonté au parent, qui l'affiche dans la sidebar.
   onSelect: (d: CellDetail) => void;
-  // Case à surligner, sélectionnée depuis le side panel (clé data-cellkey, null = aucune).
+  // Case active choisie depuis le side panel (clé data-cellkey, null = aucune).
   selected?: string | null;
+  // Case ancre = montant cliqué dans le tableau ; reste surligné tant que le panneau
+  // est ouvert, en plus de la case active.
+  anchor?: string | null;
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const toggle = (k: string) =>
@@ -1061,10 +1136,18 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
       return next;
     });
 
-  const selCellKey = selected ?? null;
-  // Ligne porteuse de la case sélectionnée : préfixe de la clé « <ligne>::col::mois »
+  // Case active (B) choisie dans le panneau : sert au défilement et à la révélation.
+  const activeCell = selected ?? null;
+  // Cases à surligner dans le tableau : l'ancre (A, le montant cliqué dans le tableau,
+  // qui reste sélectionné tant que le panneau est ouvert) ET la case active (B). Les
+  // deux peuvent être surlignées en même temps.
+  const selCellKey = useMemo(
+    () => new Set([anchor, selected].filter((k): k is string => k != null)),
+    [anchor, selected],
+  );
+  // Ligne porteuse de la case active : préfixe de la clé « <ligne>::col::mois »
   // (ex. txn:<id>, subrow:<id>). Sert à retrouver les dépliages qui la révèlent.
-  const selRowKey = selCellKey ? selCellKey.slice(0, selCellKey.indexOf("::")) : null;
+  const selRowKey = activeCell ? activeCell.slice(0, activeCell.indexOf("::")) : null;
   // Conteneur du tableau (display:contents) : sert à repérer, par data-cellkey, la
   // case sélectionnée pour la faire défiler dans la vue — sans être lui-même un
   // conteneur de mise en page.
@@ -1175,8 +1258,8 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
   // vertical, plutôt que scrollIntoView, pour tenir compte de la première colonne
   // collante (sinon la case reste cachée derrière) et défiler le bon conteneur.
   useEffect(() => {
-    if (!selCellKey) return;
-    const el = gridRef.current?.querySelector<HTMLElement>(`[data-cellkey="${selCellKey}"]`);
+    if (!activeCell) return;
+    const el = gridRef.current?.querySelector<HTMLElement>(`[data-cellkey="${activeCell}"]`);
     if (!el) return;
     const pad = 12;
 
@@ -1202,7 +1285,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
       if (eRect.top < cRect.top) vy.scrollBy({ top: eRect.top - cRect.top - pad, behavior: "auto" });
       else if (eRect.bottom > cRect.bottom) vy.scrollBy({ top: eRect.bottom - cRect.bottom + pad, behavior: "auto" });
     }
-  }, [selCellKey, effectiveOpen]);
+  }, [activeCell, effectiveOpen]);
 
   // topLevel : ligne au niveau des sections (rémunérations), bande grise comme
   // les en-têtes Récurrents / Enveloppes.
@@ -1336,7 +1419,14 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
               <Fragment key={m}>
                 {cols.map((col, idx) => (
                   <TableHead key={col} className={cn(idx === 0 && "border-l", "text-right")}>
-                    {labelFor(col, type)}
+                    {/* Cliquer l'en-tête ouvre l'explication de la colonne dans le panneau. */}
+                    <button
+                      type="button"
+                      onClick={() => onSelect(makeInfo(labelFor(col, type), COL_INFO[col]))}
+                      className="cursor-pointer decoration-dotted underline-offset-2 hover:underline"
+                    >
+                      {labelFor(col, type)}
+                    </button>
                   </TableHead>
                 ))}
               </Fragment>

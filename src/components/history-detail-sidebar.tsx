@@ -10,10 +10,12 @@ const NUM = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFr
 const fmtAbs = (n: number) => NUM.format(Math.abs(n) < 0.005 ? 0 : Math.abs(n)).replace(/[  ]/g, " ");
 const fmtSigned = (n: number) => NUM.format(Math.abs(n) < 0.005 ? 0 : n).replace(/[  ]/g, " ");
 const opOf = (n: number) => (n < 0 ? "−" : "+");
-// Surbrillance d'une ligne sélectionnée : fond teinté + liseré d'accent à gauche
+// Surbrillance d'une ligne sélectionnée : fond foncé + liseré d'accent à gauche
 // rendu par une ombre interne (pas une bordure) pour ne pas décaler le tableau.
+// On fixe aussi la couleur au survol (hover:) sur la même teinte foncée, sinon le
+// hover:bg-muted/50 de la TableRow l'éclaircirait au passage de la souris.
 const HL =
-  "bg-[color-mix(in_oklab,var(--primary)_18%,var(--background))] shadow-[inset_3px_0_0_0_var(--primary)]";
+  "bg-[color-mix(in_oklab,var(--primary)_18%,var(--background))] hover:bg-[color-mix(in_oklab,var(--primary)_18%,var(--background))] shadow-[inset_3px_0_0_0_var(--primary)]";
 
 // Aplatit l'arbre de nœuds en lignes de tableau, en ne gardant que les enfants des
 // nœuds dépliés (open). depth pilote le retrait ; path identifie la ligne.
@@ -100,6 +102,31 @@ function DetailBody({ detail, onClose, selectedPanel, onSelectRow }: {
       return next;
     });
   const rows = flatten(detail.nodes, open);
+  // Explication de colonne : titre + paragraphes de texte, sans chiffre ni calcul.
+  if (detail.description) {
+    return (
+      <>
+        <SidebarHeader className="gap-0 border-b p-4">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="text-muted-foreground text-sm">Colonne</p>
+              <h2 className="font-semibold">{detail.title}</h2>
+            </div>
+            <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground shrink-0 rounded p-1" aria-label="Fermer">
+              <X className="size-4" />
+            </button>
+          </div>
+        </SidebarHeader>
+        <SidebarContent className="p-4">
+          <div className="space-y-3 text-sm leading-relaxed">
+            {detail.description.map((p, i) => (
+              <p key={i}>{p}</p>
+            ))}
+          </div>
+        </SidebarContent>
+      </>
+    );
+  }
   return (
     <>
       <SidebarHeader className="gap-0 border-b p-4">
