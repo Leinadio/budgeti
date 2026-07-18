@@ -648,25 +648,27 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, selCel
           : sec.rows.map((r) => groupNode(r, i, month, "recu")).filter((n) => n.amount !== 0);
         const recuDetail: CellDetail = makeDetail("Reçu", recuNodes ?? [], { subtitle, result: c.recu });
 
+        // Reste/Manque de la section. Pour les non catégorisés (aucun budget), on
+        // calcule Budget − Dépensé comme pour les autres sections plutôt que de laisser
+        // 0 : tout ce qui est dépensé sans budget est un manque.
+        const resteVal = isUncat ? c.budgeted - c.depense : c.balance;
         // Reste toujours affiché → toujours cliquable ; décomposition Budget − Dépensé
-        // quand l'invariant tient (Récurrents/Enveloppes), sinon aucune (non catégorisés).
+        // quand l'invariant tient (toujours vrai pour les non catégorisés, où
+        // resteVal = budget − dépensé par définition).
         const resteDetail: CellDetail = makeDetail(
           "Reste",
-          Math.abs(c.budgeted - c.depense - c.balance) < 0.005
+          isUncat || Math.abs(c.budgeted - c.depense - c.balance) < 0.005
             ? [
                 { label: "Budget", amount: c.budgeted, ref: ck("budget") },
                 {
                   label: "Dépensé",
                   amount: -c.depense,
                   ref: ck("depense"),
-                  children: sec.rows
-                    .map((r) => groupNode(r, i, month, "depense"))
-                    .filter((n) => n.amount !== 0)
-                    .map(negateNode),
+                  children: (depNodes ?? []).map(negateNode),
                 },
               ]
             : [],
-          { subtitle, result: c.balance },
+          { subtitle, result: resteVal },
         );
 
         const s = solde?.[i];
@@ -694,18 +696,30 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, selCel
           .filter((r) => r.direction === "out")
           .map((r): DetailNode => ({ label: r.name, amount: Math.max(0, r.cells[i].depense - r.cells[i].budgeted), ref: cellKey(groupRow(r.id), "depassement", i) }))
           .filter((n) => n.amount > 0.005);
-        // Dépassement : « — » (non cliquable) pour les non catégorisés (sans budget),
-        // sinon toujours cliquable même à 0,00 (nœuds seulement pour les groupes qui dépassent).
-        const depassDetail: CellDetail | null =
-          isUncat ? null : makeDetail("Dépassement", secDepassNodes, { subtitle, result: secDepass });
+        // Dépassement de la section. Non catégorisés : max(0, dépensé − budget) = tout
+        // le dépensé (budget 0), décomposé en Dépensé − Budget. Autres sections : somme
+        // des dépassements de leurs lignes.
+        const depassVal = isUncat ? Math.max(0, c.depense - c.budgeted) : secDepass;
+        const depassDetail: CellDetail = isUncat
+          ? makeDetail(
+              "Dépassement",
+              depassVal > 0.005
+                ? [
+                    { label: "Dépensé", amount: c.depense, ref: ck("depense"), children: depNodes ?? undefined },
+                    { label: "Budget", amount: -c.budgeted, ref: ck("budget") },
+                  ]
+                : [],
+              { subtitle, result: depassVal },
+            )
+          : makeDetail("Dépassement", secDepassNodes, { subtitle, result: secDepass });
 
         const slots: Record<ColKey, (border: boolean) => React.ReactNode> = {
           budgetRem: (b) => (
             <TableCell key="budgetRem" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>—</TableCell>
           ),
           budgetDep: (b) => (
-            <CellAmount key="budgetDep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} detail={isUncat ? null : budgetDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
-              {isUncat ? "—" : fmt(c.budgeted)}
+            <CellAmount key="budgetDep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} detail={budgetDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
+              {fmt(c.budgeted)}
             </CellAmount>
           ),
           dep: (b) => (
@@ -724,13 +738,13 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, selCel
               <TableCell key="recu" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>—</TableCell>
             ),
           reste: (b) => (
-            <CellAmount key="reste" className={cn(b && "border-l", "text-right tabular-nums", resteColor(c.balance))} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
-              {fmt(c.balance)}
+            <CellAmount key="reste" className={cn(b && "border-l", "text-right tabular-nums", resteColor(resteVal))} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
+              {fmt(resteVal)}
             </CellAmount>
           ),
           depassement: (b) => (
-            <CellAmount key="depassement" className={cn(b && "border-l", "text-right tabular-nums", !isUncat && depassColor(secDepass))} detail={depassDetail} onSelect={onSelect} cellKey={ck("depassement")} selCellKey={selCellKey}>
-              {isUncat ? "—" : fmt(secDepass)}
+            <CellAmount key="depassement" className={cn(b && "border-l", "text-right tabular-nums", depassColor(depassVal))} detail={depassDetail} onSelect={onSelect} cellKey={ck("depassement")} selCellKey={selCellKey}>
+              {fmt(depassVal)}
             </CellAmount>
           ),
           soldeReel: (b) => (
@@ -1093,6 +1107,16 @@ function TxnRow({ txn, months, currentMonth, groups, indent, onSelect, selCellKe
   );
 }
 
+// Ligne d'espacement entre deux sections : une bande vide de faible hauteur qui
+// couvre toutes les colonnes, pour aérer visuellement sans ajouter de contenu.
+function SpacerRow({ cols }: { cols: number }) {
+  return (
+    <TableRow className="hover:bg-transparent">
+      <TableCell colSpan={cols} className="h-8 border-0 p-0" />
+    </TableRow>
+  );
+}
+
 // Premier ancêtre réellement défilant sur un axe (x = horizontal, y = vertical).
 // Sert à amener une case dans la vue sans scrollIntoView (qui ne tient pas compte
 // de la colonne collante et défile parfois le mauvais conteneur).
@@ -1251,6 +1275,10 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
     return next;
   }, [open, selRowKey, revealOpenKeys]);
   const isOpen = (k: string) => effectiveOpen.has(k);
+
+  // Nombre total de colonnes du tableau (Catégorie + colonnes de chaque mois),
+  // pour l'attribut colSpan des lignes d'espacement entre sections.
+  const totalCols = 1 + months.reduce((n, m) => n + monthColumns(monthType(m, currentMonth)).length, 0);
 
   // Faire défiler la case sélectionnée dans la vue (après dépliage éventuel : la
   // dépendance sur effectiveOpen relance l'effet une fois la ligne montée). On
@@ -1502,12 +1530,15 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
             return <Fragment key={i}>{cols.map((col, idx) => slots[col](idx === 0))}</Fragment>;
           })}
         </TableRow>
-        {sections.map((sec) => {
+        {sections.map((sec, si) => {
+          // Un petit espace sépare chaque section de la précédente.
+          const spacer = si > 0 ? <SpacerRow cols={totalCols} /> : null;
           if (sec.kind === "income") {
             // Rémunérations : lignes au niveau des sections, tout en haut, sans en-tête,
             // suivies d'une ligne « Total rémunérations » (principale + supplémentaire).
             return (
               <Fragment key={sec.kind}>
+                {spacer}
                 {sec.rows.map((r) => renderGroup(r, true))}
                 <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
                   <TableCell className={cn("sticky left-0 z-10 p-0", MUTED40)}>
@@ -1524,6 +1555,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
             const hasTxns = (sec.txns?.length ?? 0) > 0;
             return (
               <Fragment key={sec.kind}>
+                {spacer}
                 <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
                   <NameCell indent={0} bg={MUTED40} expandable={hasTxns} expanded={uOpen} onToggle={hasTxns ? () => toggle(uKey) : undefined}>
                     <span className="min-w-0 truncate">Non catégorisés</span>
@@ -1536,15 +1568,18 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
               </Fragment>
             );
           }
+          // Récurrents / Enveloppes : les lignes d'abord, puis une ligne de total en
+          // bas (« Total Récurrents » / « Total Enveloppes »), comme les rémunérations.
           return (
             <Fragment key={sec.kind}>
+              {spacer}
+              {sec.rows.map((r) => renderGroup(r))}
               <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
                 <TableCell className={cn("sticky left-0 z-10 p-0", MUTED40)}>
-                  <FirstColBox>{sec.kind === "envelope" ? "Enveloppes" : "Récurrents"}</FirstColBox>
+                  <FirstColBox>{sec.kind === "envelope" ? "Total Enveloppes" : "Total Récurrents"}</FirstColBox>
                 </TableCell>
                 <SectionTotalsCells sec={sec} months={months} currentMonth={currentMonth} onSelect={onSelect} selCellKey={selCellKey} />
               </TableRow>
-              {sec.rows.map((r) => renderGroup(r))}
             </Fragment>
           );
         })}
