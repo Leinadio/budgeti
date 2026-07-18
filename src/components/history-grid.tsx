@@ -1,5 +1,5 @@
 "use client";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, cloneElement, isValidElement, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, ArrowDownRight, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { monthLabel } from "@/lib/transactions-view";
@@ -76,7 +76,7 @@ function monthType(m: string, currentMonth: string): MonthType {
 function monthColumns(type: MonthType): ColKey[] {
   if (type === "past") return ["budgetRem", "budgetDep", "dep", "recu", "reste", "soldeReel"];
   if (type === "current")
-    return ["budgetRem", "budgetDep", "dep", "recu", "reste", "depassement", "soldeReel", "soldePrevu", "soldeDepass"];
+    return ["budgetRem", "budgetDep", "dep", "recu", "depassement", "reste", "soldeReel", "soldePrevu", "soldeDepass"];
   return ["budgetRem", "budgetDep", "depassement", "soldePrevu", "soldeDepass"];
 }
 
@@ -85,7 +85,7 @@ const COL_LABEL: Record<ColKey, string> = {
   budgetDep: "Budget dép.",
   dep: "Dép.",
   recu: "Reçu",
-  reste: "Reste/Manque",
+  reste: "Balance",
   depassement: "Dépass.",
   soldeReel: "Solde",
   soldePrevu: "Solde prévu",
@@ -151,6 +151,29 @@ const COL_INFO: Record<ColKey, string[]> = {
     "Par exemple : si le solde prévu de fin de mois est de −25 € et que tu as 165 € de dépassements, tu tombes à −190 €.",
   ],
 };
+
+// Colonnes de solde (cumulé, se traîne de mois en mois) : teintées et séparées du
+// détail du mois par une bordure gauche plus marquée sur la première d'entre elles.
+const SOLDE_COLS_SET = new Set<ColKey>(["soldeReel", "soldePrevu", "soldeDepass"]);
+const SOLDE_TINT = "bg-[color-mix(in_oklab,var(--primary)_5%,var(--background))]";
+const SOLDE_SEP = "border-l-2 border-l-muted-foreground/25";
+// Teinte de fond de la colonne Balance (ex-« Reste/Manque ») : un ambré doux qui
+// la distingue de la bande grise des soldes.
+const BALANCE_TINT = "bg-[color-mix(in_oklab,oklch(0.75_0.16_80)_16%,var(--background))]";
+
+// Rend les cellules d'un mois (une par colonne) et ajoute la bordure de séparation
+// sur la première colonne de solde. La teinte de fond des colonnes de solde est
+// posée par le <colgroup> du tableau (elle passe sous le fond des lignes de total,
+// donc la bande s'interrompt proprement sur les lignes grises).
+function renderCols(cols: ColKey[], slots: Record<ColKey, (b: boolean) => React.ReactNode>): React.ReactNode[] {
+  const firstSolde = cols.find((c) => SOLDE_COLS_SET.has(c));
+  return cols.map((col, idx) => {
+    const cell = slots[col](idx === 0);
+    if (col !== firstSolde || !isValidElement(cell)) return cell;
+    const el = cell as React.ReactElement<{ className?: string }>;
+    return cloneElement(el, { className: cn(el.props.className, SOLDE_SEP) });
+  });
+}
 
 // Cellule vide (colonne non renseignée pour cette ligne), avec bordure de mois si
 // c'est la première colonne du mois.
@@ -597,7 +620,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
           soldeDepass: (b) => plannedSoldeCell("soldeDepass", soldeDepass?.[i] ?? null, b, soldeDepassDetail, onSelect, ck("soldeDepass"), selCellKey),
         };
 
-        return <Fragment key={i}>{cols.map((col, idx) => slots[col](idx === 0))}</Fragment>;
+        return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
       })}
     </>
   );
@@ -612,12 +635,15 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
 // donc leur somme aussi) : toujours cliquable. Pour les non catégorisés, budget et
 // balance sont toujours à 0 : l'invariant ne tient que si dépensé == 0, donc en
 // pratique non cliquable (comme documenté au Task 3 pour ce cas).
-function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, selCellKey, prevRowKey }: {
+function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planned, selCellKey, prevRowKey }: {
   sec: HistorySection;
   months: string[];
   currentMonth: string;
   onSelect?: (d: CellDetail) => void;
   solde?: (number | null)[];
+  // Soldes du plan (prévu / si dépassement), pour les non catégorisés : ils ne sont
+  // pas planifiés, donc le solde du plan les traverse sans changer.
+  planned?: PlannedSoldes;
   selCellKey?: ReadonlySet<string>;
   // Ligne dont le solde est le « Solde précédent » de cette section (prédécesseur).
   prevRowKey?: string;
@@ -713,6 +739,37 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, selCel
             )
           : makeDetail("Dépassement", secDepassNodes, { subtitle, result: secDepass });
 
+        // Non catégorisés traités comme une étape du plan : on part du dernier solde
+        // au-dessus (clôture du plan du mois) et on retire le Budget dépense (solde
+        // prévu) ou le Dépassement (solde si dépassement) de la ligne. Nuls sur les
+        // mois sans plan (avant le mois courant).
+        const prevuClose = planned?.prevuClosings[i] ?? null;
+        const depassClose = planned?.depassClosings[i] ?? null;
+        const soldePrevuVal = prevuClose != null ? prevuClose - c.budgeted : null;
+        const soldeDepassVal = depassClose != null ? depassClose - depassVal : null;
+        const soldePrevuDetail: CellDetail | null =
+          isUncat && soldePrevuVal != null
+            ? makeDetail(
+                "Solde prévu",
+                [
+                  { label: "Solde prévu précédent", amount: prevuClose!, ref: prevRowKey ? cellKey(prevRowKey, "soldePrevu", i) : undefined },
+                  { label: "Budget dépense", amount: -c.budgeted, ref: ck("budget") },
+                ],
+                { subtitle, result: soldePrevuVal },
+              )
+            : null;
+        const soldeDepassDetail: CellDetail | null =
+          isUncat && soldeDepassVal != null
+            ? makeDetail(
+                "Solde si dépassement",
+                [
+                  { label: "Solde si dépassement précédent", amount: depassClose!, ref: prevRowKey ? cellKey(prevRowKey, "soldeDepass", i) : undefined },
+                  { label: "Dépassement", amount: -depassVal, ref: ck("depassement") },
+                ],
+                { subtitle, result: soldeDepassVal },
+              )
+            : null;
+
         const slots: Record<ColKey, (border: boolean) => React.ReactNode> = {
           budgetRem: (b) => (
             <TableCell key="budgetRem" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>—</TableCell>
@@ -737,11 +794,16 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, selCel
             ) : (
               <TableCell key="recu" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>—</TableCell>
             ),
-          reste: (b) => (
-            <CellAmount key="reste" className={cn(b && "border-l", "text-right tabular-nums", resteColor(resteVal))} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
-              {fmt(resteVal)}
-            </CellAmount>
-          ),
+          // Reste/Manque : affiché seulement pour les non catégorisés. Pour Récurrents /
+          // Enveloppes, le total est reporté sur des lignes dédiées en bas du tableau.
+          reste: (b) =>
+            isUncat ? (
+              <CellAmount key="reste" className={cn(b && "border-l", "text-right tabular-nums", resteColor(resteVal))} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
+                {fmt(resteVal)}
+              </CellAmount>
+            ) : (
+              blankCol("reste", b)
+            ),
           depassement: (b) => (
             <CellAmount key="depassement" className={cn(b && "border-l", "text-right tabular-nums", depassColor(depassVal))} detail={depassDetail} onSelect={onSelect} cellKey={ck("depassement")} selCellKey={selCellKey}>
               {fmt(depassVal)}
@@ -752,11 +814,19 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, selCel
               {s != null ? fmt(s) : ""}
             </CellAmount>
           ),
-          soldePrevu: (b) => plannedSoldeCol("soldePrevu", null, b),
-          soldeDepass: (b) => plannedSoldeCol("soldeDepass", null, b),
+          // Non catégorisés : on affiche le solde du plan (identique aux clôtures
+          // prévues du mois) ; les autres sections de dépense restent vides.
+          soldePrevu: (b) =>
+            isUncat
+              ? plannedSoldeCell("soldePrevu", soldePrevuVal, b, soldePrevuDetail, onSelect, ck("soldePrevu"), selCellKey)
+              : plannedSoldeCol("soldePrevu", null, b),
+          soldeDepass: (b) =>
+            isUncat
+              ? plannedSoldeCell("soldeDepass", soldeDepassVal, b, soldeDepassDetail, onSelect, ck("soldeDepass"), selCellKey)
+              : plannedSoldeCol("soldeDepass", null, b),
         };
 
-        return <Fragment key={i}>{cols.map((col, idx) => slots[col](idx === 0))}</Fragment>;
+        return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
       })}
     </>
   );
@@ -820,7 +890,7 @@ function IncomeTotalCells({ sec, months, currentMonth, onSelect, selCellKey }: {
           soldeDepass: (b) => blankCol("soldeDepass", b),
         };
 
-        return <Fragment key={i}>{cols.map((col, idx) => slots[col](idx === 0))}</Fragment>;
+        return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
       })}
     </>
   );
@@ -987,7 +1057,7 @@ function GrandTotalsCells({ sections, grand, solde, planned, overspend, months, 
           soldeDepass: (b) => plannedSoldeCell("soldeDepass", planned.depassClosings[i], b, soldeDepassDetail, onSelect, ck("soldeDepass"), selCellKey),
         };
 
-        return <Fragment key={i}>{cols.map((col, idx) => slots[col](idx === 0))}</Fragment>;
+        return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
       })}
     </>
   );
@@ -1040,7 +1110,7 @@ function TxnCells({ txn, months, currentMonth, onSelect, selCellKey }: { txn: Hi
           soldePrevu: (b) => blankCol("soldePrevu", b),
           soldeDepass: (b) => blankCol("soldeDepass", b),
         };
-        return <Fragment key={i}>{cols.map((col, idx) => slots[col](idx === 0))}</Fragment>;
+        return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
       })}
     </>
   );
@@ -1406,6 +1476,47 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
     );
   };
 
+  // Ligne dédiée affichant le Reste/Manque final d'une section de dépense
+  // (Récurrents / Enveloppes) en bas du tableau, dans la colonne Reste/Manque.
+  // Le montant est retiré de la ligne « Total ... » et reporté ici.
+  const renderSectionResteRow = (kind: "recurring" | "envelope", label: string) => {
+    const sec = sections.find((s) => s.kind === kind);
+    if (!sec) return null;
+    const rowKey = `reste:${kind}`;
+    return (
+      <TableRow className="text-sm">
+        <TableCell className="bg-background sticky left-0 z-10 p-0">
+          <FirstColBox><span className="text-muted-foreground">{label}</span></FirstColBox>
+        </TableCell>
+        {months.map((m, i) => {
+          const type = monthType(m, currentMonth);
+          const cols = monthColumns(type);
+          const c = sec.totals[i];
+          const subtitle = `${label} · ${monthLabel(m)}`;
+          // Décomposition Budget − Dépensé (les sections de dépense vérifient l'invariant).
+          const depNodes = sec.rows.map((r) => groupNode(r, i, m, "depense")).filter((n) => n.amount !== 0);
+          const detail: CellDetail = makeDetail(
+            "Reste",
+            [
+              { label: "Budget", amount: c.budgeted, ref: cellKey(sectionRow(kind), "budget", i) },
+              { label: "Dépensé", amount: -c.depense, ref: cellKey(sectionRow(kind), "depense", i), children: depNodes.map(negateNode) },
+            ],
+            { subtitle, result: c.balance },
+          );
+          const resteCell = (b: boolean) => (
+            <CellAmount key="reste" className={cn(b && "border-l", "text-right tabular-nums", resteColor(c.balance))} detail={detail} onSelect={onSelect} cellKey={cellKey(rowKey, "reste", i)} selCellKey={selCellKey}>
+              {fmt(c.balance)}
+            </CellAmount>
+          );
+          const slots = blankSlots();
+          // La colonne Reste/Manque n'existe pas sur les mois de projection.
+          if (type !== "future") slots.reste = resteCell;
+          return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
+        })}
+      </TableRow>
+    );
+  };
+
   return (
     // display:contents : ce conteneur ne crée pas de boîte (il n'affecte pas la
     // mise en page), il sert seulement d'ancre pour retrouver, par data-cellkey, la
@@ -1415,6 +1526,15 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
         (w-full par defaut) les colonnes se resserrent quand la sidebar de detail
         s'ouvre et retrecit la zone : le tableau doit defiler, pas se tasser. */}
     <Table className="w-max">
+      {/* Teinte de fond des colonnes de solde (posée sous le fond des lignes). */}
+      <colgroup>
+        <col />
+        {months.map((m) =>
+          monthColumns(monthType(m, currentMonth)).map((col) => (
+            <col key={`${m}-${col}`} className={cn(SOLDE_COLS_SET.has(col) && SOLDE_TINT, col === "reste" && BALANCE_TINT)} />
+          )),
+        )}
+      </colgroup>
       <TableHeader>
         <TableRow>
           <TableHead rowSpan={2} className="bg-background sticky left-0 z-10 p-0 align-bottom">
@@ -1443,10 +1563,11 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
           {months.map((m) => {
             const type = monthType(m, currentMonth);
             const cols = monthColumns(type);
+            const firstSolde = cols.find((c) => SOLDE_COLS_SET.has(c));
             return (
               <Fragment key={m}>
                 {cols.map((col, idx) => (
-                  <TableHead key={col} className={cn(idx === 0 && "border-l", "text-right")}>
+                  <TableHead key={col} className={cn(idx === 0 && "border-l", col === firstSolde && SOLDE_SEP, "text-right")}>
                     {/* Cliquer l'en-tête ouvre l'explication de la colonne dans le panneau. */}
                     <button
                       type="button"
@@ -1527,7 +1648,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
             slots.soldeReel = openingCell;
             slots.soldePrevu = (b) => plannedSoldeCell("soldePrevu", prevuOpen, b, prevuOpenDetail, onSelect, cellKey(openingRow, "soldePrevu", i), selCellKey);
             slots.soldeDepass = (b) => plannedSoldeCell("soldeDepass", depassOpen, b, depassOpenDetail, onSelect, cellKey(openingRow, "soldeDepass", i), selCellKey);
-            return <Fragment key={i}>{cols.map((col, idx) => slots[col](idx === 0))}</Fragment>;
+            return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
           })}
         </TableRow>
         {sections.map((sec, si) => {
@@ -1560,7 +1681,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                   <NameCell indent={0} bg={MUTED40} expandable={hasTxns} expanded={uOpen} onToggle={hasTxns ? () => toggle(uKey) : undefined}>
                     <span className="min-w-0 truncate">Non catégorisés</span>
                   </NameCell>
-                  <SectionTotalsCells sec={sec} months={months} currentMonth={currentMonth} onSelect={onSelect} solde={solde.uncategorizedRunning ?? undefined} selCellKey={selCellKey} prevRowKey={prevSoldeRowKey.get(sectionRow("uncategorized"))} />
+                  <SectionTotalsCells sec={sec} months={months} currentMonth={currentMonth} onSelect={onSelect} solde={solde.uncategorizedRunning ?? undefined} planned={planned} selCellKey={selCellKey} prevRowKey={prevSoldeRowKey.get(sectionRow("uncategorized"))} />
                 </TableRow>
                 {uOpen && sec.txns?.map((t) => (
                   <TxnRow key={t.id} txn={t} months={months} currentMonth={currentMonth} groups={groups} indent={1} onSelect={onSelect} selCellKey={selCellKey} />
@@ -1580,6 +1701,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                 </TableCell>
                 <SectionTotalsCells sec={sec} months={months} currentMonth={currentMonth} onSelect={onSelect} selCellKey={selCellKey} />
               </TableRow>
+              {renderSectionResteRow(sec.kind, sec.kind === "envelope" ? "Balance enveloppes" : "Balance récurrents")}
             </Fragment>
           );
         })}
@@ -1621,7 +1743,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
             // En projection (pas de colonne Solde réel), l'estimé retombe sous « Solde prévu ».
             if (type === "future") slots.soldePrevu = estCell;
             else slots.soldeReel = estCell;
-            return <Fragment key={i}>{cols.map((col, idx) => slots[col](idx === 0))}</Fragment>;
+            return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
           })}
         </TableRow>
         {/* Dépassement : total des dépassements de budget (somme des Reste rouges). */}
@@ -1654,7 +1776,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
             // sinon sous Reste (mois passés).
             if (type === "past") slots.reste = depCell;
             else slots.depassement = depCell;
-            return <Fragment key={i}>{cols.map((col, idx) => slots[col](idx === 0))}</Fragment>;
+            return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
           })}
         </TableRow>
       </TableBody>
