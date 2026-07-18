@@ -957,16 +957,27 @@ function GrandTotalsCells({ sections, grand, solde, planned, overspend, months, 
           .map((r): DetailNode => ({ label: r.name, amount: rowProjRevenu(r, i, isCur), ref: cellKey(groupRow(r.id), "revenus", i) }))
           .filter((n) => n.amount !== 0);
         const budgetRemDetail: CellDetail = makeDetail("Budget rémunération", budgetRemNodes, { subtitle, result: budgetRemTotal });
-        // Dépassement : un nœud par groupe qui dépasse (comme la ligne « Dépassement »).
+        // Dépassement du grand total = dépassements des groupes (overspend) plus celui
+        // des Non catégorisés (tout leur dépensé, faute de budget).
+        const uncatTotals = sections.find((s) => s.kind === "uncategorized")?.totals[i];
+        const uncatDepass = uncatTotals ? Math.max(0, uncatTotals.depense - uncatTotals.budgeted) : 0;
+        const grandDepass = overspend[i] + uncatDepass;
+        // Dépassement : un nœud par groupe qui dépasse (comme la ligne « Dépassement »),
+        // plus un nœud Non catégorisés pointant vers sa case Dépassement.
         const depassDetail: CellDetail | null =
-          overspend[i] > 0
+          grandDepass > 0
             ? makeDetail(
                 "Dépassement",
-                sections
-                  .flatMap((s) => s.rows)
-                  .filter((r) => r.direction === "out" && r.cells[i].balance < 0)
-                  .map((r): DetailNode => ({ label: r.name, amount: -r.cells[i].balance, ref: cellKey(groupRow(r.id), "depassement", i) })),
-                { subtitle, result: overspend[i] },
+                [
+                  ...sections
+                    .flatMap((s) => s.rows)
+                    .filter((r) => r.direction === "out" && r.cells[i].balance < 0)
+                    .map((r): DetailNode => ({ label: r.name, amount: -r.cells[i].balance, ref: cellKey(groupRow(r.id), "depassement", i) })),
+                  ...(uncatDepass > 0.005
+                    ? [{ label: "Non catégorisés", amount: uncatDepass, ref: cellKey(sectionRow("uncategorized"), "depassement", i) }]
+                    : []),
+                ],
+                { subtitle, result: grandDepass },
               )
             : null;
         // Soldes de plan (prévu / si dépassement) : structure « précédent + mouvement »
@@ -1044,8 +1055,8 @@ function GrandTotalsCells({ sections, grand, solde, planned, overspend, months, 
           ),
           reste: (b) => blankCol("reste", b),
           depassement: (b) => (
-            <CellAmount key="depassement" className={cn(b && "border-l", "text-right tabular-nums", overspend[i] > 0 && "text-red-600")} detail={depassDetail} onSelect={onSelect} cellKey={ck("depassement")} selCellKey={selCellKey}>
-              {overspend[i] > 0 ? fmt(overspend[i]) : "—"}
+            <CellAmount key="depassement" className={cn(b && "border-l", "text-right tabular-nums", grandDepass > 0 && "text-red-600")} detail={depassDetail} onSelect={onSelect} cellKey={ck("depassement")} selCellKey={selCellKey}>
+              {grandDepass > 0 ? fmt(grandDepass) : "—"}
             </CellAmount>
           ),
           soldeReel: (b) => (
@@ -1743,39 +1754,6 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
             // En projection (pas de colonne Solde réel), l'estimé retombe sous « Solde prévu ».
             if (type === "future") slots.soldePrevu = estCell;
             else slots.soldeReel = estCell;
-            return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
-          })}
-        </TableRow>
-        {/* Dépassement : total des dépassements de budget (somme des Reste rouges). */}
-        <TableRow className="text-sm">
-          <TableCell className="bg-background sticky left-0 z-10 p-0">
-            <FirstColBox><span className="text-muted-foreground">Dépassement</span></FirstColBox>
-          </TableCell>
-          {months.map((_, i) => {
-            const month = months[i];
-            const detail: CellDetail | null =
-              overspend[i] > 0
-                ? makeDetail(
-                    "Dépassement",
-                    sections
-                      .flatMap((s) => s.rows)
-                      .filter((r) => r.direction === "out" && r.cells[i].balance < 0)
-                      .map((r): DetailNode => ({ label: r.name, amount: -r.cells[i].balance, ref: cellKey(groupRow(r.id), "reste", i) })),
-                    { subtitle: monthLabel(month), result: overspend[i] },
-                  )
-                : null;
-            const type = monthType(months[i], currentMonth);
-            const cols = monthColumns(type);
-            const depCell = (b: boolean) => (
-              <CellAmount key="overspend" className={cn(b && "border-l", "text-right tabular-nums", overspend[i] > 0 && "text-red-600")} detail={detail} onSelect={onSelect} cellKey={cellKey("overspend", "reste", i)} selCellKey={selCellKey}>
-                {overspend[i] > 0 ? fmt(overspend[i]) : "—"}
-              </CellAmount>
-            );
-            const slots = blankSlots();
-            // Sous la colonne Dépassement quand elle existe (courant / projection),
-            // sinon sous Reste (mois passés).
-            if (type === "past") slots.reste = depCell;
-            else slots.depassement = depCell;
             return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
           })}
         </TableRow>
