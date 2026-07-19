@@ -124,20 +124,21 @@ test("le Reste des non catégorisés est nul (aucun budget)", () => {
   expect(uncat.totals[0].balance).toBe(0);
 });
 
-test("future projection within budget: spent = budgeted, balance = 0", () => {
+test("mois futur : rien de réalisé (Dépensé 0, Balance = budget entier)", () => {
   const txns = [tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 })];
   const sections = computeHistory([courses], txns, ["2026-07", "2026-08"], "2026-07");
   const row = sections[0].rows[0];
   expect(row.cells[0]).toEqual({ budgeted: 300, depense: 120, recu: 0, balance: 180 }); // juillet réel
-  expect(row.cells[1]).toEqual({ budgeted: 300, depense: 300, recu: 0, balance: 0 }); // août projeté (pas de dépassement)
+  expect(row.cells[1]).toEqual({ budgeted: 300, depense: 0, recu: 0, balance: 300 }); // août : rien dépensé encore
 });
 
-test("future projection carries the current-month overspend (like Previsionnel)", () => {
+test("mois futur : le dépassement du mois courant n'est pas projeté dans les cellules", () => {
+  // Il est maintenu dans les chaînes de plan (computePlannedSoldes), pas ici.
   const txns = [tx({ id: "1", date: "2026-07-10", amount: -450, label: "CARREFOUR", groupId: 1 })]; // 450 > 300
   const sections = computeHistory([courses], txns, ["2026-07", "2026-08"], "2026-07");
   const row = sections[0].rows[0];
   expect(row.cells[0]).toEqual({ budgeted: 300, depense: 450, recu: 0, balance: -150 }); // juillet réel
-  expect(row.cells[1]).toEqual({ budgeted: 300, depense: 450, recu: 0, balance: -150 }); // août : dépassement maintenu
+  expect(row.cells[1]).toEqual({ budgeted: 300, depense: 0, recu: 0, balance: 300 }); // août : rien dépensé encore
 });
 
 test("nextMonthKey advances one month, handles year boundary", () => {
@@ -268,7 +269,7 @@ test("no uncategorized section when every transaction has a group", () => {
   expect(sections.some((s) => s.kind === "uncategorized")).toBe(false);
 });
 
-test("la rémunération principale projette son montant sur les mois futurs", () => {
+test("la rémunération principale n'est pas réalisée sur les mois futurs (Reçu 0, budget conservé)", () => {
   const principal: Group = {
     id: 30, accountId: "a1", name: "Rémunération principale", direction: "in",
     kind: "envelope", monthlyAmount: 2000, keywords: [], lines: [], incomeKind: "principal",
@@ -276,8 +277,8 @@ test("la rémunération principale projette son montant sur les mois futurs", ()
   const sections = computeHistory([principal], [], ["2026-07", "2026-08"], "2026-07");
   const row = sections.find((s) => s.kind === "income")!.rows[0];
   expect(row.incomeKind).toBe("principal");
-  expect(row.cells[1].recu).toBe(2000); // mois futur projeté
-  expect(row.cells[1].budgeted).toBe(2000);
+  expect(row.cells[1].recu).toBe(0); // mois futur : rien de reçu encore
+  expect(row.cells[1].budgeted).toBe(2000); // le budget reste projeté (colonne Budget rém.)
 });
 
 test("la rémunération supplémentaire n'est pas projetée (Reçu futur = 0)", () => {
@@ -328,17 +329,21 @@ test("computeSolde: les mois s'enchaînent (fin du mois N = début du mois N+1)"
   expect(solde.openings[0]).toBe(-280); // -380 - (-100)
 });
 
-test("computeSolde: un mois futur part du solde de fin du mois courant", () => {
+test("computeSolde: un mois futur reste plat (rien de réalisé), ancré sur le solde ou l'estimé", () => {
   const txns = [
     tx({ id: "1", date: "2026-07-01", amount: 2000, label: "VIR REMU", groupId: 9 }),
     tx({ id: "2", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
   ];
   const months = ["2026-07", "2026-08"];
   const sections = computeHistory([salaire, courses], txns, months, "2026-07");
+  // Sans estimé : août s'ouvre sur la fin de juillet et n'a aucun mouvement réel.
   const solde = computeSolde(sections, months, "2026-07", 1500);
-  // août projeté : salaire reçu 2000, courses dépensé = budget 300 -> net 1700
   expect(solde.openings[1]).toBe(1500); // = fin de juillet
-  expect(solde.closings[1]).toBe(3200); // 1500 + 1700
+  expect(solde.closings[1]).toBe(1500); // net futur = 0
+  // Avec l'estimé de fin du mois courant : août s'ouvre dessus.
+  const soldeEst = computeSolde(sections, months, "2026-07", 1500, 1800);
+  expect(soldeEst.openings[1]).toBe(1800);
+  expect(soldeEst.closings[1]).toBe(1800);
 });
 
 test("Total rémunérations, colonne Budget : ne compte que la principale (pas la supplémentaire)", () => {
@@ -366,11 +371,11 @@ test("computeSolde: fenêtre entièrement future ancre l'ouverture sur le solde 
   const months = ["2026-08", "2026-09"];
   const sections = computeHistory([salaire, courses], txns, months, "2026-07");
   const solde = computeSolde(sections, months, "2026-07", 1500);
-  // chaque mois futur : salaire 2000 reçu, courses budget 300 -> net 1700
+  // Mois futurs : rien de réalisé, la chaîne reste plate sur le solde d'aujourd'hui.
   expect(solde.openings[0]).toBe(1500); // = solde d'aujourd'hui
-  expect(solde.closings[0]).toBe(3200); // 1500 + 1700
-  expect(solde.openings[1]).toBe(3200); // enchaînement
-  expect(solde.closings[1]).toBe(4900); // 3200 + 1700
+  expect(solde.closings[0]).toBe(1500); // net futur = 0
+  expect(solde.openings[1]).toBe(1500); // enchaînement
+  expect(solde.closings[1]).toBe(1500);
 });
 
 test("computePlannedSoldes: prévu = départ + revenus − budget ; si dépassement retire le dépassement", () => {
@@ -392,6 +397,11 @@ test("computePlannedSoldes: prévu = départ + revenus − budget ; si dépassem
   // Mois futur : chaîne à partir de la clôture du mois courant (même net planifié).
   expect(p.prevuClosings[1]).toBeCloseTo((open + 2000 - 300) + (2000 - 300), 2);
   expect(p.depassClosings[1]).toBeCloseTo((open + 2000 - 300 - 50) + (2000 - 300 - 50), 2);
+  // Avec l'estimé de fin du mois courant : le premier mois futur repart de lui.
+  const pe = computePlannedSoldes(sections, months, "2026-07", solde.openings, 4200);
+  expect(pe.prevuClosings[0]).toBeCloseTo(open + 2000 - 300, 2); // mois courant inchangé
+  expect(pe.prevuClosings[1]).toBeCloseTo(4200 + (2000 - 300), 2);
+  expect(pe.depassClosings[1]).toBeCloseTo(4200 + (2000 - 300 - 50), 2);
 });
 
 test("computePlannedSoldes: la supplémentaire compte au mois courant mais pas en projection", () => {

@@ -140,18 +140,16 @@ export function computeHistory(
   // On ne liste que les transactions des mois affichés.
   const inRange = (t: Txn) => months.includes(t.date.slice(0, 7));
 
-  // projectFuture=false : la ligne n'est pas anticipée sur les mois futurs (réalisé
-  // projeté = 0). Utilisé pour la rémunération supplémentaire (couvre le mois courant,
-  // pas les suivants).
+  // Mois futurs : rien n'est encore réalisé (dépensé / reçu à 0, Balance = budget
+  // entier). Les projections vivent dans les chaînes de plan (Solde prévu / si
+  // dépassement), pas dans les cellules réelles.
   const cellsFor = (
     budgeted: number,
     isOut: boolean,
-    overspend: number,
     realizedOf: (m: string) => number,
-    projectFuture = true,
   ): MonthCell[] =>
     months.map((m) => {
-      const realized = m > currentMonth ? (projectFuture ? budgeted + overspend : 0) : realizedOf(m);
+      const realized = m > currentMonth ? 0 : realizedOf(m);
       return {
         budgeted,
         depense: isOut ? realized : 0,
@@ -166,16 +164,12 @@ export function computeHistory(
   const rowFor = (g: Group): HistoryRow => {
     const budgeted = budgetOf(g);
     const isOut = g.direction === "out";
-    // La supplémentaire n'est pas projetée sur les mois futurs (cf. Global Constraints).
-    const projectFuture = !(g.direction === "in" && g.incomeKind === "supplementary");
     // Transactions du groupe (possédées, non exclues), récentes d'abord.
     const mine = owned
       .filter((o) => o.ownerId === g.id)
       .map((o) => o.t)
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-    // Dépassement du mois courant, reporté sur les projections (comme le Prévisionnel).
-    const overspend = isOut ? Math.max(0, spent(g.id, currentMonth) - budgeted) : 0;
-    const cells = cellsFor(budgeted, isOut, overspend, (m) => spent(g.id, m), projectFuture);
+    const cells = cellsFor(budgeted, isOut, (m) => spent(g.id, m));
 
     // Sous-groupes : une ligne par poste du récurrent ; les projections gardent
     // juste le budget de la ligne (pas de dépassement au niveau ligne).
@@ -186,7 +180,7 @@ export function computeHistory(
       return {
         id: l.id,
         name: l.name,
-        cells: cellsFor(l.amount, isOut, 0, realizedOf),
+        cells: cellsFor(l.amount, isOut, realizedOf),
         txns: lineTxns.filter(inRange).map(toHistoryTxn),
       };
     });
@@ -307,6 +301,9 @@ export function computeSolde(
   months: string[],
   currentMonth: string,
   balance: number,
+  // Estimé de fin du mois courant : s'il est fourni, les mois futurs partent de
+  // cette estimation (au lieu du solde « maintenant ») pour la colonne Solde réel.
+  currentEstimate?: number | null,
 ): SoldeColumn {
   const n = months.length;
   // Mouvement net affiché par mois = somme des sous-totaux de section
@@ -339,7 +336,9 @@ export function computeSolde(
         openings[i] = closings[i] - net[i];
       }
       for (let i = ci + 1; i < n; i++) {
-        openings[i] = closings[i - 1];
+        // Premier mois futur : il s'ouvre sur l'estimé de fin du mois courant
+        // (si fourni), pas sur le solde « maintenant » de la banque.
+        openings[i] = i === ci + 1 && currentEstimate != null ? currentEstimate : closings[i - 1];
         closings[i] = openings[i] + net[i];
       }
     }
@@ -394,10 +393,12 @@ export type PlannedSoldes = {
 
 // Chaînes de solde « plan » : prévu (revenus − budget) et « si dépassement »
 // (prévu − dépassement). Mois passés et courant : ancrés à l'argent de départ réel
-// du mois, dépassement du mois lui-même. Mois futurs : enchaînés depuis la clôture
-// du mois précédent, dépassement du mois courant maintenu.
+// du mois, dépassement du mois lui-même. Mois futurs : le premier part de l'estimé
+// de fin du mois courant (currentEstimate, sinon la clôture du plan), les suivants
+// enchaînent ; dépassement du mois courant maintenu.
 export function computePlannedSoldes(
   sections: HistorySection[], months: string[], currentMonth: string, openingsReal: number[],
+  currentEstimate?: number | null,
 ): PlannedSoldes {
   const n = months.length;
   let ci = months.indexOf(currentMonth);
@@ -418,8 +419,11 @@ export function computePlannedSoldes(
     // Passé / courant : ancre sur l'ouverture réelle du mois, dépassement du mois.
     // Futur : chaîne sur la clôture du plan, dépassement du mois courant maintenu.
     const anchored = i <= ci;
-    let runP = anchored ? openingsReal[i] : prevuClosings[i - 1]!;
-    let runD = anchored ? openingsReal[i] : depassClosings[i - 1]!;
+    // Premier mois futur : les deux chaînes repartent de l'estimé de fin du mois
+    // courant (le meilleur point de départ connu), pas de la clôture du plan.
+    const futureStart = i === ci + 1 && currentEstimate != null ? currentEstimate : null;
+    let runP = anchored ? openingsReal[i] : futureStart ?? prevuClosings[i - 1]!;
+    let runD = anchored ? openingsReal[i] : futureStart ?? depassClosings[i - 1]!;
     const osMonth = anchored ? i : ci;
     for (const sec of sections) {
       // Non catégorisés exclus du plan (aucun budget/revenu planifié).

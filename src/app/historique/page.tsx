@@ -89,8 +89,8 @@ export default async function HistoriquePage({
           const remunMonths = months.map((m) => monthRemuneration(groups, txns, m));
           const overspend = monthlyOverspend(sections, months.length);
           const grand = grandTotals(sections, months.length);
-          const solde = computeSolde(sections, months, currentMonth, a.balance);
-          const planned = computePlannedSoldes(sections, months, currentMonth, solde.openings);
+          const solde = computeSolde(sections, months, currentMonth, a.balance, forecast.currentEstimate);
+          const planned = computePlannedSoldes(sections, months, currentMonth, solde.openings, forecast.currentEstimate);
           const selectGroups = groups.map((g) => ({
             id: g.id,
             name: g.name,

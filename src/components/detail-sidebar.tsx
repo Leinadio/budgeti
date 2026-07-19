@@ -4,13 +4,14 @@ import type { CellDetail } from "@/lib/history-explain";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { HistoryDetailSidebar } from "@/components/history-detail-sidebar";
 
-// selected : case active choisie dans le panneau. anchor : montant cliqué dans le
+// selected : cases actives choisies dans le panneau (une ligne peut en surligner
+// plusieurs quand son montant est une somme). anchor : montant cliqué dans le
 // tableau, surligné tant que le panneau est ouvert (les deux peuvent l'être à la fois).
 type Ctx = {
   detail: CellDetail | null;
   setDetail: (d: CellDetail | null) => void;
-  selected: string | null;
-  setSelected: (r: string | null) => void;
+  selected: string[] | null;
+  setSelected: (r: string[] | null) => void;
   anchor: string | null;
 };
 const DetailSidebarContext = createContext<Ctx | null>(null);
@@ -34,10 +35,11 @@ export function useDetailSidebar(): Ctx {
 // du provider de gauche, continue de piloter la navigation.
 export function DetailSidebarProvider({ children }: { children: React.ReactNode }) {
   const [detail, setDetailState] = useState<CellDetail | null>(null);
-  // selected : clé de la case du tableau à surligner. selectedPanel : identité de la
-  // ligne active dans le panneau. Découplés : une ligne intermédiaire surligne sa
-  // case sans aussi activer la ligne « Total » (qui vise la même case).
-  const [selected, setSelected] = useState<string | null>(null);
+  // selected : clés des cases du tableau à surligner (plusieurs quand la ligne du
+  // panneau est une somme). selectedPanel : identité de la ligne active dans le
+  // panneau. Découplés : une ligne intermédiaire surligne sa case sans aussi
+  // activer la ligne « Total » (qui vise la même case).
+  const [selected, setSelected] = useState<string[] | null>(null);
   const [selectedPanel, setSelectedPanel] = useState<string | null>(null);
   // anchor : le montant cliqué dans le tableau (cellRef du détail). Il reste surligné
   // tant que le panneau est ouvert, en plus de la case active (selected) éventuelle.
@@ -51,8 +53,8 @@ export function DetailSidebarProvider({ children }: { children: React.ReactNode 
     setSelected(null);
     setSelectedPanel(null);
   };
-  const select = (cell: string | null, panel: string) => {
-    setSelected(cell);
+  const select = (cells: string[] | null, panel: string) => {
+    setSelected(cells);
     setSelectedPanel(panel);
   };
   return (

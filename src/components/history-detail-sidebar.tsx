@@ -90,8 +90,9 @@ function DetailBody({ detail, onClose, selectedPanel, onSelectRow }: {
   onClose: () => void;
   // Ligne du panneau actuellement active (identité propre : chemin de nœud ou TOTAL_ROW).
   selectedPanel?: string | null;
-  // Sélection : (case du tableau à surligner | null, identité de la ligne du panneau).
-  onSelectRow?: (cell: string | null, panel: string) => void;
+  // Sélection : (cases du tableau à surligner | null, identité de la ligne du panneau).
+  // Plusieurs cases quand la ligne est une somme éclatée dans le tableau.
+  onSelectRow?: (cells: string[] | null, panel: string) => void;
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set());
   const toggle = (p: string) =>
@@ -145,20 +146,22 @@ function DetailBody({ detail, onClose, selectedPanel, onSelectRow }: {
         <Table>
           <TableBody>
             {rows.map((r) => {
-              // Toute ligne est cliquable et surligne une case du tableau : sa case
-              // dédiée si elle porte un ref, sinon la case d'origine du détail (celle
-              // dont on montre le calcul), qu'elle compose. La ligne active du panneau
+              // Toute ligne est cliquable et surligne une ou plusieurs cases du
+              // tableau : ses cases dédiées (refs) si son montant est une somme
+              // éclatée dans le tableau, sinon sa case (ref), sinon la case d'origine
+              // du détail (celle dont on montre le calcul). La ligne active du panneau
               // est identifiée par son propre chemin (r.path), donc cliquer une ligne
               // n'active jamais aussi la ligne « Total » — même si elles surlignent la
               // même case du tableau.
-              const cell = r.node.ref ?? detail.cellRef ?? null;
+              const cells =
+                r.node.refs ?? (r.node.ref ? [r.node.ref] : detail.cellRef ? [detail.cellRef] : null);
               return (
                 <DetailRow
                   key={r.path}
                   row={r}
                   selected={selectedPanel === r.path}
                   onToggle={() => toggle(r.path)}
-                  onSelect={onSelectRow ? () => onSelectRow(cell, r.path) : undefined}
+                  onSelect={onSelectRow ? () => onSelectRow(cells, r.path) : undefined}
                 />
               );
             })}
@@ -166,7 +169,7 @@ function DetailBody({ detail, onClose, selectedPanel, onSelectRow }: {
               // Le total correspond à la case du tableau qui a ouvert ce détail
               // (cellRef) : la cliquer surligne cette case. Identité propre (TOTAL_ROW)
               // pour n'activer que cette ligne.
-              const onTotal = onSelectRow ? () => onSelectRow(detail.cellRef ?? null, TOTAL_ROW) : undefined;
+              const onTotal = onSelectRow ? () => onSelectRow(detail.cellRef ? [detail.cellRef] : null, TOTAL_ROW) : undefined;
               const totalSelected = selectedPanel === TOTAL_ROW;
               return (
                 <TableRow
@@ -198,7 +201,7 @@ export function HistoryDetailSidebar({ detail, onClose, selectedPanel, onSelectR
   detail: CellDetail | null;
   onClose: () => void;
   selectedPanel?: string | null;
-  onSelectRow?: (cell: string | null, panel: string) => void;
+  onSelectRow?: (cells: string[] | null, panel: string) => void;
 }) {
   return (
     <Sidebar side="right" variant="inset" collapsible="offcanvas">

@@ -25,7 +25,9 @@ export function cellKey(row: string, col: Col, month: number): string {
 // des nœuds signés (Σ = result) dont certains sont dépliables (children), jusqu'aux
 // transactions. Le signe pilote l'opérateur affiché (+ / −). ref (optionnel) est la
 // clé de la case du tableau qui affiche ce montant, pour la surbrillance croisée.
-export type DetailNode = { label: string; amount: number; children?: DetailNode[]; ref?: string };
+// refs (optionnel) : plusieurs cases à surligner ensemble, quand le montant est une
+// somme qui n'apparaît nulle part telle quelle (il prime sur ref).
+export type DetailNode = { label: string; amount: number; children?: DetailNode[]; ref?: string; refs?: string[] };
 // cellRef : clé de la case du tableau qui a ouvert ce détail (son résultat). Permet
 // de surligner cette case en cliquant la ligne « Total » du side panel.
 // description : si présent, le détail est une explication de colonne (texte, un
