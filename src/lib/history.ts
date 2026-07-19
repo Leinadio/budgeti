@@ -39,6 +39,10 @@ export type HistorySection = {
   rows: HistoryRow[];
   totals: MonthCell[];
   txns?: HistoryTxn[]; // uniquement pour « uncategorized » : liste plate
+  // Uniquement pour « uncategorized » : sens des transactions de la section.
+  // Les non catégorisés sont scindés en deux : les reçus (« in », affichés sous les
+  // rémunérations) et les dépenses (« out », affichées après les enveloppes).
+  uncatDirection?: "in" | "out";
 };
 
 // Mois distincts « YYYY-MM » présents dans les transactions, triés croissant.
@@ -232,10 +236,11 @@ export function computeHistory(
     return { kind, rows, totals: sumRows(rows) };
   };
 
-  // Transactions sans groupe : listées par mois, avec un total Dépensé/Reçu.
-  const uncategorized = (): HistorySection | null => {
+  // Transactions sans groupe, scindées par sens : les reçus (« in », affichés sous
+  // les rémunérations) et les dépenses (« out », affichées après les enveloppes).
+  const uncategorized = (direction: "in" | "out"): HistorySection | null => {
     const mine = owned
-      .filter((o) => o.ownerId === null && inRange(o.t))
+      .filter((o) => o.ownerId === null && inRange(o.t) && (direction === "in" ? o.t.amount > 0 : o.t.amount < 0))
       .map((o) => o.t)
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
     if (mine.length === 0) return null;
@@ -247,10 +252,10 @@ export function computeHistory(
       // l'argent reçu n'est pas soustrait.
       return { budgeted: 0, depense, recu, balance: 0 };
     });
-    return { kind: "uncategorized", rows: [], totals, txns: mine.map(toHistoryTxn) };
+    return { kind: "uncategorized", rows: [], totals, txns: mine.map(toHistoryTxn), uncatDirection: direction };
   };
 
-  return [incomeSection(), section("recurring"), section("envelope"), uncategorized()].filter(
+  return [incomeSection(), uncategorized("in"), section("recurring"), section("envelope"), uncategorized("out")].filter(
     (s): s is HistorySection => s !== null,
   );
 }
@@ -291,7 +296,8 @@ export type SoldeColumn = {
   openings: number[];
   closings: number[];
   rowRunning: Record<number, number[]>;
-  uncategorizedRunning: number[] | null;
+  // Solde couru des deux étapes « non catégorisés » (reçus / dépenses), par sens.
+  uncategorizedRunning: { in?: number[]; out?: number[] } | null;
 };
 
 const cellNet = (c: MonthCell) => c.recu - c.depense;
@@ -346,13 +352,15 @@ export function computeSolde(
 
   // Accumulation ligne par ligne, dans l'ordre d'affichage des sections.
   const rowRunning: Record<number, number[]> = {};
-  let uncategorizedRunning: number[] | null = null;
+  let uncategorizedRunning: { in?: number[]; out?: number[] } | null = null;
   for (let i = 0; i < n; i++) {
     let run = openings[i];
     for (const sec of sections) {
       if (sec.kind === "uncategorized") {
         run += cellNet(sec.totals[i]);
-        (uncategorizedRunning ??= new Array<number>(n).fill(0))[i] = run;
+        const key = sec.uncatDirection ?? "out";
+        uncategorizedRunning ??= {};
+        (uncategorizedRunning[key] ??= new Array<number>(n).fill(0))[i] = run;
       } else {
         for (const r of sec.rows) {
           run += cellNet(r.cells[i]);

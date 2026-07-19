@@ -331,6 +331,12 @@ function overspendChildren(rows: { id: number; name: string; amount: number }[],
   return rows.map((g) => ({ label: g.name, amount: -g.amount, ref: cellKey(groupRow(g.id), "reste", i) }));
 }
 
+// Clé de ligne d'une section pour les data-cellkey. Les deux sections « non
+// catégorisés » (reçus / dépenses) ont chacune la leur.
+function sectionRowKey(sec: HistorySection): string {
+  return sec.kind === "uncategorized" && sec.uncatDirection === "in" ? "section:uncat-in" : sectionRow(sec.kind);
+}
+
 function labelOfSection(kind: HistorySection["kind"]): string {
   switch (kind) {
     case "income":
@@ -381,7 +387,7 @@ function sectionNode(sec: HistorySection, i: number, month: string, kind: "depen
             const gn = sec.rows.map((r) => groupNode(r, i, month, kind));
             return kind === "net" ? gn : gn.filter((n) => n.amount !== 0);
           })();
-  return { label: labelOfSection(sec.kind), amount, children, ref: cellKey(sectionRow(sec.kind), colOf(kind, t), i) };
+  return { label: labelOfSection(sec.kind), amount, children, ref: cellKey(sectionRowKey(sec), colOf(kind, t), i) };
 }
 
 // Détail « Solde actuel » (Argent de départ + chaque section, dépliable jusqu'aux
@@ -622,21 +628,29 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
 // donc leur somme aussi) : toujours cliquable. Pour les non catégorisés, budget et
 // balance sont toujours à 0 : l'invariant ne tient que si dépensé == 0, donc en
 // pratique non cliquable (comme documenté au Task 3 pour ce cas).
-function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planned, selCellKey, prevRowKey }: {
+function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPrevu, planDepass, uncatInSec, selCellKey, prevRowKey }: {
   sec: HistorySection;
   months: string[];
   currentMonth: string;
   onSelect?: (d: CellDetail) => void;
   solde?: (number | null)[];
-  // Soldes du plan (prévu / si dépassement), pour les non catégorisés : ils ne sont
-  // pas planifiés, donc le solde du plan les traverse sans changer.
-  planned?: PlannedSoldes;
+  // Soldes du plan (prévu / si dépassement) au niveau de cette ligne, pour les non
+  // catégorisés : ils ne sont pas planifiés, donc le solde du plan les traverse
+  // (les reçus reprennent la valeur après les rémunérations, les dépenses la
+  // clôture du plan).
+  planPrevu?: (number | null)[];
+  planDepass?: (number | null)[];
+  // Section « non catégorisés » côté reçus : fournie à la section côté dépenses
+  // pour calculer sa Balance (Reçu de la ligne du haut − Dépensé de celle-ci).
+  uncatInSec?: HistorySection;
   selCellKey?: ReadonlySet<string>;
   // Ligne dont le solde est le « Solde précédent » de cette section (prédécesseur).
   prevRowKey?: string;
 }) {
   const isUncat = sec.kind === "uncategorized";
-  const rowKey = sectionRow(sec.kind);
+  // Section « non catégorisés » côté reçus (affichée sous les rémunérations).
+  const uncatIn = isUncat && sec.uncatDirection === "in";
+  const rowKey = sectionRowKey(sec);
   return (
     <>
       {sec.totals.map((c, i) => {
@@ -661,18 +675,24 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planne
           : sec.rows.map((r) => groupNode(r, i, month, "recu")).filter((n) => n.amount !== 0);
         const recuDetail: CellDetail = makeDetail("Reçu", recuNodes ?? [], { subtitle, result: c.recu });
 
-        // Balance de la section. Pour les non catégorisés (aucun budget), c'est le
-        // mouvement net : Reçu − Dépensé — l'argent reçu compte, pas seulement le
-        // dépensé.
-        const resteVal = isUncat ? c.budgeted + c.recu - c.depense : c.balance;
-        // Balance toujours affichée → toujours cliquable. Décomposition : Reçu −
-        // Dépensé pour les non catégorisés, Budget − Dépensé pour les autres sections
-        // (quand l'invariant tient).
+        // Balance des non catégorisés (côté dépenses) : le mouvement net = Reçu de
+        // la ligne « Non catégorisés » du haut (reçus) − Dépensé de celle-ci.
+        const inRecu = uncatInSec?.totals[i]?.recu ?? 0;
+        const inRecuNodes = uncatInSec ? sectionTxnChildren(uncatInSec.txns, month, false, i) : undefined;
+        const resteVal = isUncat ? c.budgeted + inRecu - c.depense : c.balance;
+        // Balance toujours affichée → toujours cliquable. Décomposition : Reçu (ligne
+        // des reçus non catégorisés) − Dépensé pour les non catégorisés, Budget −
+        // Dépensé pour les autres sections (quand l'invariant tient).
         const resteDetail: CellDetail = makeDetail(
           "Balance",
           isUncat
             ? [
-                { label: "Reçu", amount: c.recu, ref: ck("recu"), children: recuNodes ?? undefined },
+                {
+                  label: "Reçu",
+                  amount: inRecu,
+                  ref: uncatInSec ? cellKey(sectionRowKey(uncatInSec), "recu", i) : undefined,
+                  children: inRecuNodes ?? undefined,
+                },
                 {
                   label: "Dépensé",
                   amount: -c.depense,
@@ -709,19 +729,19 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planne
             : null;
 
         // Dépassement des non catégorisés = la part rouge de leur Balance (dépensé
-        // au-delà du reçu). Sert au calcul du solde si dépassement. Mois futur :
-        // celui du mois courant, maintenu.
+        // au-delà des reçus non catégorisés). Sert au calcul du solde si dépassement.
+        // Mois futur : celui du mois courant, maintenu.
         const ciIdx = months.indexOf(currentMonth);
         const srcI = month <= currentMonth || ciIdx === -1 ? i : ciIdx;
         const cDep = sec.totals[srcI];
-        const depassVal = isUncat ? Math.max(0, cDep.depense - cDep.recu - cDep.budgeted) : 0;
+        const inRecuSrc = uncatInSec?.totals[srcI]?.recu ?? 0;
+        const depassVal = isUncat ? Math.max(0, cDep.depense - inRecuSrc - cDep.budgeted) : 0;
 
         // Non catégorisés traités comme une étape du plan : on part du dernier solde
-        // au-dessus (clôture du plan du mois) et on retire le Budget dépense (solde
-        // prévu) ou le Dépassement (solde si dépassement) de la ligne. Nuls sur les
-        // mois sans plan (avant le mois courant).
-        const prevuClose = planned?.prevuClosings[i] ?? null;
-        const depassClose = planned?.depassClosings[i] ?? null;
+        // au-dessus (fourni par planPrevu/planDepass) et on retire le Budget dépense
+        // (solde prévu) ou le Dépassement (solde si dépassement) de la ligne.
+        const prevuClose = planPrevu?.[i] ?? null;
+        const depassClose = planDepass?.[i] ?? null;
         const soldePrevuVal = prevuClose != null ? prevuClose - c.budgeted : null;
         const soldeDepassVal = depassClose != null ? depassClose - depassVal : null;
         const soldePrevuDetail: CellDetail | null =
@@ -751,30 +771,38 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planne
           budgetRem: (b) => (
             <TableCell key="budgetRem" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>—</TableCell>
           ),
-          budgetDep: (b) => (
-            <CellAmount key="budgetDep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} detail={budgetDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
-              {fmt(c.budgeted)}
-            </CellAmount>
-          ),
-          dep: (b) => (
-            <CellAmount key="dep" className={cn(b && "border-l", "text-right tabular-nums")} detail={depDetail} onSelect={onSelect} cellKey={ck("depense")} selCellKey={selCellKey}>
-              {fmt(c.depense)}
-            </CellAmount>
-          ),
-          // Récurrents / Enveloppes sont des dépenses : jamais de reçu → « — ». Les non
-          // catégorisés peuvent contenir un revenu non classé → on garde la valeur.
-          recu: (b) =>
+          // Les non catégorisés n'ont pas de budget : « — » (les deux lignes).
+          budgetDep: (b) =>
             isUncat ? (
+              <TableCell key="budgetDep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>—</TableCell>
+            ) : (
+              <CellAmount key="budgetDep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} detail={budgetDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
+                {fmt(c.budgeted)}
+              </CellAmount>
+            ),
+          dep: (b) =>
+            uncatIn ? (
+              <TableCell key="dep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>—</TableCell>
+            ) : (
+              <CellAmount key="dep" className={cn(b && "border-l", "text-right tabular-nums")} detail={depDetail} onSelect={onSelect} cellKey={ck("depense")} selCellKey={selCellKey}>
+                {fmt(c.depense)}
+              </CellAmount>
+            ),
+          // Seuls les non catégorisés côté reçus encaissent : les sections de dépense
+          // (Récurrents / Enveloppes / non catégorisés côté dépenses) affichent « — ».
+          recu: (b) =>
+            uncatIn ? (
               <CellAmount key="recu" className={cn(b && "border-l", "text-right tabular-nums")} detail={recuDetail} onSelect={onSelect} cellKey={ck("recu")} selCellKey={selCellKey}>
                 {fmt(c.recu)}
               </CellAmount>
             ) : (
               <TableCell key="recu" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>—</TableCell>
             ),
-          // Reste/Manque : affiché seulement pour les non catégorisés. Pour Récurrents /
-          // Enveloppes, le total est reporté sur des lignes dédiées en bas du tableau.
+          // Balance : affichée seulement pour les non catégorisés côté dépenses (les
+          // reçus n'ont pas de budget à confronter ; Récurrents / Enveloppes ont leurs
+          // lignes « Balance ... » dédiées).
           reste: (b) =>
-            isUncat ? (
+            isUncat && !uncatIn ? (
               <CellAmount key="reste" className={cn(b && "border-l", "text-right tabular-nums", resteColor(resteVal))} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
                 {fmt(resteVal)}
               </CellAmount>
@@ -1232,7 +1260,8 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
     const m = new Map<string, string[]>();
     for (const sec of sections) {
       if (sec.kind === "uncategorized") {
-        for (const t of sec.txns ?? []) m.set(txnRow(t.id), ["s:uncat"]);
+        const k = sec.uncatDirection === "in" ? "s:uncat-in" : "s:uncat";
+        for (const t of sec.txns ?? []) m.set(txnRow(t.id), [k]);
       } else {
         for (const r of sec.rows) {
           for (const t of r.txns) m.set(txnRow(t.id), [`g:${r.id}`]);
@@ -1254,7 +1283,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
   const prevSoldeRowKey = useMemo(() => {
     const stops: string[] = [openingRow];
     for (const sec of sections) {
-      if (sec.kind === "uncategorized") stops.push(sectionRow("uncategorized"));
+      if (sec.kind === "uncategorized") stops.push(sectionRowKey(sec));
       else for (const r of sec.rows) stops.push(groupRow(r.id));
     }
     const m = new Map<string, string>();
@@ -1499,6 +1528,47 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
     );
   };
 
+  // Ligne « Non catégorisés » d'une des deux sections (reçus / dépenses) : total
+  // dépliable sur ses transactions. Les reçus s'affichent sous les rémunérations,
+  // les dépenses après les enveloppes.
+  const renderUncatRows = (sec: HistorySection) => {
+    const dir = sec.uncatDirection ?? "out";
+    const uKey = dir === "in" ? "s:uncat-in" : "s:uncat";
+    const uOpen = isOpen(uKey);
+    const hasTxns = (sec.txns?.length ?? 0) > 0;
+    const rowKey = sectionRowKey(sec);
+    // Traverse du plan à ce niveau (lecture haut en bas) : après la dernière
+    // rémunération pour les reçus, clôture du plan (après toutes les lignes) pour
+    // les dépenses.
+    const lastIncome = sections.find((s) => s.kind === "income")?.rows.at(-1);
+    const planPrevu = dir === "in" && lastIncome ? planned.prevuRowRunning[lastIncome.id] : planned.prevuClosings;
+    const planDepass = dir === "in" && lastIncome ? planned.depassRowRunning[lastIncome.id] : planned.depassClosings;
+    return (
+      <>
+        <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
+          <NameCell indent={0} bg={MUTED40} expandable={hasTxns} expanded={uOpen} onToggle={hasTxns ? () => toggle(uKey) : undefined}>
+            <span className="min-w-0 truncate">Non catégorisés</span>
+          </NameCell>
+          <SectionTotalsCells
+            sec={sec}
+            months={months}
+            currentMonth={currentMonth}
+            onSelect={onSelect}
+            solde={solde.uncategorizedRunning?.[dir] ?? undefined}
+            planPrevu={planPrevu}
+            planDepass={planDepass}
+            uncatInSec={dir === "out" ? sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in") : undefined}
+            selCellKey={selCellKey}
+            prevRowKey={prevSoldeRowKey.get(rowKey)}
+          />
+        </TableRow>
+        {uOpen && sec.txns?.map((t) => (
+          <TxnRow key={t.id} txn={t} months={months} currentMonth={currentMonth} groups={groups} indent={1} onSelect={onSelect} selCellKey={selCellKey} />
+        ))}
+      </>
+    );
+  };
+
   return (
     // display:contents : ce conteneur ne crée pas de boîte (il n'affecte pas la
     // mise en page), il sert seulement d'ancre pour retrouver, par data-cellkey, la
@@ -1666,11 +1736,14 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
           const spacer = si > 0 ? <SpacerRow cols={totalCols} /> : null;
           if (sec.kind === "income") {
             // Rémunérations : lignes au niveau des sections, tout en haut, sans en-tête,
-            // suivies d'une ligne « Total rémunérations » (principale + supplémentaire).
+            // puis les reçus non catégorisés, puis une ligne « Total rémunérations »
+            // (principale + supplémentaire).
+            const uncatIn = sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in");
             return (
               <Fragment key={sec.kind}>
                 {spacer}
                 {sec.rows.map((r) => renderGroup(r, true))}
+                {uncatIn && renderUncatRows(uncatIn)}
                 <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
                   <TableCell className={cn("sticky left-0 z-10 p-0", MUTED40)}>
                     <FirstColBox>Total rémunérations</FirstColBox>
@@ -1681,21 +1754,13 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
             );
           }
           if (sec.kind === "uncategorized") {
-            const uKey = "s:uncat";
-            const uOpen = isOpen(uKey);
-            const hasTxns = (sec.txns?.length ?? 0) > 0;
+            // Les reçus non catégorisés sont rendus dans la section Rémunérations
+            // (ci-dessus) quand elle existe ; sinon ils s'affichent ici, à leur place.
+            if (sec.uncatDirection === "in" && sections.some((s) => s.kind === "income")) return null;
             return (
-              <Fragment key={sec.kind}>
+              <Fragment key={`uncat-${sec.uncatDirection ?? "out"}`}>
                 {spacer}
-                <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
-                  <NameCell indent={0} bg={MUTED40} expandable={hasTxns} expanded={uOpen} onToggle={hasTxns ? () => toggle(uKey) : undefined}>
-                    <span className="min-w-0 truncate">Non catégorisés</span>
-                  </NameCell>
-                  <SectionTotalsCells sec={sec} months={months} currentMonth={currentMonth} onSelect={onSelect} solde={solde.uncategorizedRunning ?? undefined} planned={planned} selCellKey={selCellKey} prevRowKey={prevSoldeRowKey.get(sectionRow("uncategorized"))} />
-                </TableRow>
-                {uOpen && sec.txns?.map((t) => (
-                  <TxnRow key={t.id} txn={t} months={months} currentMonth={currentMonth} groups={groups} indent={1} onSelect={onSelect} selCellKey={selCellKey} />
-                ))}
+                {renderUncatRows(sec)}
               </Fragment>
             );
           }
@@ -1762,10 +1827,11 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
             <FirstColBox><span className="text-muted-foreground">Dépassement hors budget</span></FirstColBox>
           </TableCell>
           {months.map((m, i) => {
-            const uncatSec = sections.find((s) => s.kind === "uncategorized");
-            const uncatT = uncatSec?.totals[i];
-            // Part rouge de la Balance des non catégorisés = dépensé au-delà du reçu.
-            const uncatDep = uncatT ? Math.max(0, uncatT.depense - uncatT.recu - uncatT.budgeted) : 0;
+            // Part rouge de la Balance des non catégorisés (ligne dépenses) = dépensé
+            // au-delà des reçus non catégorisés (la ligne du haut).
+            const uncatOutT = sections.find((s) => s.kind === "uncategorized" && (s.uncatDirection ?? "out") === "out")?.totals[i];
+            const uncatInT = sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in")?.totals[i];
+            const uncatDep = Math.max(0, (uncatOutT?.depense ?? 0) - (uncatInT?.recu ?? 0));
             const val = overspend[i] + uncatDep;
             const nodes: DetailNode[] = [
               ...sections

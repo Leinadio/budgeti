@@ -249,18 +249,28 @@ test("empty sections are omitted", () => {
   expect(sections.map((s) => s.kind)).toEqual(["envelope"]);
 });
 
-test("transactions with no group go to the uncategorized section with per-month totals", () => {
+test("transactions with no group are split into two uncategorized sections (in / out)", () => {
   const txns = [
     tx({ id: "1", date: "2026-07-05", amount: -40, label: "ACHAT X" }), // sortie non catégorisée
     tx({ id: "2", date: "2026-07-06", amount: 100, label: "REMBOURSEMENT" }), // entrée non catégorisée
     tx({ id: "3", date: "2026-07-07", amount: -25, label: "CARREFOUR", groupId: 1 }), // catégorisée
   ];
   const sections = computeHistory([courses], txns, ["2026-07"], "2026-07");
-  const uncat = sections.find((s) => s.kind === "uncategorized")!;
-  expect(uncat.txns!.map((t) => t.id).sort()).toEqual(["1", "2"]);
-  expect(uncat.txns!.every((t) => t.groupId === null)).toBe(true);
-  // balance (Reste) = 0 : les non catégorisés n'ont pas de budget, le reçu n'y entre pas.
-  expect(uncat.totals[0]).toEqual({ budgeted: 0, depense: 40, recu: 100, balance: 0 });
+  const uncatIn = sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in")!;
+  const uncatOut = sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "out")!;
+  // Les reçus dans la section « in » (affichée sous les rémunérations)…
+  expect(uncatIn.txns!.map((t) => t.id)).toEqual(["2"]);
+  expect(uncatIn.totals[0]).toEqual({ budgeted: 0, depense: 0, recu: 100, balance: 0 });
+  // … et les dépenses dans la section « out » (après les enveloppes).
+  expect(uncatOut.txns!.map((t) => t.id)).toEqual(["1"]);
+  expect(uncatOut.totals[0]).toEqual({ budgeted: 0, depense: 40, recu: 0, balance: 0 });
+  expect([...uncatIn.txns!, ...uncatOut.txns!].every((t) => t.groupId === null)).toBe(true);
+  // Ordre : les reçus juste après les rémunérations (ici : en tête), les dépenses en dernier.
+  expect(sections.map((s) => (s.kind === "uncategorized" ? `uncat-${s.uncatDirection}` : s.kind))).toEqual([
+    "uncat-in",
+    "envelope",
+    "uncat-out",
+  ]);
 });
 
 test("no uncategorized section when every transaction has a group", () => {
