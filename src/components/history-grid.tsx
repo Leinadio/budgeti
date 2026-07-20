@@ -156,6 +156,14 @@ const SOLDE_SEP = "border-l-2 border-l-muted-foreground/25";
 // la distingue de la bande grise des soldes.
 const BALANCE_TINT = "bg-[color-mix(in_oklab,oklch(0.75_0.16_80)_16%,var(--background))]";
 
+// Teinte de fond du bloc sortant (Récurrents, Enveloppes) : très légère, juste de
+// quoi séparer visuellement ce bloc du bloc entrant (Rémunérations) au-dessus,
+// sans gêner la lecture des montants rouges/verts. Posée uniquement sur les
+// lignes de groupe et les sous-totaux de section qui n'ont pas déjà de fond
+// (les bandes grises « Total … » gardent leur teinte existante, déjà assez
+// marquée pour se distinguer).
+const OUT_TINT = "bg-[color-mix(in_oklab,var(--muted)_12%,var(--background))]";
+
 // Rend les cellules d'un mois (une par colonne) et ajoute la bordure de séparation
 // sur la première colonne de solde. La teinte de fond des colonnes de solde est
 // posée par le <colgroup> du tableau (elle passe sous le fond des lignes de total,
@@ -465,6 +473,11 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
         const subtitle = subtitleOf?.(i);
         const r = detailRow;
         const ck = (col: Col) => cellKey(rowKey, col, i);
+        // Mois où ce groupe n'a pas encore de durée de vie / n'existe plus (Task 4) :
+        // les colonnes du groupe (budget, dépensé, reçu, reste) s'affichent vides —
+        // rien, pas « 0,00 ». Les colonnes de solde ne sont pas concernées : elles
+        // poursuivent leur propre chaîne cumulée indépendamment de ce groupe.
+        const dead = r ? r.aliveMonths[i] === false : false;
 
         // Dép. affiche c.depense sauf pour une entrée (—) : cliquable même à 0,00,
         // avec les transactions du mois si présentes, sinon aucune décomposition.
@@ -604,31 +617,36 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
         // Colonnes réelles : cliquables (détail + surbrillance) comme avant.
         // Colonnes de projection : désormais cliquables aussi (détail + clé de case).
         const slots: Record<ColKey, (border: boolean) => React.ReactNode> = {
-          budgetRem: (b) => (
-            <CellAmount key="budgetRem" className={cn(b && "border-l", "text-right tabular-nums")} detail={budgetRemDetail} onSelect={onSelect} cellKey={ck("revenus")} selCellKey={selCellKey}>
-              {budgetRemVal != null ? fmt(budgetRemVal) : "—"}
-            </CellAmount>
-          ),
-          budgetDep: (b) => (
-            <CellAmount key="budgetDep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} detail={budgetDepDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
-              {budgetDepVal != null ? fmt(budgetDepVal) : "—"}
-            </CellAmount>
-          ),
-          dep: (b) => (
-            <CellAmount key="dep" className={cn(b && "border-l", "text-right tabular-nums")} detail={depDetail} onSelect={onSelect} cellKey={ck("depense")} selCellKey={selCellKey}>
-              {mode === "in" ? "—" : fmt(c.depense)}
-            </CellAmount>
-          ),
-          recu: (b) => (
-            <CellAmount key="recu" className={cn(b && "border-l", "text-right tabular-nums")} detail={recuDetail} onSelect={onSelect} cellKey={ck("recu")} selCellKey={selCellKey}>
-              {mode === "out" ? "—" : fmt(c.recu)}
-            </CellAmount>
-          ),
-          reste: (b) => (
-            <CellAmount key="reste" className={cn(b && "border-l", "text-right tabular-nums", mode !== "in" && resteColor(c.balance))} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
-              {mode === "in" ? "" : fmt(c.balance)}
-            </CellAmount>
-          ),
+          budgetRem: (b) =>
+            dead ? blankCol("budgetRem", b) : (
+              <CellAmount key="budgetRem" className={cn(b && "border-l", "text-right tabular-nums")} detail={budgetRemDetail} onSelect={onSelect} cellKey={ck("revenus")} selCellKey={selCellKey}>
+                {budgetRemVal != null ? fmt(budgetRemVal) : "—"}
+              </CellAmount>
+            ),
+          budgetDep: (b) =>
+            dead ? blankCol("budgetDep", b) : (
+              <CellAmount key="budgetDep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} detail={budgetDepDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
+                {budgetDepVal != null ? fmt(budgetDepVal) : "—"}
+              </CellAmount>
+            ),
+          dep: (b) =>
+            dead ? blankCol("dep", b) : (
+              <CellAmount key="dep" className={cn(b && "border-l", "text-right tabular-nums")} detail={depDetail} onSelect={onSelect} cellKey={ck("depense")} selCellKey={selCellKey}>
+                {mode === "in" ? "—" : fmt(c.depense)}
+              </CellAmount>
+            ),
+          recu: (b) =>
+            dead ? blankCol("recu", b) : (
+              <CellAmount key="recu" className={cn(b && "border-l", "text-right tabular-nums")} detail={recuDetail} onSelect={onSelect} cellKey={ck("recu")} selCellKey={selCellKey}>
+                {mode === "out" ? "—" : fmt(c.recu)}
+              </CellAmount>
+            ),
+          reste: (b) =>
+            dead ? blankCol("reste", b) : (
+              <CellAmount key="reste" className={cn(b && "border-l", "text-right tabular-nums", mode !== "in" && resteColor(c.balance))} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
+                {mode === "in" ? "" : fmt(c.balance)}
+              </CellAmount>
+            ),
           soldeReel: (b) => (
             <CellAmount key="soldeReel" className={cn(b && "border-l", "text-right tabular-nums", s != null && s < -0.005 && "text-red-600")} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
               {s != null ? fmt(s) : ""}
@@ -1493,10 +1511,13 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
     const selfKey = groupRow(r.id);
     const hasChildren = r.subRows.length > 0 || r.txns.length > 0;
     const gOpen = isOpen(gKey);
+    // Bloc sortant (Récurrents / Enveloppes, r.direction === "out") : fond légèrement
+    // teinté pour le distinguer du bloc entrant (Rémunérations) au-dessus — cf. OUT_TINT.
+    const outTint = !topLevel && r.direction === "out";
     return (
       <Fragment key={r.id}>
-        <TableRow className={cn(topLevel ? "bg-muted/40 hover:bg-muted/40 font-medium" : hasChildren && "hover:bg-muted/50")}>
-          <NameCell indent={0} bg={topLevel ? MUTED40 : undefined} expandable={hasChildren} expanded={gOpen} onToggle={hasChildren ? () => toggle(gKey) : undefined}>
+        <TableRow className={cn(topLevel ? "bg-muted/40 hover:bg-muted/40 font-medium" : hasChildren && "hover:bg-muted/50", outTint && OUT_TINT)}>
+          <NameCell indent={0} bg={topLevel ? MUTED40 : outTint ? OUT_TINT : undefined} expandable={hasChildren} expanded={gOpen} onToggle={hasChildren ? () => toggle(gKey) : undefined}>
             {r.direction === "in" ? (
               <ArrowUpRight className="size-4 shrink-0 text-sky-600" />
             ) : (
@@ -1602,8 +1623,10 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
     if (!sec) return null;
     const rowKey = `reste:${kind}`;
     return (
-      <TableRow className="text-sm">
-        <TableCell className="bg-background sticky left-0 z-10 p-0">
+      // Sous-total de section (bloc sortant) : même teinte que les lignes de groupe
+      // Récurrents/Enveloppes juste au-dessus (cf. OUT_TINT).
+      <TableRow className={cn("text-sm", OUT_TINT)}>
+        <TableCell className={cn(OUT_TINT, "sticky left-0 z-10 p-0")}>
           <FirstColBox><span className="text-muted-foreground">{label}</span></FirstColBox>
         </TableCell>
         {months.map((m, i) => {
