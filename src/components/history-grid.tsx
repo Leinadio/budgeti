@@ -421,7 +421,7 @@ function soldeActuelDetail(
 // detailRow : ligne de groupe (transactions/postes) permettant de construire le
 // détail cliquable des cellules. Absente pour les sous-lignes (postes d'un
 // récurrent) : ces cellules restent non cliquables (hors périmètre, cf. ci-dessous).
-function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, subtitleOf, detailRow, months, currentMonth, rowKey, selCellKey, prevRowKey, incomeKind, depassCumulRows, accountId, decisionByKey }: {
+function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, subtitleOf, detailRow, months, currentMonth, rowKey, selCellKey, prevRowKey, incomeKind, depassCumulRows, accountId, decisionByKey, currentGroupBudget }: {
   cells: MonthCell[];
   mode: "out" | "in" | "total";
   solde?: (number | null)[];
@@ -452,6 +452,9 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
   // pour les sous-lignes (pas d'action sur un poste).
   accountId?: string;
   decisionByKey?: Map<string, "exceptional" | "permanent">;
+  // Budget en vigueur du groupe au mois courant : base de pré-remplissage du budget
+  // « permanent » (la hausse prend effet au mois courant, pas au mois cliqué).
+  currentGroupBudget?: number;
 }) {
   return (
     <>
@@ -501,7 +504,9 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
             month,
             amount: -c.balance,
             decision: decisionByKey?.get(`${r.id}::${month}`) ?? null,
-            currentBudget: c.budgeted,
+            // Budget courant (celui que la hausse « permanent » relèvera), pas celui
+            // du mois cliqué — repli sur le mois cliqué s'il n'est pas fourni.
+            currentBudget: currentGroupBudget ?? c.budgeted,
           };
         }
 
@@ -1527,6 +1532,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
             depassCumulRows={depassCumulByRow.get(r.id)}
             accountId={accountId}
             decisionByKey={decisionByKey}
+            currentGroupBudget={currentBudgets?.[r.id]}
           />
         </TableRow>
         {gOpen && (
