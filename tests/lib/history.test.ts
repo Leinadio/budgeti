@@ -577,4 +577,25 @@ describe("durée de vie des groupes", () => {
     const row = sections.flatMap((s) => s.rows).find((r) => r.id === 52)!;
     expect(row.cells[1].depense).toBe(0); // le groupe mort ne la porte pas
   });
+
+  it("les postes (subRows) d'un récurrent à durée de vie bornée passent aussi à 0 hors durée de vie", () => {
+    const aboBorne: Group = { ...abo, id: 53, name: "Abonnements bornés", startMonth: "2026-07", endMonth: "2026-08" };
+    const months = ["2026-06", "2026-07", "2026-08", "2026-09"];
+    const sections = computeHistory([aboBorne], [], months, "2026-07");
+    const row = sections.flatMap((s) => s.rows).find((r) => r.id === 53)!;
+    const spotify = row.subRows.find((s) => s.id === 11)!;
+    const netflix = row.subRows.find((s) => s.id === 12)!;
+    // Ligne du groupe : cohérente avec aliveMonths (déjà couvert par un test existant).
+    expect(row.cells[0].budgeted).toBe(0); // juin : mort
+    expect(row.cells[3].budgeted).toBe(0); // septembre : mort
+    // Postes (subRows) : doivent suivre le même sort que la ligne du groupe.
+    expect(spotify.cells[0].budgeted).toBe(0); // juin : mort
+    expect(spotify.cells[1].budgeted).toBe(10); // juillet : vivant
+    expect(spotify.cells[2].budgeted).toBe(10); // août : vivant
+    expect(spotify.cells[3].budgeted).toBe(0); // septembre : mort
+    expect(netflix.cells[0].budgeted).toBe(0); // juin : mort
+    expect(netflix.cells[1].budgeted).toBe(15); // juillet : vivant
+    expect(netflix.cells[2].budgeted).toBe(15); // août : vivant
+    expect(netflix.cells[3].budgeted).toBe(0); // septembre : mort
+  });
 });

@@ -209,7 +209,7 @@ export function computeHistory(
       return {
         id: l.id,
         name: l.name,
-        cells: cellsFor(() => l.amount, isOut, realizedOf),
+        cells: cellsFor((m) => (isGroupAlive(g, m) ? l.amount : 0), isOut, realizedOf),
         txns: lineTxns.filter(inRange).map(toHistoryTxn),
       };
     });
