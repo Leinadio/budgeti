@@ -92,23 +92,37 @@ function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
   const [openForm, setOpenForm] = useState(false);
   const [value, setValue] = useState(() => String(Math.round(((action.currentBudget ?? 0) + action.amount) * 100) / 100));
   const [busy, setBusy] = useState(false);
+  // Décision affichée : celle déjà en base à l'ouverture, mise à jour tout de suite
+  // après un choix pour que la question disparaisse sans attendre un nouveau clic.
+  const [decided, setDecided] = useState<"exceptional" | "permanent" | null>(action.decision);
   const decide = async (decision: "exceptional" | "permanent", newBudget?: number) => {
     setBusy(true);
     await decideOverspend(action.accountId, action.groupId, action.month, decision, newBudget);
     setBusy(false);
     setOpenForm(false);
+    setDecided(decision);
     router.refresh();
   };
+  // Une fois tranché : on masque la question et les boutons, on montre le choix, avec
+  // la possibilité de le modifier.
+  if (decided) {
+    return (
+      <div className="mt-4 rounded-md border p-3 text-sm">
+        <p>
+          Décidé : {decided === "exceptional" ? "exceptionnel" : "permanent"} pour le dépassement de{" "}
+          {fmtAbs(action.amount)} en {monthLabel(action.month)}.
+        </p>
+        <button type="button" onClick={() => setDecided(null)} className="text-muted-foreground mt-2 underline decoration-dotted underline-offset-2 hover:no-underline">
+          Modifier
+        </button>
+      </div>
+    );
+  }
   return (
     <div className="mt-4 rounded-md border p-3 text-sm">
       <p>
         Dépassement de {fmtAbs(action.amount)} en {monthLabel(action.month)} — que veux-tu en faire ?
       </p>
-      {action.decision && (
-        <p className="text-muted-foreground mt-1">
-          Décidé : {action.decision === "exceptional" ? "exceptionnel" : "permanent"} (modifiable)
-        </p>
-      )}
       <div className="mt-2 flex gap-2">
         <button type="button" disabled={busy} onClick={() => decide("exceptional")} className="rounded-md border px-2 py-1 hover:bg-muted">
           Exceptionnel

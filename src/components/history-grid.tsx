@@ -1277,7 +1277,7 @@ function scrollableAncestor(el: HTMLElement, axis: "x" | "y"): HTMLElement | nul
   return null;
 }
 
-export function HistoryGrid({ months, currentMonth, forecast, sections, overspend, grand, groups, solde, planned, retained, onSelect, selected, anchor, accountId, decisions, pendingClosed, currentBudgets }: {
+export function HistoryGrid({ months, currentMonth, forecast, sections, overspend, grand, groups, solde, planned, retained, onSelect, selected, anchor, accountId, decisions, pending, currentBudgets }: {
   months: string[];
   currentMonth: string;
   forecast: AccountForecast;
@@ -1302,9 +1302,11 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
   accountId: string;
   // Décisions déjà prises sur des dépassements (groupId, mois), chargées en page.
   decisions?: OverspendDecisionInfo[];
-  // Dépassements de mois terminés sans décision (pastilles) et budgets courants par
-  // groupe (pré-remplissage de la décision) : Task 7.
+  // Dépassements de mois terminés sans décision (bandeau, hérité via les props),
+  // tous les dépassements non tranchés — un par groupe — pour les pastilles, et les
+  // budgets courants par groupe (pré-remplissage de la décision).
   pendingClosed?: PendingOverspend[];
+  pending?: PendingOverspend[];
   currentBudgets?: Record<number, number>;
 }) {
   // Décision déjà prise, indexée par « groupId::mois » : sert à attacher
@@ -1313,12 +1315,13 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
     () => new Map((decisions ?? []).map((d) => [`${d.groupId}::${d.month}`, d.decision])),
     [decisions],
   );
-  // Premier dépassement en attente par groupe (le plus ancien), pour la pastille.
+  // Un dépassement non tranché par groupe (le plus récent, mois courant inclus),
+  // pour la pastille : chaque élément qui dépasse et attend une décision est marqué.
   const pendingByGroup = useMemo(() => {
     const m = new Map<number, PendingOverspend>();
-    for (const p of pendingClosed ?? []) if (!m.has(p.groupId)) m.set(p.groupId, p);
+    for (const p of pending ?? []) if (!m.has(p.groupId)) m.set(p.groupId, p);
     return m;
-  }, [pendingClosed]);
+  }, [pending]);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const toggle = (k: string) =>
     setOpen((prev) => {

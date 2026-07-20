@@ -25,9 +25,11 @@ export function HistoryWithDetail(props: {
   // bloc de décision du side panel (Task 6).
   accountId: string;
   decisions?: { groupId: number; month: string; decision: "exceptional" | "permanent" }[];
-  // Dépassements de mois terminés sans décision (bandeau) et budgets courants par
-  // groupe (pré-remplissage de la décision) : Task 7.
+  // Dépassements de mois terminés sans décision (bandeau) ; tous les dépassements
+  // non tranchés, un par groupe (pastilles) ; budgets courants par groupe
+  // (pré-remplissage de la décision).
   pendingClosed?: PendingOverspend[];
+  pending?: PendingOverspend[];
   currentBudgets?: Record<number, number>;
 }) {
   const { setDetail, selected, anchor } = useDetailSidebar();

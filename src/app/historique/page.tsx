@@ -143,6 +143,7 @@ export default async function HistoriquePage({
                   accountId={a.id}
                   decisions={decisions.map(({ groupId, month, decision }) => ({ groupId, month, decision }))}
                   pendingClosed={overspends.pendingClosed}
+                  pending={overspends.pending}
                   currentBudgets={currentBudgets}
                 />
               )}

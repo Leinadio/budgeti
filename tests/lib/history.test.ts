@@ -514,6 +514,12 @@ test("computeOverspends : en attente sur mois terminés, retenu = le plus récen
   // Retenu pour les projections : le plus récent non tranché de Courses = juillet (80).
   expect(r.retained.byGroup[1]).toBe(80);
   expect(r.retained.uncat).toBe(80); // juin, seul mois uncat non tranché
+  // Pastilles : un dépassement non tranché par élément (le plus récent), mois courant
+  // inclus — Courses pointe sur juillet (80, le mois courant), les non catégorisés sur juin.
+  expect(r.pending).toEqual([
+    { groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 80 },
+    { groupId: 1, name: "Courses", month: "2026-07", amount: 80 },
+  ]);
 });
 
 test("computeOverspends : une décision sort le dépassement des rappels et du retenu", () => {
