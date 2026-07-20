@@ -83,3 +83,27 @@ CREATE TABLE IF NOT EXISTS reconcile_ignored (
   synced_id TEXT NOT NULL,
   PRIMARY KEY (manual_id, synced_id)
 );
+
+-- Budgets datés : montant d'un groupe à partir d'un mois donné. Le montant en
+-- vigueur pour un mois M est celui de la ligne au plus grand effective_month <= M ;
+-- sans ligne applicable, on retombe sur groups.monthly_amount.
+CREATE TABLE IF NOT EXISTS budget_amounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  effective_month TEXT NOT NULL,   -- YYYY-MM
+  amount REAL NOT NULL,
+  UNIQUE(group_id, effective_month)
+);
+
+-- Décision de l'utilisateur sur un dépassement (un groupe x un mois).
+-- group_id = 0 désigne les Non catégorisés du compte (pas de FK volontairement).
+-- L'absence de ligne = non tranché. Le dernier choix gagne (upsert).
+CREATE TABLE IF NOT EXISTS overspend_decisions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id TEXT NOT NULL REFERENCES accounts(id),
+  group_id INTEGER NOT NULL,       -- 0 = non catégorisés
+  month TEXT NOT NULL,             -- YYYY-MM
+  decision TEXT NOT NULL CHECK (decision IN ('exceptional', 'permanent')),
+  decided_at TEXT NOT NULL,        -- ISO datetime
+  UNIQUE(account_id, group_id, month)
+);
