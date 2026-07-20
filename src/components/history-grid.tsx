@@ -1554,6 +1554,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
                 direction: r.direction,
                 incomeKind: null,
                 cells: sub.cells,
+                aliveMonths: r.aliveMonths,
                 subRows: [],
                 txns: sub.txns,
               };

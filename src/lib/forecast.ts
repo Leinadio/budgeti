@@ -37,6 +37,15 @@ export type Txn = {
   incomeKind?: "principal" | "supplementary" | null;
 };
 
+// Un groupe est vivant au mois m si son mois de départ est atteint et que sa
+// fin (si définie) n'est pas dépassée. Sans bornes (fixtures / groupes hérités),
+// il est vivant partout.
+export function isGroupAlive(g: Pick<Group, "startMonth" | "endMonth">, month: string): boolean {
+  if (g.startMonth != null && month < g.startMonth) return false;
+  if (g.endMonth != null && month > g.endMonth) return false;
+  return true;
+}
+
 export type TimelineItem = { day: number; name: string; amount: number; seen: boolean };
 
 export type GroupView = {

@@ -1,6 +1,6 @@
-import { expect, test } from "vitest";
+import { expect, test, describe, it } from "vitest";
 import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde, computePlannedSoldes, budgetInForce, toDatedBudgets, computeOverspends } from "../../src/lib/history";
-import type { Group, Txn } from "../../src/lib/forecast";
+import { isGroupAlive, type Group, type Txn } from "../../src/lib/forecast";
 
 const courses: Group = {
   id: 1, accountId: "a1", name: "Courses", direction: "out", kind: "envelope",
@@ -538,4 +538,43 @@ test("computeOverspends : une décision sort le dépassement des rappels et du r
   ]);
   expect(r2.pendingClosed).toEqual([]);
   expect(r2.retained.byGroup[1] ?? 0).toBe(0);
+});
+
+describe("durée de vie des groupes", () => {
+  it("isGroupAlive borne par start et end", () => {
+    const g = { startMonth: "2026-07", endMonth: "2026-08" };
+    expect(isGroupAlive(g, "2026-06")).toBe(false);
+    expect(isGroupAlive(g, "2026-07")).toBe(true);
+    expect(isGroupAlive(g, "2026-08")).toBe(true);
+    expect(isGroupAlive(g, "2026-09")).toBe(false);
+    expect(isGroupAlive({ startMonth: null, endMonth: null }, "2026-07")).toBe(true);
+    expect(isGroupAlive({ startMonth: "2026-07", endMonth: null }, "2030-01")).toBe(true);
+  });
+
+  it("un groupe ponctuel n'a de budget que dans son mois de départ", () => {
+    const ponctuel: Group = { ...courses, id: 50, name: "Cadeau", startMonth: "2026-07", endMonth: "2026-07" };
+    const months = ["2026-06", "2026-07", "2026-08"];
+    const sections = computeHistory([ponctuel], [], months, "2026-07");
+    const row = sections.flatMap((s) => s.rows).find((r) => r.id === 50)!;
+    expect(row.cells[0].budgeted).toBe(0); // juin : mort
+    expect(row.cells[1].budgeted).toBe(300); // juillet : vivant
+    expect(row.cells[2].budgeted).toBe(0); // août : mort
+    expect(row.aliveMonths).toEqual([false, true, false]);
+  });
+
+  it("un groupe qui démarre plus tard n'apparaît pas s'il n'est vivant sur aucun mois affiché", () => {
+    const futur: Group = { ...courses, id: 51, name: "Futur", startMonth: "2026-10", endMonth: null };
+    const sections = computeHistory([futur], [], ["2026-07", "2026-08"], "2026-07");
+    expect(sections.flatMap((s) => s.rows).some((r) => r.id === 51)).toBe(false);
+  });
+
+  it("une dépense d'un mois où le groupe est mort bascule en non catégorisés", () => {
+    const ponctuel: Group = { ...courses, id: 52, name: "Cadeau", startMonth: "2026-07", endMonth: "2026-07" };
+    const txn: Txn = { id: "t1", date: "2026-08-05", amount: -40, label: "x", accountId: "a1", groupId: 52 };
+    const sections = computeHistory([ponctuel], [txn], ["2026-07", "2026-08"], "2026-07");
+    const uncatOut = sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "out");
+    expect(uncatOut?.totals[1].depense).toBe(40); // août : la dépense retombe en non catégorisés
+    const row = sections.flatMap((s) => s.rows).find((r) => r.id === 52)!;
+    expect(row.cells[1].depense).toBe(0); // le groupe mort ne la porte pas
+  });
 });

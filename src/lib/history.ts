@@ -1,5 +1,5 @@
 import { resolveOwnership, type OwnableGroup, type OwnedTxn } from "./ownership";
-import type { Group, Txn } from "./forecast";
+import { type Group, type Txn, isGroupAlive } from "./forecast";
 
 // depense et recu séparés selon le sens du groupe (une seule des deux est non nulle
 // pour une ligne ; les sous-totaux additionnent les deux). balance = « Reste » de
@@ -31,6 +31,7 @@ export type HistoryRow = {
   direction: "in" | "out";
   incomeKind: "principal" | "supplementary" | null; // classe de revenu (null hors rémunération)
   cells: MonthCell[]; // alignées sur la liste des mois passée à computeHistory
+  aliveMonths: boolean[]; // aligné sur months : le groupe est-il vivant ce mois-là
   subRows: HistorySubRow[]; // lignes des récurrents (vide pour une enveloppe)
   txns: HistoryTxn[]; // transactions directement sous le groupe (enveloppe, ou récurrent sans ligne)
 };
@@ -145,8 +146,10 @@ export function computeHistory(
   const owned = txns.map((t) => {
     const o: OwnedTxn = { id: t.id, date: t.date, amount: t.amount, label: t.label, accountId: t.accountId, groupId: t.groupId, excluded: t.excluded };
     const res = resolveOwnership(o, ownable);
-    const ownerId = res.status === "manual" ? res.groupId : null;
-    return { t, ownerId, month: t.date.slice(0, 7) };
+    const month = t.date.slice(0, 7);
+    const g = res.status === "manual" ? groups.find((x) => x.id === res.groupId) : undefined;
+    const ownerId = g && isGroupAlive(g, month) ? g.id : null;
+    return { t, ownerId, month };
   });
 
   const spent = (gid: number, m: string) =>
@@ -194,7 +197,8 @@ export function computeHistory(
       .filter((o) => o.ownerId === g.id)
       .map((o) => o.t)
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-    const cells = cellsFor((m) => budgetInForce(g, m, dated), isOut, (m) => spent(g.id, m));
+    const cells = cellsFor((m) => (isGroupAlive(g, m) ? budgetInForce(g, m, dated) : 0), isOut, (m) => spent(g.id, m));
+    const aliveMonths = months.map((m) => isGroupAlive(g, m));
 
     // Sous-groupes : une ligne par poste du récurrent ; les projections gardent
     // juste le budget de la ligne (pas de dépassement au niveau ligne).
@@ -214,7 +218,7 @@ export function computeHistory(
     // récurrent dont la transaction ne matche aucune ligne.
     const groupTxns = mine.filter((t) => lineOf(g, t) === null && inRange(t)).map(toHistoryTxn);
 
-    return { id: g.id, name: g.name, kind: g.kind, direction: g.direction, incomeKind: g.incomeKind ?? null, cells, subRows, txns: groupTxns };
+    return { id: g.id, name: g.name, kind: g.kind, direction: g.direction, incomeKind: g.incomeKind ?? null, cells, aliveMonths, subRows, txns: groupTxns };
   };
 
   const sumRows = (rows: HistoryRow[]): MonthCell[] =>
@@ -236,6 +240,7 @@ export function computeHistory(
   const incomeSection = (): HistorySection | null => {
     const rows = groups
       .filter((g) => g.direction === "in")
+      .filter((g) => months.some((m) => isGroupAlive(g, m)))
       .sort((a, b) => incomeRank(a) - incomeRank(b))
       .map(rowFor);
     if (rows.length === 0) return null;
@@ -252,7 +257,10 @@ export function computeHistory(
   // Sections de dépenses : uniquement les groupes de sortie ; les rémunérations
   // sont sorties dans leur propre section (voir incomeSection).
   const section = (kind: "envelope" | "recurring"): HistorySection | null => {
-    const rows = groups.filter((g) => g.kind === kind && g.direction === "out").map(rowFor);
+    const rows = groups
+      .filter((g) => g.kind === kind && g.direction === "out")
+      .filter((g) => months.some((m) => isGroupAlive(g, m)))
+      .map(rowFor);
     if (rows.length === 0) return null;
     return { kind, rows, totals: sumRows(rows) };
   };
@@ -441,6 +449,7 @@ export function sliceHistorySections(sections: HistorySection[], calcMonths: str
     rows: sec.rows.map((r) => ({
       ...r,
       cells: r.cells.slice(k),
+      aliveMonths: r.aliveMonths.slice(k),
       subRows: r.subRows.map((s) => ({ ...s, cells: s.cells.slice(k), txns: s.txns.filter((t) => keep.has(t.month)) })),
       txns: r.txns.filter((t) => keep.has(t.month)),
     })),
