@@ -1,6 +1,6 @@
 "use client";
 import { Fragment, cloneElement, isValidElement, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, ArrowDownRight, ChevronDown, ChevronRight, Plus } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, ChevronDown, ChevronRight, Plus, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { monthLabel } from "@/lib/transactions-view";
 import type { AccountForecast } from "@/lib/forecast";
@@ -30,8 +30,14 @@ import {
 // (Task 4). groupId = 0 pour les non catégorisés.
 type OverspendDecisionInfo = { groupId: number; month: string; decision: "exceptional" | "permanent" };
 
-// Groupes du compte, pour le menu de (ré)assignation sur chaque transaction.
-type SelectGroup = { id: number; name: string; lines: { id: number; name: string }[] };
+// Groupes du compte, pour le menu de (ré)assignation sur chaque transaction et la
+// gestion d'un groupe (Task 6 : kind + lignes complètes pour alimenter le side panel).
+type SelectGroup = {
+  id: number;
+  name: string;
+  kind: "envelope" | "recurring";
+  lines: { id: number; name: string; amount: number; day: number }[];
+};
 const MUTED40 = "bg-[color-mix(in_oklab,var(--muted)_40%,var(--background))]";
 // Surbrillance de la case sélectionnée depuis le side panel : fond teinté + anneau.
 const CELL_HL = "bg-[color-mix(in_oklab,var(--primary)_22%,var(--background))] ring-1 ring-inset ring-primary/60";
@@ -1526,9 +1532,28 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
     // Bloc sortant (Récurrents / Enveloppes, r.direction === "out") : fond légèrement
     // teinté pour le distinguer du bloc entrant (Rémunérations) au-dessus — cf. OUT_TINT.
     const outTint = !topLevel && r.direction === "out";
+    // Détail « gestion du groupe » ouvert par l'icône au survol. Le mois visé est le
+    // mois courant s'il est affiché, sinon le premier mois de la frise (jamais dans
+    // le passé pour un montant appliqué « à partir de ce mois »). Nature et lignes
+    // viennent du SelectGroup enrichi (pas de requête supplémentaire).
+    const sg = groups.find((g) => g.id === r.id);
+    const manageMonth = months.includes(currentMonth) ? currentMonth : months[0];
+    const manageDetail: CellDetail = {
+      title: r.name,
+      nodes: [],
+      result: 0,
+      groupManage: {
+        groupId: r.id,
+        name: r.name,
+        kind: sg?.kind ?? "envelope",
+        month: manageMonth,
+        currentAmount: currentBudgets?.[r.id] ?? 0,
+        lines: sg?.lines ?? [],
+      },
+    };
     return (
       <Fragment key={r.id}>
-        <TableRow className={cn(topLevel ? "bg-muted/40 hover:bg-muted/40 font-medium" : hasChildren && "hover:bg-muted/50", outTint && OUT_TINT)}>
+        <TableRow className={cn("group", topLevel ? "bg-muted/40 hover:bg-muted/40 font-medium" : hasChildren && "hover:bg-muted/50", outTint && OUT_TINT)}>
           <NameCell indent={0} bg={topLevel ? MUTED40 : outTint ? OUT_TINT : undefined} expandable={hasChildren} expanded={gOpen} onToggle={hasChildren ? () => toggle(gKey) : undefined}>
             {r.direction === "in" ? (
               <ArrowUpRight className="size-4 shrink-0 text-sky-600" />
@@ -1549,6 +1574,18 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                 className="ml-1 inline-block size-2 shrink-0 rounded-full bg-amber-500"
               />
             )}
+            {/* Gérer le groupe : icône discrète révélée au survol de la ligne. */}
+            <button
+              type="button"
+              aria-label="Gérer le groupe"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSelect(manageDetail);
+              }}
+              className="text-muted-foreground hover:text-foreground ml-1 shrink-0 opacity-0 group-hover:opacity-100"
+            >
+              <Pencil className="size-3.5" />
+            </button>
           </NameCell>
           <AmountCells
             cells={r.cells}

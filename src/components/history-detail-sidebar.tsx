@@ -1,13 +1,24 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { X, ChevronRight, ChevronDown } from "lucide-react";
+import { X, ChevronRight, ChevronDown, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { CellDetail, DetailNode, OverspendActionInfo } from "@/lib/history-explain";
+import type { CellDetail, DetailNode, OverspendActionInfo, GroupManageInfo } from "@/lib/history-explain";
 import { monthLabel } from "@/lib/transactions-view";
-import { decideOverspend } from "@/app/historique/actions";
+import {
+  decideOverspend,
+  renameGroupAction,
+  deleteGroupAction,
+  setGroupAmount,
+  addGroupLine,
+  editGroupLine,
+  removeGroupLine,
+} from "@/app/historique/actions";
 import { Sidebar, SidebarHeader, SidebarContent } from "@/components/ui/sidebar";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 
 const NUM = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtAbs = (n: number) => NUM.format(Math.abs(n) < 0.005 ? 0 : Math.abs(n)).replace(/[  ]/g, " ");
@@ -159,6 +170,205 @@ function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
   );
 }
 
+// Une ligne d'un récurrent en édition : nom / montant / jour, avec son propre état
+// local (initialisé sur la ligne). « Enregistrer » applique editGroupLine, la
+// corbeille supprime la ligne (removeGroupLine).
+function LineRow({ line, busy, onSave, onRemove }: {
+  line: { id: number; name: string; amount: number; day: number };
+  busy: boolean;
+  onSave: (name: string, amount: number, day: number) => void;
+  onRemove: () => void;
+}) {
+  const [name, setName] = useState(line.name);
+  const [amount, setAmount] = useState(String(line.amount));
+  const [day, setDay] = useState(String(line.day));
+  return (
+    <div className="flex items-end gap-2">
+      <div className="flex min-w-0 flex-1 flex-col gap-1">
+        <Label className="text-muted-foreground text-xs font-normal">Nom</Label>
+        <Input value={name} onChange={(e) => setName(e.target.value)} className="h-8" />
+      </div>
+      <div className="flex w-20 flex-col gap-1">
+        <Label className="text-muted-foreground text-xs font-normal">Montant</Label>
+        <Input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} className="h-8 text-right tabular-nums" />
+      </div>
+      <div className="flex w-14 flex-col gap-1">
+        <Label className="text-muted-foreground text-xs font-normal">Jour</Label>
+        <Input type="number" min="1" max="31" value={day} onChange={(e) => setDay(e.target.value)} className="h-8 text-right tabular-nums" />
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        disabled={busy || !name.trim()}
+        onClick={() => onSave(name.trim(), parseFloat(amount) || 0, parseInt(day, 10) || 1)}
+      >
+        Enregistrer
+      </Button>
+      <Button type="button" size="icon-xs" variant="ghost" disabled={busy} aria-label="Supprimer la ligne" onClick={onRemove}>
+        <Trash2 className="text-muted-foreground size-4" />
+      </Button>
+    </div>
+  );
+}
+
+// Vue de gestion d'un groupe (ouverte depuis l'icône au survol d'une ligne de
+// groupe) : renommer, fixer le montant daté (enveloppe), gérer les lignes
+// (récurrent) et supprimer le groupe. Chaque action revalide côté serveur ; on
+// rafraîchit ensuite la vue pour refléter le changement.
+function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: () => void }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [name, setName] = useState(info.name);
+  const [amount, setAmount] = useState(() => String(info.currentAmount));
+  const [scope, setScope] = useState<"ongoing" | "once">("ongoing");
+  const [newName, setNewName] = useState("");
+  const [newAmount, setNewAmount] = useState("");
+  const [newDay, setNewDay] = useState("1");
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    await fn();
+    setBusy(false);
+    router.refresh();
+  };
+  return (
+    <>
+      <SidebarHeader className="gap-0 border-b p-4">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-muted-foreground text-sm">Gérer le groupe</p>
+            <h2 className="font-semibold">{info.name}</h2>
+          </div>
+          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground shrink-0 rounded p-1" aria-label="Fermer">
+            <X className="size-4" />
+          </button>
+        </div>
+      </SidebarHeader>
+      <SidebarContent className="space-y-6 p-4">
+        {/* Renommer */}
+        <div className="flex flex-col gap-2">
+          <Label className="font-normal">Nom du groupe</Label>
+          <div className="flex items-center gap-2">
+            <Input value={name} onChange={(e) => setName(e.target.value)} className="h-9 flex-1" />
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={busy || !name.trim() || name.trim() === info.name}
+              onClick={() => run(() => renameGroupAction(info.groupId, name))}
+            >
+              Renommer
+            </Button>
+          </div>
+        </div>
+
+        {/* Montant daté (enveloppe) */}
+        {info.kind === "envelope" && (
+          <div className="flex flex-col gap-2">
+            <Label className="font-normal">Montant pour {monthLabel(info.month)}</Label>
+            <div className="flex flex-wrap items-end gap-2">
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="h-9 w-28 text-right tabular-nums"
+              />
+              <select
+                value={scope}
+                onChange={(e) => setScope(e.target.value as "ongoing" | "once")}
+                className="h-9 rounded-md border bg-transparent px-2 text-sm"
+              >
+                <option value="ongoing">À partir de ce mois</option>
+                <option value="once">Ce mois seulement</option>
+              </select>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={busy || !(parseFloat(amount) >= 0)}
+                onClick={() => run(() => setGroupAmount(info.groupId, info.month, parseFloat(amount), scope))}
+              >
+                Appliquer
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Lignes (récurrent) */}
+        {info.kind === "recurring" && (
+          <div className="flex flex-col gap-3">
+            <Label className="font-normal">Lignes</Label>
+            {info.lines.length === 0 && <p className="text-muted-foreground text-sm">Aucune ligne pour l&apos;instant.</p>}
+            {info.lines.map((l) => (
+              <LineRow
+                key={l.id}
+                line={l}
+                busy={busy}
+                onSave={(n, a, d) => run(() => editGroupLine(l.id, n, a, d))}
+                onRemove={() => run(() => removeGroupLine(l.id))}
+              />
+            ))}
+            {/* Ajout d'une ligne */}
+            <div className="mt-1 flex items-end gap-2 border-t pt-3">
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                <Label className="text-muted-foreground text-xs font-normal">Nom</Label>
+                <Input value={newName} onChange={(e) => setNewName(e.target.value)} className="h-8" placeholder="Ex: Spotify" />
+              </div>
+              <div className="flex w-20 flex-col gap-1">
+                <Label className="text-muted-foreground text-xs font-normal">Montant</Label>
+                <Input type="number" step="0.01" min="0" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} className="h-8 text-right tabular-nums" placeholder="0.00" />
+              </div>
+              <div className="flex w-14 flex-col gap-1">
+                <Label className="text-muted-foreground text-xs font-normal">Jour</Label>
+                <Input type="number" min="1" max="31" value={newDay} onChange={(e) => setNewDay(e.target.value)} className="h-8 text-right tabular-nums" />
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={busy || !newName.trim()}
+                onClick={() =>
+                  run(async () => {
+                    await addGroupLine(info.groupId, newName.trim(), parseFloat(newAmount) || 0, parseInt(newDay, 10) || 1);
+                    setNewName("");
+                    setNewAmount("");
+                    setNewDay("1");
+                  })
+                }
+              >
+                Ajouter
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Suppression du groupe */}
+        <div className="border-t pt-4">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            disabled={busy}
+            className="text-red-600 hover:text-red-700"
+            onClick={() => {
+              if (!window.confirm("Supprimer ce groupe ? Ses transactions repasseront en Non catégorisés.")) return;
+              run(async () => {
+                await deleteGroupAction(info.groupId);
+                onClose();
+              });
+            }}
+          >
+            <Trash2 className="size-4" />
+            Supprimer le groupe
+          </Button>
+        </div>
+      </SidebarContent>
+    </>
+  );
+}
+
 // Corps du détail : monté sous une clé liée au détail (voir plus bas), de sorte que
 // l'état de dépliage (open) repart de zéro à chaque nouveau montant cliqué.
 // Identité de la ligne « Total » du panneau (distincte des chemins de nœuds « 0.1 »).
@@ -182,6 +392,11 @@ function DetailBody({ detail, onClose, selectedPanel, onSelectRow }: {
       return next;
     });
   const rows = flatten(detail.nodes, open);
+  // Gestion d'un groupe : formulaires (renommer, montant, lignes, supprimer) au
+  // lieu d'un calcul.
+  if (detail.groupManage) {
+    return <GroupManageBlock info={detail.groupManage} onClose={onClose} />;
+  }
   // Explication de colonne : titre + paragraphes de texte, sans chiffre ni calcul.
   if (detail.description) {
     return (
@@ -287,7 +502,7 @@ export function HistoryDetailSidebar({ detail, onClose, selectedPanel, onSelectR
     <Sidebar side="right" variant="inset" collapsible="offcanvas">
       {detail && (
         <DetailBody
-          key={`${detail.title}·${detail.subtitle ?? ""}·${detail.result}`}
+          key={`${detail.groupManage ? `manage:${detail.groupManage.groupId}:${detail.groupManage.month}` : ""}${detail.title}·${detail.subtitle ?? ""}·${detail.result}`}
           detail={detail}
           onClose={onClose}
           selectedPanel={selectedPanel}

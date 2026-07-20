@@ -35,7 +35,23 @@ export type DetailNode = { label: string; amount: number; children?: DetailNode[
 // overspendAction : présent quand le détail vient d'une Balance en dépassement d'un
 // mois passé ou courant. Pilote le bloc de décision affiché sous le tableau du
 // détail dans le side panel (voir OverspendActionBlock).
-export type CellDetail = { title: string; subtitle?: string; nodes: DetailNode[]; result: number; note?: string; cellRef?: string; description?: string[]; overspendAction?: OverspendActionInfo };
+// groupManage : présent quand le détail vient du menu de gestion d'une ligne de
+// groupe (icône au survol). Pilote la vue de gestion du side panel (renommer,
+// montant daté, lignes, suppression) au lieu d'un calcul (voir GroupManageBlock).
+export type CellDetail = { title: string; subtitle?: string; nodes: DetailNode[]; result: number; note?: string; cellRef?: string; description?: string[]; overspendAction?: OverspendActionInfo; groupManage?: GroupManageInfo };
+
+// Info nécessaire à la vue de gestion d'un groupe dans le side panel : quel groupe,
+// son nom, sa nature (enveloppe = un montant unique / récurrent = des lignes), le
+// mois sélectionné (pour le montant daté), le budget en vigueur ce mois-là (pré-
+// remplissage) et, pour un récurrent, ses lignes.
+export type GroupManageInfo = {
+  groupId: number;
+  name: string;
+  kind: "envelope" | "recurring";
+  month: string;          // mois affiché sélectionné (pour le montant daté)
+  currentAmount: number;  // budget en vigueur ce mois (pré-remplissage)
+  lines: { id: number; name: string; amount: number; day: number }[];
+};
 
 // Info nécessaire au bloc de décision d'un dépassement de budget : quel groupe (0 =
 // non catégorisés), quel mois, de combien, et la décision déjà prise le cas échéant.

@@ -1,10 +1,20 @@
 "use server";
 import { db } from "../../db/index";
 import { setOverspendDecision } from "../../db/repositories/overspend-decisions";
-import { setBudgetAmount } from "../../db/repositories/budget-amounts";
-import { insertEnvelopeGroup, insertRecurringGroup } from "../../db/repositories/groups";
+import { setBudgetAmount, listBudgetAmounts } from "../../db/repositories/budget-amounts";
+import {
+  insertEnvelopeGroup,
+  insertRecurringGroup,
+  renameGroup,
+  deleteGroup,
+  insertLine,
+  updateLine,
+  deleteLine,
+  listGroups,
+} from "../../db/repositories/groups";
 import { monthKey } from "../../lib/money";
-import { addMonthsKey } from "../../lib/history";
+import { addMonthsKey, toDatedBudgets, budgetInForce } from "../../lib/history";
+import type { Group } from "../../lib/forecast";
 import { revalidatePath } from "next/cache";
 
 // Enregistre la décision de l'utilisateur sur un dépassement (groupId 0 = non
@@ -57,4 +67,71 @@ export async function createGroup(input: {
   revalidatePath("/historique");
   revalidatePath("/previsionnel");
   revalidatePath("/");
+}
+
+// Revalidation commune aux actions de gestion d'un groupe : le changement touche
+// l'Historique, le Prévisionnel, les Transactions (réassignation possible) et le
+// Tableau de bord.
+async function revalidate() {
+  revalidatePath("/historique");
+  revalidatePath("/previsionnel");
+  revalidatePath("/transactions");
+  revalidatePath("/");
+}
+
+export async function renameGroupAction(groupId: number, name: string): Promise<void> {
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  renameGroup(db(), groupId, trimmed);
+  await revalidate();
+}
+
+export async function deleteGroupAction(groupId: number): Promise<void> {
+  // La FK transactions.group_id ON DELETE SET NULL renvoie les transactions en Non catégorisés.
+  deleteGroup(db(), groupId);
+  await revalidate();
+}
+
+// Fixe le montant d'un groupe pour un mois, en réutilisant les budgets datés.
+// « à partir de ce mois » (ongoing) écrit un seul montant daté à `month`. « ce mois
+// seulement » (once) écrit le montant à `month` et restaure le montant précédent au
+// mois suivant, pour ne pas propager le changement aux mois d'après.
+export async function setGroupAmount(
+  groupId: number,
+  month: string,
+  amount: number,
+  scope: "once" | "ongoing",
+): Promise<void> {
+  if (!/^\d{4}-\d{2}$/.test(month) || !Number.isFinite(amount) || amount < 0) return;
+  const database = db();
+  if (scope === "once") {
+    // Montant précédent en vigueur juste avant l'écriture à `month`, pour le restaurer après.
+    const g = listGroups(database).find((x) => x.id === groupId);
+    if (!g) return;
+    const dated = toDatedBudgets(listBudgetAmounts(database));
+    const prev = budgetInForce(g as unknown as Group, month, dated);
+    setBudgetAmount(database, groupId, month, amount);
+    setBudgetAmount(database, groupId, addMonthsKey(month, 1), prev);
+  } else {
+    setBudgetAmount(database, groupId, month, amount);
+  }
+  await revalidate();
+}
+
+export async function addGroupLine(groupId: number, name: string, amount: number, day: number): Promise<void> {
+  const trimmed = name.trim();
+  if (!trimmed) return;
+  // Le dernier paramètre "" (mot-clé) sera retiré en Task 9 avec la signature.
+  insertLine(db(), groupId, trimmed, amount, day, "");
+  await revalidate();
+}
+
+export async function editGroupLine(lineId: number, name: string, amount: number, day: number): Promise<void> {
+  updateLine(db(), lineId, name.trim(), amount, day, "");
+  await revalidate();
+}
+
+export async function removeGroupLine(lineId: number): Promise<void> {
+  deleteLine(db(), lineId);
+  await revalidate();
 }

@@ -116,7 +116,8 @@ export default async function HistoriquePage({
           const selectGroups = groups.map((g) => ({
             id: g.id,
             name: g.name,
-            lines: g.kind === "recurring" ? g.lines.map((l) => ({ id: l.id, name: l.name })) : [],
+            kind: g.kind,
+            lines: g.lines.map((l) => ({ id: l.id, name: l.name, amount: l.amount, day: l.day })),
           }));
 
           return (

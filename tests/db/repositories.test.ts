@@ -14,6 +14,9 @@ import {
   hasIncomeGroup,
   renameGroup,
 } from "../../src/db/repositories/groups";
+import { setBudgetAmount, listBudgetAmounts } from "../../src/db/repositories/budget-amounts";
+import { toDatedBudgets, budgetInForce } from "../../src/lib/history";
+import type { Group } from "../../src/lib/forecast";
 import { migrateGroupLifespan } from "../../src/db/migrations";
 
 test("transaction upsert dedupes by id and lists back", () => {
@@ -164,6 +167,20 @@ test("renomme un groupe sans toucher au reste", () => {
   const id = insertEnvelopeGroup(db, "a1", "Ancien", "out", 100, null, "2026-07", null);
   renameGroup(db, id, "Nouveau");
   expect(listGroups(db).find((g) => g.id === id)!.name).toBe("Nouveau");
+});
+
+test("setGroupAmount 'once' n'affecte que le mois visé", () => {
+  const db = getDb(":memory:");
+  upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
+  const id = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  // Simule l'action 'once' : montant à juillet, restauration du précédent en août.
+  const prev = 300; // budget en vigueur avant juillet (monthlyAmount)
+  setBudgetAmount(db, id, "2026-07", 500);
+  setBudgetAmount(db, id, "2026-08", prev);
+  const dated = toDatedBudgets(listBudgetAmounts(db));
+  const g = listGroups(db).find((x) => x.id === id)! as unknown as Group;
+  expect(budgetInForce(g, "2026-07", dated)).toBe(500);
+  expect(budgetInForce(g, "2026-08", dated)).toBe(300);
 });
 
 test("les groupes créés avant migration sont visibles partout (start_month '2000-01')", () => {

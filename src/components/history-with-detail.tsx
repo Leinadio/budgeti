@@ -6,7 +6,12 @@ import { HistoryGrid } from "@/components/history-grid";
 import { OverspendBanner } from "@/components/overspend-banner";
 import { useDetailSidebar } from "@/components/detail-sidebar";
 
-type SelectGroup = { id: number; name: string; lines: { id: number; name: string }[] };
+type SelectGroup = {
+  id: number;
+  name: string;
+  kind: "envelope" | "recurring";
+  lines: { id: number; name: string; amount: number; day: number }[];
+};
 
 // Le tableau de l'Historique : un clic sur un montant envoie son détail à la
 // sidebar de droite, montée au niveau du shell (voir DetailSidebarProvider).
