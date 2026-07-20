@@ -4,10 +4,11 @@ import { ArrowUpRight, ArrowDownRight, ChevronDown, ChevronRight } from "lucide-
 import { cn } from "@/lib/utils";
 import { monthLabel } from "@/lib/transactions-view";
 import type { AccountForecast } from "@/lib/forecast";
-import { type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn, type SoldeColumn, type PlannedSoldes, type RetainedOverspends, uncatOverspend, computeTableEstimate } from "@/lib/history";
+import { type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn, type SoldeColumn, type PlannedSoldes, type RetainedOverspends, type PendingOverspend, uncatOverspend, computeTableEstimate } from "@/lib/history";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TruncatedText } from "@/components/truncated-text";
 import { GroupSelectField } from "@/components/group-select-field";
+import { overspendDecisionDetail } from "@/components/overspend-banner";
 import {
   type CellDetail,
   type DetailNode,
@@ -90,7 +91,7 @@ const COL_LABEL: Record<ColKey, string> = {
   reste: "Balance",
   soldeReel: "Solde réel",
   soldePrevu: "Solde prévu",
-  soldeDepass: "Solde dépass.",
+  soldeDepass: "Solde si dépassement",
 };
 
 function labelFor(col: ColKey, _type: MonthType): string {
@@ -139,10 +140,10 @@ const COL_INFO: Record<ColKey, string[]> = {
     "Par exemple : tu démarres à −120 €, tu attends 650 €, tu prévois 555 € de dépenses. Il te resterait −25 € en fin de mois.",
   ],
   soldeDepass: [
-    "C'est la version prudente du solde prévu : au lieu de supposer que tu dépenses pile ton budget, on suppose que tu continues de déborder comme ce mois-ci.",
-    "On part du solde prévu et on enlève, en plus, tous tes dépassements du mois. Et on garde ces dépassements sur les mois suivants, comme si ça se reproduisait.",
-    "C'est ton garde-fou : il te montre où tu tombes dans le pire des cas raisonnables. L'écart entre « Solde prévu » et cette colonne, c'est exactement le total de tes dépassements.",
-    "Par exemple : si le solde prévu de fin de mois est de −25 € et que tu as 165 € de dépassements, tu tombes à −190 €.",
+    "C'est l'hypothèse défavorable : où tu atterris si les dépassements que tu n'as pas encore tranchés se répètent chaque mois.",
+    "Quand un budget déborde, l'app te demande de décider : exceptionnel (un accident, on arrête de le compter) ou permanent (ton budget monte, et c'est le Solde prévu qui l'absorbe). Tant que tu n'as pas décidé, le dépassement est reconduit ici, par prudence.",
+    "L'écart entre « Solde prévu » et cette colonne mesure donc exactement ce qu'il te reste à trancher. Chaque décision le referme un peu ; quand tout est réglé, les deux colonnes disent la même chose.",
+    "Sur les mois passés et le mois en cours, pas d'hypothèse : ce sont tes dépassements réels qui sont retirés.",
   ],
 };
 
@@ -1271,7 +1272,7 @@ function scrollableAncestor(el: HTMLElement, axis: "x" | "y"): HTMLElement | nul
   return null;
 }
 
-export function HistoryGrid({ months, currentMonth, forecast, sections, overspend, grand, groups, solde, planned, retained, onSelect, selected, anchor, accountId, decisions }: {
+export function HistoryGrid({ months, currentMonth, forecast, sections, overspend, grand, groups, solde, planned, retained, onSelect, selected, anchor, accountId, decisions, pendingClosed, currentBudgets }: {
   months: string[];
   currentMonth: string;
   forecast: AccountForecast;
@@ -1296,6 +1297,10 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
   accountId: string;
   // Décisions déjà prises sur des dépassements (groupId, mois), chargées en page.
   decisions?: OverspendDecisionInfo[];
+  // Dépassements de mois terminés sans décision (pastilles) et budgets courants par
+  // groupe (pré-remplissage de la décision) : Task 7.
+  pendingClosed?: PendingOverspend[];
+  currentBudgets?: Record<number, number>;
 }) {
   // Décision déjà prise, indexée par « groupId::mois » : sert à attacher
   // overspendAction sur les Balances rouges (cf. AmountCells / SectionTotalsCells).
@@ -1303,6 +1308,12 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
     () => new Map((decisions ?? []).map((d) => [`${d.groupId}::${d.month}`, d.decision])),
     [decisions],
   );
+  // Premier dépassement en attente par groupe (le plus ancien), pour la pastille.
+  const pendingByGroup = useMemo(() => {
+    const m = new Map<number, PendingOverspend>();
+    for (const p of pendingClosed ?? []) if (!m.has(p.groupId)) m.set(p.groupId, p);
+    return m;
+  }, [pendingClosed]);
   const [open, setOpen] = useState<Set<string>>(new Set());
   const toggle = (k: string) =>
     setOpen((prev) => {
@@ -1484,6 +1495,19 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
               <ArrowDownRight className="size-4 shrink-0 text-muted-foreground" />
             )}
             <span className="min-w-0 truncate font-medium">{r.name}</span>
+            {pendingByGroup.has(r.id) && (
+              <button
+                type="button"
+                aria-label="Dépassement à traiter"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const p = pendingByGroup.get(r.id)!;
+                  const idx = months.indexOf(p.month);
+                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null, currentBudgets?.[r.id] ?? null));
+                }}
+                className="ml-1 inline-block size-2 shrink-0 rounded-full bg-amber-500"
+              />
+            )}
           </NameCell>
           <AmountCells
             cells={r.cells}
@@ -1619,6 +1643,19 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
         <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
           <NameCell indent={0} bg={MUTED40} expandable={hasTxns} expanded={uOpen} onToggle={hasTxns ? () => toggle(uKey) : undefined}>
             <span className="min-w-0 truncate">Non catégorisés</span>
+            {dir === "out" && pendingByGroup.has(0) && (
+              <button
+                type="button"
+                aria-label="Dépassement à traiter"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const p = pendingByGroup.get(0)!;
+                  const idx = months.indexOf(p.month);
+                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null, null));
+                }}
+                className="ml-1 inline-block size-2 shrink-0 rounded-full bg-amber-500"
+              />
+            )}
           </NameCell>
           <SectionTotalsCells
             sec={sec}

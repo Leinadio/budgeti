@@ -8,7 +8,7 @@ import {
   computeHistory, grandTotals, monthlyOverspend, monthsWithData, computeSolde,
   computePlannedSoldes, addMonthsKey, monthRange, isMonthKey, clampMonth,
   sliceHistorySections, sliceSoldeColumn, slicePlannedSoldes, computeTableEstimate,
-  toDatedBudgets, computeOverspends,
+  toDatedBudgets, computeOverspends, budgetInForce,
 } from "../../lib/history";
 import { computeForecast, type Group, type Txn } from "../../lib/forecast";
 import { monthRemuneration } from "../../lib/remuneration";
@@ -105,6 +105,7 @@ export default async function HistoriquePage({
           const soldeFull = computeSolde(sectionsFull, calcMonths, currentMonth, a.balance, estimateValue);
           const decisions = listOverspendDecisions(database, a.id);
           const overspends = computeOverspends(groups, txns, currentMonth, decisions, datedBudgets);
+          const currentBudgets = Object.fromEntries(groups.map((g) => [g.id, budgetInForce(g, currentMonth, datedBudgets)]));
           const plannedFull = computePlannedSoldes(sectionsFull, calcMonths, currentMonth, soldeFull.openings, estimateValue, overspends.retained);
           const sections = sliceHistorySections(sectionsFull, calcMonths, k);
           const solde = sliceSoldeColumn(soldeFull, k);
@@ -141,6 +142,8 @@ export default async function HistoriquePage({
                   retained={overspends.retained}
                   accountId={a.id}
                   decisions={decisions.map(({ groupId, month, decision }) => ({ groupId, month, decision }))}
+                  pendingClosed={overspends.pendingClosed}
+                  currentBudgets={currentBudgets}
                 />
               )}
             </TabsContent>

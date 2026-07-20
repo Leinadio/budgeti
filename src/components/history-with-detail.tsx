@@ -1,8 +1,9 @@
 "use client";
 import type { AccountForecast } from "@/lib/forecast";
-import type { MonthCell, HistorySection, SoldeColumn, PlannedSoldes, RetainedOverspends } from "@/lib/history";
+import type { MonthCell, HistorySection, SoldeColumn, PlannedSoldes, RetainedOverspends, PendingOverspend } from "@/lib/history";
 import { CenterScroll } from "@/components/center-scroll";
 import { HistoryGrid } from "@/components/history-grid";
+import { OverspendBanner } from "@/components/overspend-banner";
 import { useDetailSidebar } from "@/components/detail-sidebar";
 
 type SelectGroup = { id: number; name: string; lines: { id: number; name: string }[] };
@@ -24,11 +25,20 @@ export function HistoryWithDetail(props: {
   // bloc de décision du side panel (Task 6).
   accountId: string;
   decisions?: { groupId: number; month: string; decision: "exceptional" | "permanent" }[];
+  // Dépassements de mois terminés sans décision (bandeau) et budgets courants par
+  // groupe (pré-remplissage de la décision) : Task 7.
+  pendingClosed?: PendingOverspend[];
+  currentBudgets?: Record<number, number>;
 }) {
   const { setDetail, selected, anchor } = useDetailSidebar();
   return (
-    <CenterScroll>
-      <HistoryGrid {...props} onSelect={setDetail} selected={selected} anchor={anchor} />
-    </CenterScroll>
+    <div className="flex flex-col gap-3">
+      {props.pendingClosed && props.pendingClosed.length > 0 && (
+        <OverspendBanner items={props.pendingClosed} accountId={props.accountId} months={props.months} budgets={props.currentBudgets ?? {}} />
+      )}
+      <CenterScroll>
+        <HistoryGrid {...props} onSelect={setDetail} selected={selected} anchor={anchor} />
+      </CenterScroll>
+    </div>
   );
 }
