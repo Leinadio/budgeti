@@ -142,10 +142,13 @@ export function insertLine(
   amount: number,
   day: number,
   keyword: string,
-): void {
-  db.prepare(
-    `INSERT INTO group_lines (group_id, name, amount, day, keyword) VALUES (?, ?, ?, ?, ?)`,
-  ).run(groupId, name, amount, day, keyword);
+): number {
+  const info = db
+    .prepare(
+      `INSERT INTO group_lines (group_id, name, amount, day, keyword) VALUES (?, ?, ?, ?, ?)`,
+    )
+    .run(groupId, name, amount, day, keyword);
+  return Number(info.lastInsertRowid);
 }
 
 export function updateLine(

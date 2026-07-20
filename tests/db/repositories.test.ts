@@ -72,6 +72,20 @@ test("recurring group: dated lines summed, delete cascades", () => {
   expect(db.prepare("SELECT COUNT(*) AS n FROM group_lines").get()).toEqual({ n: 0 });
 });
 
+// Garde-fou contre la régression « ligne fantôme » : insertLine doit renvoyer le
+// vrai id auto-incrémenté de la ligne créée, pour que deleteLine/updateLine
+// appelés juste après (sans recharger la page) visent la bonne ligne en base.
+test("insertLine renvoie le vrai id, réutilisable par deleteLine", () => {
+  const db = getDb(":memory:");
+  upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
+  const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2000-01", null);
+  const lineId = insertLine(db, gid, "Spotify", 10, 3, "SPOTIFY");
+  expect(lineId).toBeGreaterThan(0);
+  expect(listGroups(db)[0].lines.map((l) => l.id)).toEqual([lineId]);
+  deleteLine(db, lineId);
+  expect(listGroups(db)[0].lines).toEqual([]);
+});
+
 test("setAccountAlias sets and resets the alias", () => {
   const db = getDb(":memory:");
   upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });

@@ -344,9 +344,13 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
                     const n = newName.trim();
                     const a = parseFloat(newAmount) || 0;
                     const d = parseInt(newDay, 10) || 1;
-                    await addGroupLine(info.groupId, n, a, d);
-                    // Id temporaire négatif : uniquement clé React, jamais persisté.
-                    setLines((cur) => [...cur, { id: -Date.now(), name: n, amount: a, day: d }]);
+                    const id = await addGroupLine(info.groupId, n, a, d);
+                    // On n'ajoute la ligne optimiste qu'avec le vrai id en base : sinon
+                    // une suppression/édition immédiate (sans refermer le panneau)
+                    // viserait un id fictif et laisserait une ligne fantôme en base.
+                    if (id > 0) {
+                      setLines((cur) => [...cur, { id, name: n, amount: a, day: d }]);
+                    }
                     setNewName("");
                     setNewAmount("");
                     setNewDay("1");
