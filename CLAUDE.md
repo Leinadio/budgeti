@@ -1,5 +1,8 @@
 # Style de réponse
 
+- Priorité numéro 1 : répondre en faisant des phrases. De la prose, des
+  paragraphes courts — pas de listes à puces ni de tableaux, sauf si
+  l'utilisateur le demande explicitement.
 - Réponses courtes, l'essentiel uniquement.
 - Langage humain, clair et compréhensible.
 - Pas d'emoji, pas de symboles décoratifs (flèches, puces fantaisie, etc.).

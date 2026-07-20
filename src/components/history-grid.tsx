@@ -3,8 +3,8 @@ import { Fragment, cloneElement, isValidElement, useEffect, useMemo, useRef, use
 import { ArrowUpRight, ArrowDownRight, ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { monthLabel } from "@/lib/transactions-view";
-import type { AccountForecast, ForecastStep } from "@/lib/forecast";
-import { type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn, type SoldeColumn, type PlannedSoldes } from "@/lib/history";
+import type { AccountForecast } from "@/lib/forecast";
+import { type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn, type SoldeColumn, type PlannedSoldes, uncatOverspend, computeTableEstimate } from "@/lib/history";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TruncatedText } from "@/components/truncated-text";
 import { GroupSelectField } from "@/components/group-select-field";
@@ -68,14 +68,14 @@ function monthType(m: string, currentMonth: string): MonthType {
   return m < currentMonth ? "past" : m === currentMonth ? "current" : "future";
 }
 
-function monthColumns(type: MonthType): ColKey[] {
-  // Mois passés et courant : toutes les colonnes. Mois futurs : sans Dép., Reçu ni
-  // Solde réel (rien de réalisé). Le dépassement n'a plus de colonne : il se lit
-  // dans les montants rouges de la Balance, totalisés sur la ligne « Dépassement »
-  // en bas du tableau.
-  if (type !== "future")
-    return ["budgetRem", "budgetDep", "dep", "recu", "reste", "soldeReel", "soldePrevu", "soldeDepass"];
-  return ["budgetRem", "budgetDep", "reste", "soldePrevu", "soldeDepass"];
+function monthColumns(_type: MonthType): ColKey[] {
+  // Vue uniforme : tous les mois (passés, courant, futurs) affichent les mêmes
+  // colonnes et les mêmes calculs. Sur un mois futur, rien n'est encore réalisé
+  // (Dép./Reçu à 0, Balance = budget entier) et les soldes repartent de l'estimé
+  // de fin du mois courant. Le dépassement n'a pas de colonne : il se lit dans les
+  // montants rouges de la Balance, totalisés sur la ligne « Dépassement hors
+  // budget » en bas du tableau.
+  return ["budgetRem", "budgetDep", "dep", "recu", "reste", "soldeReel", "soldePrevu", "soldeDepass"];
 }
 
 const COL_LABEL: Record<ColKey, string> = {
@@ -521,11 +521,6 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
             ? makeDetail("Budget dépense", budgetNodes(r, i) ?? [{ label: r.name, amount: c.budgeted, ref: ck("budget") }], { subtitle, result: c.budgeted })
             : null;
 
-        // Mois de référence des dépassements maintenus (le mois courant en projection),
-        // pour la décomposition du « Dépassement cumulé » du solde si dépassement.
-        const ciIdx = months.indexOf(currentMonth);
-        const osIdx = month <= currentMonth || ciIdx === -1 ? i : ciIdx;
-
         // Mouvement prévu du mois de cette ligne = revenus projeté − budget (même
         // net que la chaîne « solde prévu »).
         const revenusProj = mode === "in" ? (incomeKind === "supplementary" ? (isCurrent ? c.budgeted : 0) : c.budgeted) : 0;
@@ -553,8 +548,9 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
               )
             : null;
         const sd = soldeDepass?.[i];
-        // Mois futur : les dépassements décomposés viennent du mois courant
-        // (maintenus, cf. osIdx plus haut), on référence les cases de ce mois-là.
+        // Les montants du « Dépassement cumulé » viennent du mois courant (maintenus,
+        // cf. depassCumulRows), mais les renvois pointent vers les cases Balance du
+        // mois affiché : la surbrillance reste dans la colonne du mois cliqué.
         const soldeDepassDetail: CellDetail | null =
           sd != null && sp != null && r
             ? makeDetail(
@@ -568,8 +564,8 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
                   {
                     label: "Dépassement cumulé",
                     amount: -(sp - sd),
-                    refs: (depassCumulRows?.[i] ?? []).map((g) => cellKey(groupRow(g.id), "reste", osIdx)),
-                    children: overspendChildren(depassCumulRows?.[i] ?? [], osIdx),
+                    refs: (depassCumulRows?.[i] ?? []).map((g) => cellKey(groupRow(g.id), "reste", i)),
+                    children: overspendChildren(depassCumulRows?.[i] ?? [], i),
                   },
                 ],
                 { subtitle, result: sd },
@@ -737,19 +733,18 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
         const inRecuSrc = uncatInSec?.totals[srcI]?.recu ?? 0;
         const depassVal = isUncat ? Math.max(0, cDep.depense - inRecuSrc - cDep.budgeted) : 0;
 
-        // Non catégorisés traités comme une étape du plan : on part du dernier solde
-        // au-dessus (fourni par planPrevu/planDepass) et on retire le Budget dépense
-        // (solde prévu) ou le Dépassement (solde si dépassement) de la ligne.
-        const prevuClose = planPrevu?.[i] ?? null;
-        const depassClose = planDepass?.[i] ?? null;
-        const soldePrevuVal = prevuClose != null ? prevuClose - c.budgeted : null;
-        const soldeDepassVal = depassClose != null ? depassClose - depassVal : null;
+        // Non catégorisés comme étape du plan : planPrevu/planDepass fournissent les
+        // valeurs courues à cette ligne (le débordement net est déjà retiré de la
+        // chaîne « si dépassement » — cf. computePlannedSoldes). Le détail repose le
+        // calcul : valeur précédente (au-dessus) − dépassement de la ligne.
+        const soldePrevuVal = planPrevu?.[i] ?? null;
+        const soldeDepassVal = planDepass?.[i] ?? null;
         const soldePrevuDetail: CellDetail | null =
           isUncat && soldePrevuVal != null
             ? makeDetail(
                 "Solde prévu",
                 [
-                  { label: "Solde prévu précédent", amount: prevuClose!, ref: prevRowKey ? cellKey(prevRowKey, "soldePrevu", i) : undefined },
+                  { label: "Solde prévu précédent", amount: soldePrevuVal + c.budgeted, ref: prevRowKey ? cellKey(prevRowKey, "soldePrevu", i) : undefined },
                   { label: "Budget dépense", amount: -c.budgeted, ref: ck("budget") },
                 ],
                 { subtitle, result: soldePrevuVal },
@@ -760,8 +755,9 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
             ? makeDetail(
                 "Solde si dépassement",
                 [
-                  { label: "Solde si dépassement précédent", amount: depassClose!, ref: prevRowKey ? cellKey(prevRowKey, "soldeDepass", i) : undefined },
-                  { label: "Dépassement", amount: -depassVal, ref: cellKey(rowKey, "reste", srcI) },
+                  { label: "Solde si dépassement précédent", amount: soldeDepassVal + depassVal, ref: prevRowKey ? cellKey(prevRowKey, "soldeDepass", i) : undefined },
+                  // Montant maintenu (mois courant), renvoi vers la Balance du mois affiché.
+                  { label: "Dépassement", amount: -depassVal, ref: cellKey(rowKey, "reste", i) },
                 ],
                 { subtitle, result: soldeDepassVal },
               )
@@ -1008,11 +1004,20 @@ function GrandTotalsCells({ sections, grand, solde, planned, overspend, months, 
               )
             : null;
         // Dépassement cumulé du grand total = dépassement total maintenu, décomposé
-        // par groupe. Sur un mois futur (cellules à 0), les dépassements viennent du
-        // mois courant (maintenus, cf. cs plus haut) : on lit et on référence ce mois-là.
-        const grandOverspendChildren = allRows
-          .filter((r) => r.direction === "out" && r.cells[cs].balance < 0)
-          .map((r): DetailNode => ({ label: r.name, amount: r.cells[cs].balance, ref: cellKey(groupRow(r.id), "reste", cs) }));
+        // par groupe. Les montants viennent du mois courant (maintenus, cf. cs), mais
+        // les renvois pointent vers les cases Balance du mois affiché : la
+        // surbrillance reste dans la colonne du mois cliqué.
+        const uncatOs = uncatOverspend(sections, cs);
+        const grandOverspendChildren: DetailNode[] = [
+          ...allRows
+            .filter((r) => r.direction === "out" && r.cells[cs].balance < 0)
+            .map((r): DetailNode => ({ label: r.name, amount: r.cells[cs].balance, ref: cellKey(groupRow(r.id), "reste", i) })),
+          // Débordement net des non catégorisés (dépensé au-delà des reçus), inclus
+          // dans la chaîne « si dépassement » comme les dépassements de budget.
+          ...(uncatOs > 0.005
+            ? [{ label: "Non catégorisés", amount: -uncatOs, ref: cellKey(sectionRow("uncategorized"), "reste", i) }]
+            : []),
+        ];
         const soldeDepassDetail: CellDetail | null =
           depassClose != null && prevuClose != null
             ? makeDetail(
@@ -1325,25 +1330,14 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
     return map;
   }, [sections, ciSafe, months, currentMonth]);
 
-  // Groupes par id, pour retrouver le sens (entrée/sortie) d'une étape du
-  // prévisionnel et la relier à sa case du tableau.
-  const rowById = useMemo(() => {
-    const m = new Map<number, HistoryRow>();
-    for (const sec of sections) for (const r of sec.rows) m.set(r.id, r);
-    return m;
-  }, [sections]);
-
-  // Case du tableau correspondant à une étape du prévisionnel (« Estimé fin de
-  // mois ») : un poste de récurrent « pas encore passé » → sa case Budget dép. ;
-  // une enveloppe « reste à dépenser » → sa case Reste ; une rémunération « reste
-  // à recevoir » → sa case Budget rém.
-  const stepRef = (s: ForecastStep, i: number): string | undefined => {
-    if (s.lineId != null) return cellKey(subRow(s.lineId), "budget", i);
-    if (s.groupId == null) return undefined;
-    const r = rowById.get(s.groupId);
-    if (!r) return undefined;
-    return r.direction === "in" ? cellKey(groupRow(s.groupId), "revenus", i) : cellKey(groupRow(s.groupId), "reste", i);
-  };
+  // Estimé de fin du mois courant, aligné sur le tableau : Solde actuel + les
+  // rémunérations restant à recevoir − les Balances vertes non nulles (le budget
+  // restant, qu'on suppose dépensé d'ici la fin du mois).
+  const tableEstimate = useMemo(
+    () => computeTableEstimate(sections, months, currentMonth, forecast.balance),
+    [sections, months, currentMonth, forecast.balance],
+  );
+  const estimateValue = tableEstimate?.value ?? forecast.currentEstimate;
 
   // Dépliage effectif = dépliage utilisateur, plus les ancêtres de la ligne
   // sélectionnée (transaction ou sous-ligne, pour la révéler sans muter l'état de
@@ -1537,12 +1531,11 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
     const uOpen = isOpen(uKey);
     const hasTxns = (sec.txns?.length ?? 0) > 0;
     const rowKey = sectionRowKey(sec);
-    // Traverse du plan à ce niveau (lecture haut en bas) : après la dernière
-    // rémunération pour les reçus, clôture du plan (après toutes les lignes) pour
-    // les dépenses.
-    const lastIncome = sections.find((s) => s.kind === "income")?.rows.at(-1);
-    const planPrevu = dir === "in" && lastIncome ? planned.prevuRowRunning[lastIncome.id] : planned.prevuClosings;
-    const planDepass = dir === "in" && lastIncome ? planned.depassRowRunning[lastIncome.id] : planned.depassClosings;
+    // Valeurs courues des chaînes du plan à cette étape (calculées par
+    // computePlannedSoldes dans l'ordre de lecture, débordement net déjà retiré
+    // pour la ligne dépenses).
+    const planPrevu = planned.uncatPrevuRunning[dir];
+    const planDepass = planned.uncatDepassRunning[dir];
     return (
       <>
         <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
@@ -1682,11 +1675,11 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
             const firstFuture = months[i] > currentMonth && i > 0 && months[i - 1] === currentMonth;
             const prevuOpen =
               months[i] <= currentMonth ? v
-              : firstFuture ? forecast.currentEstimate
+              : firstFuture ? estimateValue
               : i > 0 && planned.prevuClosings[i - 1] != null ? planned.prevuClosings[i - 1] : v;
             const depassOpen =
               months[i] <= currentMonth ? v
-              : firstFuture ? forecast.currentEstimate
+              : firstFuture ? estimateValue
               : i > 0 && planned.depassClosings[i - 1] != null ? planned.depassClosings[i - 1] : v;
             const openingCell = (b: boolean) => (
               <CellAmount key="soldeReel" className={cn(b && "border-l", "text-right tabular-nums", v < -0.005 && "text-red-600")} detail={detail} onSelect={onSelect} cellKey={cellKey(openingRow, "solde", i)} selCellKey={selCellKey}>
@@ -1784,27 +1777,36 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
           <TableCell className="sticky left-0 z-10 bg-[color-mix(in_oklab,var(--muted)_60%,var(--background))] p-0">
             <FirstColBox>Solde actuel</FirstColBox>
           </TableCell>
-          <GrandTotalsCells sections={sections} grand={grand} solde={solde} planned={planned} overspend={overspend} months={months} currentMonth={currentMonth} currentEstimate={forecast.currentEstimate} onSelect={onSelect} selCellKey={selCellKey} />
+          <GrandTotalsCells sections={sections} grand={grand} solde={solde} planned={planned} overspend={overspend} months={months} currentMonth={currentMonth} currentEstimate={estimateValue} onSelect={onSelect} selCellKey={selCellKey} />
         </TableRow>
-        {/* Estimé fin de mois : mois courant = solde projeté fin de mois
-            (`forecast.currentEstimate`, distinct du solde « maintenant » sur la
-            ligne « Solde actuel ») ; autres mois = leur solde de clôture (même
-            détail que la ligne « Solde actuel » pour ce mois — cf. soldeActuelDetail). */}
+        {/* Estimé fin de mois : mois courant = Solde actuel + rémunérations restant
+            à recevoir − Balances vertes (le budget restant, supposé dépensé d'ici la
+            fin du mois) ; autres mois = leur solde de clôture (même détail que la
+            ligne « Solde actuel » pour ce mois — cf. soldeActuelDetail). */}
         <TableRow className="text-sm">
           <TableCell className="bg-background sticky left-0 z-10 p-0">
             <FirstColBox><span className="text-muted-foreground">Estimé fin de mois</span></FirstColBox>
           </TableCell>
           {months.map((m, i) => {
             const isCurrent = m === currentMonth;
-            const v = isCurrent ? forecast.currentEstimate : solde.closings[i];
+            const v = isCurrent ? estimateValue : solde.closings[i];
             const detail: CellDetail = isCurrent
               ? makeDetail(
                   "Estimé fin de mois",
                   [
                     { label: "Solde actuel", amount: forecast.balance, ref: cellKey("grand", "solde", i) },
-                    ...forecast.currentSteps.map((s): DetailNode => ({ label: s.label, amount: s.amount, ref: stepRef(s, i) })),
+                    ...(tableEstimate?.incomeSteps ?? []).map((s): DetailNode => ({
+                      label: `${s.name} — reste à recevoir`,
+                      amount: s.amount,
+                      ref: cellKey(groupRow(s.id), "revenus", i),
+                    })),
+                    ...(tableEstimate?.spendSteps ?? []).map((s): DetailNode => ({
+                      label: `${s.name} — reste à dépenser`,
+                      amount: -s.amount,
+                      ref: cellKey(groupRow(s.id), "reste", i),
+                    })),
                   ],
-                  { subtitle: monthLabel(m), result: forecast.currentEstimate },
+                  { subtitle: monthLabel(m), result: v },
                 )
               : soldeActuelDetail(sections, solde, i, m, { title: "Estimé fin de mois", result: solde.closings[i] });
             const type = monthType(m, currentMonth);
@@ -1829,9 +1831,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
           {months.map((m, i) => {
             // Part rouge de la Balance des non catégorisés (ligne dépenses) = dépensé
             // au-delà des reçus non catégorisés (la ligne du haut).
-            const uncatOutT = sections.find((s) => s.kind === "uncategorized" && (s.uncatDirection ?? "out") === "out")?.totals[i];
-            const uncatInT = sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in")?.totals[i];
-            const uncatDep = Math.max(0, (uncatOutT?.depense ?? 0) - (uncatInT?.recu ?? 0));
+            const uncatDep = uncatOverspend(sections, i);
             const val = overspend[i] + uncatDep;
             const nodes: DetailNode[] = [
               ...sections

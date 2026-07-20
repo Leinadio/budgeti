@@ -324,9 +324,10 @@ export function computeSolde(
   if (n > 0) {
     let ci = months.indexOf(currentMonth);
     if (ci === -1 && currentMonth < months[0]) {
-      // Fenêtre entièrement future : le solde d'aujourd'hui est l'ouverture du 1er mois.
-      openings[0] = balance;
-      closings[0] = balance + net[0];
+      // Fenêtre entièrement future : l'ouverture du 1er mois est l'estimé de fin du
+      // mois courant (s'il est fourni), sinon le solde d'aujourd'hui.
+      openings[0] = currentEstimate ?? balance;
+      closings[0] = openings[0] + net[0];
       for (let i = 1; i < n; i++) {
         openings[i] = closings[i - 1];
         closings[i] = openings[i] + net[i];
@@ -397,13 +398,108 @@ export type PlannedSoldes = {
   depassClosings: (number | null)[];
   prevuRowRunning: Record<number, (number | null)[]>;
   depassRowRunning: Record<number, (number | null)[]>;
+  // Valeurs courues des chaînes au niveau des deux étapes « non catégorisés »
+  // (reçus / dépenses). Le prévu les traverse sans changer (rien de planifié) ;
+  // le « si dépassement » retire, à l'étape dépenses, leur débordement net
+  // (dépensé au-delà des reçus non catégorisés), maintenu sur les mois futurs.
+  uncatPrevuRunning: { in?: (number | null)[]; out?: (number | null)[] };
+  uncatDepassRunning: { in?: (number | null)[]; out?: (number | null)[] };
 };
+
+// --- Découpe d'affichage ----------------------------------------------------
+// Quand la fenêtre choisie commence après le mois courant, les chaînes de solde
+// doivent quand même être calculées depuis le mois courant (leur ancre). La page
+// calcule donc sur une plage étendue, puis ne garde que les k derniers mois pour
+// l'affichage : ces fonctions retirent les k premiers mois de chaque structure.
+
+export function sliceHistorySections(sections: HistorySection[], calcMonths: string[], k: number): HistorySection[] {
+  if (k === 0) return sections;
+  const keep = new Set(calcMonths.slice(k));
+  return sections.map((sec) => ({
+    ...sec,
+    rows: sec.rows.map((r) => ({
+      ...r,
+      cells: r.cells.slice(k),
+      subRows: r.subRows.map((s) => ({ ...s, cells: s.cells.slice(k), txns: s.txns.filter((t) => keep.has(t.month)) })),
+      txns: r.txns.filter((t) => keep.has(t.month)),
+    })),
+    totals: sec.totals.slice(k),
+    txns: sec.txns?.filter((t) => keep.has(t.month)),
+  }));
+}
+
+export function sliceSoldeColumn(s: SoldeColumn, k: number): SoldeColumn {
+  if (k === 0) return s;
+  const rec = (r: Record<number, number[]>) =>
+    Object.fromEntries(Object.entries(r).map(([id, arr]) => [id, arr.slice(k)]));
+  return {
+    openings: s.openings.slice(k),
+    closings: s.closings.slice(k),
+    rowRunning: rec(s.rowRunning),
+    uncategorizedRunning: s.uncategorizedRunning
+      ? { in: s.uncategorizedRunning.in?.slice(k), out: s.uncategorizedRunning.out?.slice(k) }
+      : null,
+  };
+}
+
+export function slicePlannedSoldes(p: PlannedSoldes, k: number): PlannedSoldes {
+  if (k === 0) return p;
+  const rec = (r: Record<number, (number | null)[]>) =>
+    Object.fromEntries(Object.entries(r).map(([id, arr]) => [id, arr.slice(k)]));
+  return {
+    prevuClosings: p.prevuClosings.slice(k),
+    depassClosings: p.depassClosings.slice(k),
+    prevuRowRunning: rec(p.prevuRowRunning),
+    depassRowRunning: rec(p.depassRowRunning),
+    uncatPrevuRunning: { in: p.uncatPrevuRunning.in?.slice(k), out: p.uncatPrevuRunning.out?.slice(k) },
+    uncatDepassRunning: { in: p.uncatDepassRunning.in?.slice(k), out: p.uncatDepassRunning.out?.slice(k) },
+  };
+}
+
+// Estimé de fin du mois courant, aligné sur le tableau : solde réel actuel, plus
+// les rémunérations restant à recevoir (budget affiché − déjà reçu), moins les
+// Balances vertes non nulles (budget restant des groupes de dépense, qu'on suppose
+// dépensé d'ici la fin du mois). null si le mois courant n'est pas dans la plage.
+export type EstimateStep = { id: number; name: string; amount: number };
+export function computeTableEstimate(
+  sections: HistorySection[], months: string[], currentMonth: string, balance: number,
+): { value: number; incomeSteps: EstimateStep[]; spendSteps: EstimateStep[] } | null {
+  const ci = months.indexOf(currentMonth);
+  if (ci === -1) return null;
+  const incomeSteps: EstimateStep[] = [];
+  const spendSteps: EstimateStep[] = [];
+  for (const sec of sections) {
+    for (const r of sec.rows) {
+      if (r.direction === "in") {
+        const due = rowRevenus(r, ci, true) - r.cells[ci].recu;
+        if (due > 0.005) incomeSteps.push({ id: r.id, name: r.name, amount: due });
+      } else {
+        const rest = r.cells[ci].balance;
+        if (rest > 0.005) spendSteps.push({ id: r.id, name: r.name, amount: rest });
+      }
+    }
+  }
+  const value =
+    balance + incomeSteps.reduce((s, x) => s + x.amount, 0) - spendSteps.reduce((s, x) => s + x.amount, 0);
+  return { value, incomeSteps, spendSteps };
+}
+
+// Débordement net des non catégorisés pour un mois : dépensé (section « out »)
+// au-delà des reçus (section « in »). C'est la part rouge de leur Balance.
+export function uncatOverspend(sections: HistorySection[], i: number): number {
+  const outT = sections.find((s) => s.kind === "uncategorized" && (s.uncatDirection ?? "out") === "out")?.totals[i];
+  const inT = sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in")?.totals[i];
+  return Math.max(0, (outT?.depense ?? 0) - (inT?.recu ?? 0) - (outT?.budgeted ?? 0));
+}
 
 // Chaînes de solde « plan » : prévu (revenus − budget) et « si dépassement »
 // (prévu − dépassement). Mois passés et courant : ancrés à l'argent de départ réel
 // du mois, dépassement du mois lui-même. Mois futurs : le premier part de l'estimé
 // de fin du mois courant (currentEstimate, sinon la clôture du plan), les suivants
-// enchaînent ; dépassement du mois courant maintenu.
+// enchaînent ; dépassement du mois courant maintenu. Les non catégorisés n'entrent
+// pas dans le prévu (aucun budget), mais leur débordement net est retiré de la
+// chaîne « si dépassement » (à leur étape « dépenses », après les enveloppes) :
+// la colonne se lit ainsi en continu jusqu'au « Solde actuel ».
 export function computePlannedSoldes(
   sections: HistorySection[], months: string[], currentMonth: string, openingsReal: number[],
   currentEstimate?: number | null,
@@ -416,11 +512,14 @@ export function computePlannedSoldes(
   const depassClosings = new Array<number | null>(n).fill(null);
   const prevuRowRunning: Record<number, (number | null)[]> = {};
   const depassRowRunning: Record<number, (number | null)[]> = {};
+  const uncatPrevuRunning: { in?: (number | null)[]; out?: (number | null)[] } = {};
+  const uncatDepassRunning: { in?: (number | null)[]; out?: (number | null)[] } = {};
   for (const sec of sections) for (const r of sec.rows) {
     prevuRowRunning[r.id] = new Array<number | null>(n).fill(null);
     depassRowRunning[r.id] = new Array<number | null>(n).fill(null);
   }
-  if (n === 0 || ci >= n) return { prevuClosings, depassClosings, prevuRowRunning, depassRowRunning };
+  if (n === 0 || ci >= n)
+    return { prevuClosings, depassClosings, prevuRowRunning, depassRowRunning, uncatPrevuRunning, uncatDepassRunning };
 
   for (let i = 0; i < n; i++) {
     const isCurrent = months[i] === currentMonth;
@@ -434,18 +533,25 @@ export function computePlannedSoldes(
     let runD = anchored ? openingsReal[i] : futureStart ?? depassClosings[i - 1]!;
     const osMonth = anchored ? i : ci;
     for (const sec of sections) {
-      // Non catégorisés exclus du plan (aucun budget/revenu planifié).
-      if (sec.kind === "uncategorized") continue;
-      for (const r of sec.rows) {
-        const net = rowRevenus(r, i, isCurrent) - rowBudget(r, i);
-        runP += net;
-        runD += net - rowOverspend(r, osMonth);
-        prevuRowRunning[r.id][i] = runP;
-        depassRowRunning[r.id][i] = runD;
+      if (sec.kind === "uncategorized") {
+        // Rien de planifié : le prévu traverse. À l'étape « dépenses », le « si
+        // dépassement » retire le débordement net des non catégorisés (maintenu).
+        const dir = sec.uncatDirection ?? "out";
+        if (dir === "out") runD -= uncatOverspend(sections, osMonth);
+        (uncatPrevuRunning[dir] ??= new Array<number | null>(n).fill(null))[i] = runP;
+        (uncatDepassRunning[dir] ??= new Array<number | null>(n).fill(null))[i] = runD;
+      } else {
+        for (const r of sec.rows) {
+          const net = rowRevenus(r, i, isCurrent) - rowBudget(r, i);
+          runP += net;
+          runD += net - rowOverspend(r, osMonth);
+          prevuRowRunning[r.id][i] = runP;
+          depassRowRunning[r.id][i] = runD;
+        }
       }
     }
     prevuClosings[i] = runP;
     depassClosings[i] = runD;
   }
-  return { prevuClosings, depassClosings, prevuRowRunning, depassRowRunning };
+  return { prevuClosings, depassClosings, prevuRowRunning, depassRowRunning, uncatPrevuRunning, uncatDepassRunning };
 }

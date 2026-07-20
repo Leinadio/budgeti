@@ -5,6 +5,7 @@ import { listGroups } from "../../db/repositories/groups";
 import {
   computeHistory, grandTotals, monthlyOverspend, monthsWithData, computeSolde,
   computePlannedSoldes, addMonthsKey, monthRange, isMonthKey, clampMonth,
+  sliceHistorySections, sliceSoldeColumn, slicePlannedSoldes, computeTableEstimate,
 } from "../../lib/history";
 import { computeForecast, type Group, type Txn } from "../../lib/forecast";
 import { monthRemuneration } from "../../lib/remuneration";
@@ -84,13 +85,27 @@ export default async function HistoriquePage({
           if (from > to) [from, to] = [to, from];
           if (monthRange(from, to).length > MAX_MONTHS) to = addMonthsKey(from, MAX_MONTHS - 1);
           const months = monthRange(from, to);
-          const sections = computeHistory(groups, txns, months, currentMonth);
+          // Si la fenêtre commence après le mois courant, on calcule quand même
+          // depuis le mois courant (l'ancre des chaînes de solde), puis on ne garde
+          // que les mois affichés : les montants ne dépendent pas de la fenêtre.
+          const calcFrom = from <= currentMonth ? from : currentMonth;
+          const calcMonths = monthRange(calcFrom, to);
+          const k = calcMonths.length - months.length;
           const forecast = computeForecast(a.id, a.balance, groups, txns, currentMonth);
+          const sectionsFull = computeHistory(groups, txns, calcMonths, currentMonth);
+          // Estimé de fin du mois courant aligné sur le tableau (Balances vertes +
+          // rémunérations restant à recevoir) : c'est lui qui ancre les chaînes des
+          // mois futurs.
+          const estimateValue =
+            computeTableEstimate(sectionsFull, calcMonths, currentMonth, a.balance)?.value ?? forecast.currentEstimate;
+          const soldeFull = computeSolde(sectionsFull, calcMonths, currentMonth, a.balance, estimateValue);
+          const plannedFull = computePlannedSoldes(sectionsFull, calcMonths, currentMonth, soldeFull.openings, estimateValue);
+          const sections = sliceHistorySections(sectionsFull, calcMonths, k);
+          const solde = sliceSoldeColumn(soldeFull, k);
+          const planned = slicePlannedSoldes(plannedFull, k);
           const remunMonths = months.map((m) => monthRemuneration(groups, txns, m));
           const overspend = monthlyOverspend(sections, months.length);
           const grand = grandTotals(sections, months.length);
-          const solde = computeSolde(sections, months, currentMonth, a.balance, forecast.currentEstimate);
-          const planned = computePlannedSoldes(sections, months, currentMonth, solde.openings, forecast.currentEstimate);
           const selectGroups = groups.map((g) => ({
             id: g.id,
             name: g.name,

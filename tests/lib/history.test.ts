@@ -414,6 +414,28 @@ test("computePlannedSoldes: prévu = départ + revenus − budget ; si dépassem
   expect(pe.depassClosings[1]).toBeCloseTo(4200 + (2000 - 300 - 50), 2);
 });
 
+test("computePlannedSoldes: le débordement net des non catégorisés entre dans la chaîne « si dépassement »", () => {
+  // 500 dépensés sans groupe, 200 reçus sans groupe -> débordement net 300.
+  const txns = [
+    tx({ id: "a", date: "2026-07-05", amount: -500, label: "ACHAT X" }),
+    tx({ id: "b", date: "2026-07-06", amount: 200, label: "REMBOURSEMENT" }),
+  ];
+  const months = ["2026-07", "2026-08"];
+  const sections = computeHistory([], txns, months, "2026-07");
+  const solde = computeSolde(sections, months, "2026-07", 1000);
+  const p = computePlannedSoldes(sections, months, "2026-07", solde.openings);
+  const open = solde.openings[0];
+  // Prévu : les non catégorisés ne changent rien (aucun budget).
+  expect(p.prevuClosings[0]).toBeCloseTo(open, 2);
+  // Si dépassement : la clôture retire le débordement net (300), en continu avec
+  // la valeur courue à l'étape « dépenses ».
+  expect(p.depassClosings[0]).toBeCloseTo(open - 300, 2);
+  expect(p.uncatDepassRunning.out?.[0]).toBeCloseTo(open - 300, 2);
+  expect(p.uncatDepassRunning.in?.[0]).toBeCloseTo(open, 2); // les reçus ne retirent rien
+  // Maintenu sur le mois futur.
+  expect(p.depassClosings[1]).toBeCloseTo((p.depassClosings[0] ?? 0) - 300, 2);
+});
+
 test("computePlannedSoldes: la supplémentaire compte au mois courant mais pas en projection", () => {
   const supp: Group = { id: 3, accountId: "a1", name: "Rémunération supplémentaire", direction: "in", kind: "envelope", monthlyAmount: 500, keywords: [], lines: [], incomeKind: "supplementary" };
   const months = ["2026-07", "2026-08"];
