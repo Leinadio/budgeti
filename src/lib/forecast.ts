@@ -86,6 +86,15 @@ function prevMonthKey(m: string): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
+// Mois suivant (local à ce module pour éviter le cycle avec history.ts, qui
+// importe forecast). Calqué sur prevMonthKey, en +1 mois.
+function nextMonthKey(m: string): string {
+  const [y, mo] = m.split("-").map(Number);
+  const d = new Date(Date.UTC(y, mo - 1, 1));
+  d.setUTCMonth(d.getUTCMonth() + 1);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
 function toOwnable(g: Group): OwnableGroup {
   return { id: g.id, accountId: g.accountId, direction: g.direction, kind: g.kind };
 }
@@ -122,54 +131,64 @@ export function computeForecast(
   const nextSteps: ForecastStep[] = [];
 
   for (const g of groups) {
-    if (!isGroupAlive(g, month)) continue;
+    // Vie décorrélée entre le mois courant et le mois projeté : un groupe
+    // ponctuel meurt ce mois-ci (aliveNext = false) ; un groupe qui démarre le
+    // mois prochain n'est pas encore vivant ce mois-ci (aliveNow = false).
+    const aliveNow = isGroupAlive(g, month);
+    const aliveNext = isGroupAlive(g, nextMonthKey(month));
+    if (!aliveNow && !aliveNext) continue;
     const sign = g.direction === "in" ? 1 : -1;
 
     if (g.kind === "envelope") {
       const amount = g.monthlyAmount ?? 0;
       const spent = spentIn(g.id, month);
       const remaining = Math.max(0, amount - spent);
-      // Le sens compte : une sortie retire, une entrée ajoute.
-      current += sign * remaining;
       // La supplémentaire couvre le mois courant mais n'est pas projetée au mois suivant.
       const projectNext = !(g.direction === "in" && g.incomeKind === "supplementary");
-      if (projectNext) nextDelta += sign * amount;
-      if (remaining > 0)
-        currentSteps.push({
-          label: `${g.name} — ${g.direction === "in" ? "reste à recevoir" : "reste à dépenser"} ce mois-ci`,
-          amount: sign * remaining,
-          groupId: g.id,
-        });
-      if (amount > 0 && projectNext)
-        nextSteps.push({
-          label: `${g.name} — ${g.direction === "in" ? "revenu mensuel" : "budget mensuel"}`,
-          amount: sign * amount,
-          groupId: g.id,
-        });
-      // Le dépassement (et sa suggestion) n'a de sens que pour une dépense.
-      const overspend = g.direction === "out" ? Math.max(0, spent - amount) : 0;
-      const prevSpent = spentIn(g.id, prevMonth);
-      const prevOverspend = g.direction === "out" ? Math.max(0, prevSpent - amount) : 0;
-      groupViews.push({ id: g.id, name: g.name, direction: g.direction, kind: g.kind, total: amount, spent, overspend, prevSpent, prevOverspend });
+      if (aliveNow) {
+        // Le sens compte : une sortie retire, une entrée ajoute.
+        current += sign * remaining;
+        if (remaining > 0)
+          currentSteps.push({
+            label: `${g.name} — ${g.direction === "in" ? "reste à recevoir" : "reste à dépenser"} ce mois-ci`,
+            amount: sign * remaining,
+            groupId: g.id,
+          });
+        // Le dépassement (et sa suggestion) n'a de sens que pour une dépense.
+        const overspend = g.direction === "out" ? Math.max(0, spent - amount) : 0;
+        const prevSpent = spentIn(g.id, prevMonth);
+        const prevOverspend = g.direction === "out" ? Math.max(0, prevSpent - amount) : 0;
+        groupViews.push({ id: g.id, name: g.name, direction: g.direction, kind: g.kind, total: amount, spent, overspend, prevSpent, prevOverspend });
+      }
+      if (aliveNext && projectNext) {
+        nextDelta += sign * amount;
+        if (amount > 0)
+          nextSteps.push({
+            label: `${g.name} — ${g.direction === "in" ? "revenu mensuel" : "budget mensuel"}`,
+            amount: sign * amount,
+            groupId: g.id,
+          });
+      }
     } else {
       const mine = ownedBy(g.id);
       let total = 0;
       let seenSum = 0;
       for (const line of g.lines) {
         total += line.amount;
-        nextDelta += sign * line.amount;
+        if (aliveNext) nextDelta += sign * line.amount;
         // « Vue » uniquement si une transaction a été rattachée manuellement à
         // cette ligne précise (plus de détection automatique par mot-clé).
         const seen = mine.some((t) => t.lineId === line.id);
-        if (!seen) {
+        if (aliveNow && !seen) {
           current += sign * line.amount;
           currentSteps.push({ label: `${g.name} · ${line.name} — pas encore passé (le ${line.day})`, amount: sign * line.amount, groupId: g.id, lineId: line.id });
         }
         if (seen) seenSum += line.amount;
-        nextSteps.push({ label: `${g.name} · ${line.name}`, amount: sign * line.amount, groupId: g.id, lineId: line.id });
-        timeline.push({ day: line.day, name: line.name, amount: sign * line.amount, seen });
+        if (aliveNext) nextSteps.push({ label: `${g.name} · ${line.name}`, amount: sign * line.amount, groupId: g.id, lineId: line.id });
+        if (aliveNow) timeline.push({ day: line.day, name: line.name, amount: sign * line.amount, seen });
       }
-      groupViews.push({ id: g.id, name: g.name, direction: g.direction, kind: g.kind, total, spent: seenSum, overspend: 0, prevSpent: 0, prevOverspend: 0 });
+      if (aliveNow)
+        groupViews.push({ id: g.id, name: g.name, direction: g.direction, kind: g.kind, total, spent: seenSum, overspend: 0, prevSpent: 0, prevOverspend: 0 });
     }
   }
 

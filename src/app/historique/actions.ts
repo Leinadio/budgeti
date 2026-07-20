@@ -148,6 +148,7 @@ export async function addGroupLine(groupId: number, name: string, amount: number
 }
 
 export async function editGroupLine(lineId: number, name: string, amount: number, day: number): Promise<void> {
+  if (!name.trim()) return;
   updateLine(db(), lineId, name.trim(), amount, day);
   await revalidate();
 }

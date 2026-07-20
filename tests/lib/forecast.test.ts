@@ -209,3 +209,27 @@ it("un groupe pas encore né n'entre pas dans l'estimé", () => {
   expect(f.currentEstimate).toBe(1000);
   expect(f.groups.some((g) => g.id === 70)).toBe(false);
 });
+
+it("enveloppe ponctuelle (fin ce mois-ci) : pèse sur l'estimé courant mais pas sur celui du mois prochain", () => {
+  // endMonth = mois courant : vivante ce mois-ci, morte le mois prochain.
+  const ponctuel: Group = { ...courses, id: 71, name: "Ponctuel", startMonth: null, endMonth: "2026-07" };
+  const f = computeForecast("a1", 1000, [ponctuel], [], "2026-07");
+  // Ce mois-ci : reste plein 300 retiré -> 700.
+  expect(f.currentEstimate).toBe(700);
+  // Mois prochain : le groupe a disparu, l'estimé N'EST PAS amputé du budget.
+  // (l'ancienne logique mono-mois donnait 700 - 300 = 400)
+  expect(f.nextEstimate).toBe(700);
+  expect(f.nextSteps.some((s) => s.groupId === 71)).toBe(false);
+});
+
+it("enveloppe qui démarre le mois prochain : absente ce mois-ci, projetée au mois prochain", () => {
+  // startMonth = mois courant + 1 : pas encore née ce mois-ci, vivante le mois prochain.
+  const futur: Group = { ...courses, id: 72, name: "Bientôt", startMonth: "2026-08", endMonth: null };
+  const f = computeForecast("a1", 1000, [futur], [], "2026-07");
+  // Ce mois-ci : rien (groupe absent des vues et du calcul courant).
+  expect(f.currentEstimate).toBe(1000);
+  expect(f.groups.some((g) => g.id === 72)).toBe(false);
+  // Mois prochain : le budget est bien projeté (l'ancienne logique laissait 1000).
+  expect(f.nextEstimate).toBe(700);
+  expect(f.nextSteps.some((s) => s.groupId === 72)).toBe(true);
+});
