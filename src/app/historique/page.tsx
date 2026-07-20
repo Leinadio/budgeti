@@ -132,6 +132,7 @@ export default async function HistoriquePage({
                 <HistoryWithDetail
                   months={months}
                   currentMonth={currentMonth}
+                  stripMax={stripMax}
                   forecast={forecast}
                   sections={sections}
                   overspend={overspend}

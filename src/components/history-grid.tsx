@@ -1,14 +1,16 @@
 "use client";
 import { Fragment, cloneElement, isValidElement, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpRight, ArrowDownRight, ChevronDown, ChevronRight } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight, ChevronDown, ChevronRight, Plus } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { monthLabel } from "@/lib/transactions-view";
 import type { AccountForecast } from "@/lib/forecast";
 import { type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn, type SoldeColumn, type PlannedSoldes, type RetainedOverspends, type PendingOverspend, uncatOverspend, computeTableEstimate } from "@/lib/history";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Button } from "@/components/ui/button";
 import { TruncatedText } from "@/components/truncated-text";
 import { GroupSelectField } from "@/components/group-select-field";
 import { overspendDecisionDetail } from "@/components/overspend-banner";
+import { NewGroupInline } from "@/components/new-group-inline";
 import {
   type CellDetail,
   type DetailNode,
@@ -1295,9 +1297,12 @@ function scrollableAncestor(el: HTMLElement, axis: "x" | "y"): HTMLElement | nul
   return null;
 }
 
-export function HistoryGrid({ months, currentMonth, forecast, sections, overspend, grand, groups, solde, planned, retained, onSelect, selected, anchor, accountId, decisions, pending, currentBudgets }: {
+export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections, overspend, grand, groups, solde, planned, retained, onSelect, selected, anchor, accountId, decisions, pending, currentBudgets }: {
   months: string[];
   currentMonth: string;
+  // Borne haute de la frise : plage sélectionnable du mois de départ dans le
+  // formulaire de création inline d'un groupe (Task 5).
+  stripMax: string;
   forecast: AccountForecast;
   sections: HistorySection[];
   overspend: number[];
@@ -1348,6 +1353,13 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
       else next.add(k);
       return next;
     });
+
+  // Section (enveloppe ou récurrent) dont le formulaire de création inline est
+  // ouvert, ou null si aucun (Task 5). Un seul formulaire ouvert à la fois.
+  const [adding, setAdding] = useState<null | "recurring" | "envelope">(null);
+  // Mois de départ par défaut proposé au formulaire : le premier mois affiché
+  // dans la frise, sauf s'il est déjà dans le passé (jamais de création rétroactive).
+  const defaultMonth = months.length > 0 && months[0] >= currentMonth ? months[0] : currentMonth;
 
   // Case active (B) choisie dans le panneau : sert au défilement et à la révélation.
   // S'il y en a plusieurs (somme), on défile vers la première.
@@ -1908,11 +1920,44 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
               </Fragment>
             );
           }
-          // Récurrents / Enveloppes : les lignes d'abord, puis une ligne de total en
-          // bas (« Total Récurrents » / « Total Enveloppes »), comme les rémunérations.
+          // Récurrents / Enveloppes : un titre de section avec un bouton d'ajout
+          // inline (Task 5), puis les lignes, puis une ligne de total en bas
+          // (« Total Récurrents » / « Total Enveloppes »), comme les rémunérations.
+          const sectionKind = sec.kind as "recurring" | "envelope";
           return (
             <Fragment key={sec.kind}>
               {spacer}
+              <TableRow className="hover:bg-transparent">
+                <TableCell colSpan={totalCols} className="p-0">
+                  <div className="flex items-center gap-1 pl-1">
+                    <Button
+                      type="button"
+                      size="icon-xs"
+                      variant="ghost"
+                      className="text-muted-foreground"
+                      aria-label={`Ajouter ${labelOfSection(sectionKind).toLowerCase()}`}
+                      onClick={() => setAdding((prev) => (prev === sectionKind ? null : sectionKind))}
+                    >
+                      <Plus />
+                    </Button>
+                    <span className="text-muted-foreground text-xs font-medium">{labelOfSection(sectionKind)}</span>
+                  </div>
+                </TableCell>
+              </TableRow>
+              {adding === sectionKind && (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={totalCols} className="p-0">
+                    <NewGroupInline
+                      accountId={accountId}
+                      kind={sectionKind}
+                      currentMonth={currentMonth}
+                      stripMax={stripMax}
+                      defaultMonth={defaultMonth}
+                      onDone={() => setAdding(null)}
+                    />
+                  </TableCell>
+                </TableRow>
+              )}
               {sec.rows.map((r) => renderGroup(r))}
               <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
                 <TableCell className={cn("sticky left-0 z-10 p-0", MUTED40)}>

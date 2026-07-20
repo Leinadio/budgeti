@@ -13,6 +13,9 @@ type SelectGroup = { id: number; name: string; lines: { id: number; name: string
 export function HistoryWithDetail(props: {
   months: string[];
   currentMonth: string;
+  // Borne haute de la frise (12 mois de projection) : sert au sélecteur de mois
+  // du formulaire de création inline d'un groupe (Task 5).
+  stripMax: string;
   forecast: AccountForecast;
   sections: HistorySection[];
   overspend: number[];
