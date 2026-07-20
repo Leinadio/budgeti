@@ -95,18 +95,6 @@ export function deleteGroup(db: Database.Database, id: number): void {
   db.prepare(`DELETE FROM groups WHERE id = ?`).run(id);
 }
 
-export function updateGroup(
-  db: Database.Database,
-  id: number,
-  name: string,
-  direction: "in" | "out",
-  monthlyAmount: number | null,
-): void {
-  db.prepare(
-    `UPDATE groups SET name = ?, direction = ?, monthly_amount = ? WHERE id = ?`,
-  ).run(name, direction, monthlyAmount, id);
-}
-
 export function renameGroup(db: Database.Database, id: number, name: string): void {
   db.prepare(`UPDATE groups SET name = ? WHERE id = ?`).run(name, id);
 }

@@ -19,7 +19,6 @@ export async function renameAccount(formData: FormData) {
   revalidatePath("/settings");
   revalidatePath("/");
   revalidatePath("/previsionnel");
-  revalidatePath("/groupes");
   revalidatePath("/transactions");
 }
 
@@ -30,6 +29,5 @@ export async function deleteAccountAction(formData: FormData) {
   revalidatePath("/settings");
   revalidatePath("/");
   revalidatePath("/previsionnel");
-  revalidatePath("/groupes");
   revalidatePath("/transactions");
 }
