@@ -11,6 +11,7 @@ import { TruncatedText } from "@/components/truncated-text";
 import { GroupSelectField } from "@/components/group-select-field";
 import { overspendDecisionDetail } from "@/components/overspend-banner";
 import { NewGroupInline } from "@/components/new-group-inline";
+import { NewRemunerationInline } from "@/components/new-remuneration-inline";
 import {
   type CellDetail,
   type DetailNode,
@@ -1362,7 +1363,9 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
 
   // Section (enveloppe ou récurrent) dont le formulaire de création inline est
   // ouvert, ou null si aucun (Task 5). Un seul formulaire ouvert à la fois.
-  const [adding, setAdding] = useState<null | "recurring" | "envelope">(null);
+  // "principal" / "supplementary" ouvrent le mini-formulaire de rémunération
+  // (Task 7), qui réutilise le même état pour garder un seul formulaire visible.
+  const [adding, setAdding] = useState<null | "recurring" | "envelope" | "principal" | "supplementary">(null);
   // Mois de départ par défaut proposé au formulaire : le premier mois affiché
   // dans la frise, sauf s'il est déjà dans le passé (jamais de création rétroactive).
   const defaultMonth = months.length > 0 && months[0] >= currentMonth ? months[0] : currentMonth;
@@ -1928,13 +1931,66 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
           // Un petit espace sépare chaque section de la précédente.
           const spacer = si > 0 ? <SpacerRow cols={totalCols} /> : null;
           if (sec.kind === "income") {
-            // Rémunérations : lignes au niveau des sections, tout en haut, sans en-tête,
-            // puis les reçus non catégorisés, puis une ligne « Total rémunérations »
-            // (principale + supplémentaire).
+            // Rémunérations : lignes au niveau des sections, tout en haut, puis les
+            // reçus non catégorisés, puis une ligne « Total rémunérations »
+            // (principale + supplémentaire). L'en-tête n'affiche un bouton
+            // d'ajout (Task 7) que pour les types encore absents du compte —
+            // au plus une principale et une supplémentaire.
             const uncatIn = sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in");
+            const hasPrincipal = sec.rows.some((r) => r.incomeKind === "principal");
+            const hasSupplementary = sec.rows.some((r) => r.incomeKind === "supplementary");
             return (
               <Fragment key={sec.kind}>
                 {spacer}
+                {(!hasPrincipal || !hasSupplementary) && (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={totalCols} className="p-0">
+                      <div className="flex items-center gap-3 pl-1">
+                        {!hasPrincipal && (
+                          <div className="flex items-center gap-1">
+                            <Button
+                              type="button"
+                              size="icon-xs"
+                              variant="ghost"
+                              className="text-muted-foreground"
+                              aria-label="Ajouter la rémunération principale"
+                              onClick={() => setAdding((prev) => (prev === "principal" ? null : "principal"))}
+                            >
+                              <Plus />
+                            </Button>
+                            <span className="text-muted-foreground text-xs font-medium">Rémunération principale</span>
+                          </div>
+                        )}
+                        {!hasSupplementary && (
+                          <div className="flex items-center gap-1">
+                            <Button
+                              type="button"
+                              size="icon-xs"
+                              variant="ghost"
+                              className="text-muted-foreground"
+                              aria-label="Ajouter la rémunération supplémentaire"
+                              onClick={() => setAdding((prev) => (prev === "supplementary" ? null : "supplementary"))}
+                            >
+                              <Plus />
+                            </Button>
+                            <span className="text-muted-foreground text-xs font-medium">Rémunération supplémentaire</span>
+                          </div>
+                        )}
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )}
+                {(adding === "principal" || adding === "supplementary") && (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={totalCols} className="p-0">
+                      <NewRemunerationInline
+                        accountId={accountId}
+                        incomeKind={adding}
+                        onDone={() => setAdding(null)}
+                      />
+                    </TableCell>
+                  </TableRow>
+                )}
                 {sec.rows.map((r) => renderGroup(r, true))}
                 {uncatIn && renderUncatRows(uncatIn)}
                 <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">

@@ -11,6 +11,7 @@ import {
   updateLine,
   deleteLine,
   listGroups,
+  hasIncomeGroup,
 } from "../../db/repositories/groups";
 import { monthKey } from "../../lib/money";
 import { addMonthsKey, toDatedBudgets, budgetInForce, onceBudgetWrites } from "../../lib/history";
@@ -77,6 +78,25 @@ async function revalidate() {
   revalidatePath("/previsionnel");
   revalidatePath("/transactions");
   revalidatePath("/");
+}
+
+// Création d'une rémunération (principale ou supplémentaire) depuis l'en-tête de
+// la section Rémunérations de l'Historique. Toujours en revenu (« in »), toujours
+// permanente (start_month = '2000-01', end_month = null : visible sur tout
+// l'historique et le prévisionnel) — pas de durée de vie ni de portée ponctuelle,
+// contrairement aux groupes de dépense (cf. createGroup). Une seule principale et
+// une seule supplémentaire par compte : no-op silencieux si elle existe déjà.
+export async function createRemuneration(
+  accountId: string,
+  incomeKind: "principal" | "supplementary",
+  amount: number,
+): Promise<void> {
+  if (!Number.isFinite(amount) || amount < 0) return;
+  const database = db();
+  if (hasIncomeGroup(database, accountId, incomeKind)) return; // déjà créée
+  const name = incomeKind === "principal" ? "Rémunération principale" : "Rémunération supplémentaire";
+  insertEnvelopeGroup(database, accountId, name, "in", amount, incomeKind, "2000-01", null);
+  await revalidate();
 }
 
 export async function renameGroupAction(groupId: number, name: string): Promise<void> {
