@@ -19,7 +19,6 @@ export default function Dashboard() {
   const groups = listGroups(database);
   const ownable = groups.map((g) => ({
     id: g.id, accountId: g.accountId, direction: g.direction, kind: g.kind,
-    keywords: g.kind === "envelope" ? g.keywords : g.lines.map((l) => l.keyword),
   }));
   const groupCell = (t: (typeof allTxns)[number]) => {
     const res = resolveOwnership(

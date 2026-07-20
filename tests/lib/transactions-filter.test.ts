@@ -4,8 +4,8 @@ import type { OwnableGroup } from "../../src/lib/ownership";
 import type { TxnView } from "../../src/db/repositories/transactions";
 
 const ownable: OwnableGroup[] = [
-  { id: 1, accountId: "a1", direction: "out", kind: "envelope", keywords: ["CARREFOUR"] },
-  { id: 2, accountId: "a1", direction: "in", kind: "envelope", keywords: ["REMU"] },
+  { id: 1, accountId: "a1", direction: "out", kind: "envelope" },
+  { id: 2, accountId: "a1", direction: "in", kind: "envelope" },
 ];
 
 function tx(p: Partial<TxnView>): TxnView {

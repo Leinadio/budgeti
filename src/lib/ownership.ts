@@ -5,7 +5,6 @@ export type OwnableGroup = {
   accountId: string;
   direction: Direction;
   kind: "envelope" | "recurring";
-  keywords: string[];
 };
 
 export type OwnedTxn = {

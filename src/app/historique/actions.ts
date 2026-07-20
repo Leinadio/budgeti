@@ -142,14 +142,13 @@ export async function setGroupAmount(
 export async function addGroupLine(groupId: number, name: string, amount: number, day: number): Promise<number> {
   const trimmed = name.trim();
   if (!trimmed) return -1;
-  // Le dernier paramètre "" (mot-clé) sera retiré en Task 9 avec la signature.
-  const id = insertLine(db(), groupId, trimmed, amount, day, "");
+  const id = insertLine(db(), groupId, trimmed, amount, day);
   await revalidate();
   return id;
 }
 
 export async function editGroupLine(lineId: number, name: string, amount: number, day: number): Promise<void> {
-  updateLine(db(), lineId, name.trim(), amount, day, "");
+  updateLine(db(), lineId, name.trim(), amount, day);
   await revalidate();
 }
 

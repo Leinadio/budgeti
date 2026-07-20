@@ -1,9 +1,9 @@
 import { expect, test } from "vitest";
 import { resolveOwnership, type OwnableGroup, type OwnedTxn } from "../../src/lib/ownership";
 
-const courses: OwnableGroup = { id: 1, accountId: "a1", direction: "out", kind: "envelope", keywords: ["CARREFOUR", "LECLERC"] };
-const abo: OwnableGroup = { id: 2, accountId: "a1", direction: "out", kind: "recurring", keywords: ["SPOTIFY"] };
-const salaire: OwnableGroup = { id: 3, accountId: "a1", direction: "in", kind: "recurring", keywords: ["REMU"] };
+const courses: OwnableGroup = { id: 1, accountId: "a1", direction: "out", kind: "envelope" };
+const abo: OwnableGroup = { id: 2, accountId: "a1", direction: "out", kind: "recurring" };
+const salaire: OwnableGroup = { id: 3, accountId: "a1", direction: "in", kind: "recurring" };
 const groups = [courses, abo, salaire];
 
 function txn(p: Partial<OwnedTxn>): OwnedTxn {
@@ -19,7 +19,7 @@ test("keyword no longer auto-matches -> none", () => {
 });
 
 test("multiple groups sharing a keyword: still none without manual attachment", () => {
-  const dup: OwnableGroup = { id: 4, accountId: "a1", direction: "out", kind: "envelope", keywords: ["CARREFOUR"] };
+  const dup: OwnableGroup = { id: 4, accountId: "a1", direction: "out", kind: "envelope" };
   expect(resolveOwnership(txn({ label: "CARREFOUR" }), [...groups, dup])).toEqual({ status: "none" });
 });
 
@@ -34,7 +34,7 @@ test("no manual group -> none (even if a keyword would have matched)", () => {
 });
 
 test("manual to a group of another account -> none (not owned)", () => {
-  const other: OwnableGroup = { id: 9, accountId: "a2", direction: "out", kind: "envelope", keywords: [] };
+  const other: OwnableGroup = { id: 9, accountId: "a2", direction: "out", kind: "envelope" };
   expect(resolveOwnership(txn({ groupId: 9, label: "CARREFOUR" }), [...groups, other])).toEqual({ status: "none" });
 });
 

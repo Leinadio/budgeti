@@ -145,13 +145,7 @@ export function toDatedBudgets(rows: { groupId: number; effectiveMonth: string; 
 }
 
 function toOwnable(g: Group): OwnableGroup {
-  return {
-    id: g.id,
-    accountId: g.accountId,
-    direction: g.direction,
-    kind: g.kind,
-    keywords: g.kind === "envelope" ? g.keywords : g.lines.map((l) => l.keyword),
-  };
+  return { id: g.id, accountId: g.accountId, direction: g.direction, kind: g.kind };
 }
 
 function emptyCell(): MonthCell {

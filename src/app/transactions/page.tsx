@@ -18,7 +18,6 @@ export default function TransactionsPage() {
     name: g.name,
     direction: g.direction,
     kind: g.kind,
-    keywords: g.kind === "envelope" ? g.keywords : g.lines.map((l) => l.keyword),
     lines: g.kind === "recurring" ? g.lines.map((l) => ({ id: l.id, name: l.name })) : [],
   }));
 

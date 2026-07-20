@@ -4,14 +4,14 @@ import { isGroupAlive, type Group, type Txn } from "../../src/lib/forecast";
 
 const courses: Group = {
   id: 1, accountId: "a1", name: "Courses", direction: "out", kind: "envelope",
-  monthlyAmount: 300, keywords: ["CARREFOUR"], lines: [],
+  monthlyAmount: 300, lines: [],
 };
 const abo: Group = {
   id: 2, accountId: "a1", name: "Abonnements", direction: "out", kind: "recurring",
-  monthlyAmount: null, keywords: [],
+  monthlyAmount: null,
   lines: [
-    { id: 11, name: "Spotify", amount: 10, day: 3, keyword: "SPOTIFY" },
-    { id: 12, name: "Netflix", amount: 15, day: 8, keyword: "NETFLIX" },
+    { id: 11, name: "Spotify", amount: 10, day: 3 },
+    { id: 12, name: "Netflix", amount: 15, day: 8 },
   ],
 };
 
@@ -52,7 +52,7 @@ test("excluded transactions are not counted", () => {
 });
 
 test("section totals sum the rows per month", () => {
-  const courses2: Group = { ...courses, id: 3, name: "Courses2", monthlyAmount: 100, keywords: ["LECLERC"] };
+  const courses2: Group = { ...courses, id: 3, name: "Courses2", monthlyAmount: 100 };
   const txns = [
     tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
     tx({ id: "2", date: "2026-07-10", amount: -40, label: "LECLERC", groupId: 3 }),
@@ -62,7 +62,7 @@ test("section totals sum the rows per month", () => {
 });
 
 test("income group fills recu, not depense", () => {
-  const salaire: Group = { id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "envelope", monthlyAmount: 2000, keywords: ["REMU"], lines: [] };
+  const salaire: Group = { id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "envelope", monthlyAmount: 2000, lines: [] };
   const txns = [tx({ id: "1", date: "2026-07-01", amount: 2000, label: "VIR REMU", groupId: 9 })];
   const sections = computeHistory([salaire], txns, ["2026-07"], "2026-07");
   expect(sections[0].rows[0].cells[0]).toEqual({ budgeted: 2000, depense: 0, recu: 2000, balance: 0 });
@@ -71,7 +71,7 @@ test("income group fills recu, not depense", () => {
 test("le Reste de section ignore l'argent reçu (rémunération sans budget)", () => {
   const remu: Group = {
     id: 21, accountId: "a1", name: "Rémunération", direction: "in", kind: "recurring",
-    monthlyAmount: null, keywords: [], lines: [],
+    monthlyAmount: null, lines: [],
   };
   const txns = [
     tx({ id: "1", date: "2026-07-01", amount: 652.09, label: "VIR", groupId: 21 }),
@@ -92,11 +92,11 @@ test("le Reste de section ignore l'argent reçu (rémunération sans budget)", (
 test("les rémunérations forment une section 'income' en tête, hors Récurrents/Enveloppes", () => {
   const remuRec: Group = {
     id: 30, accountId: "a1", name: "Salaire", direction: "in", kind: "recurring",
-    monthlyAmount: null, keywords: [], lines: [], incomeKind: "principal",
+    monthlyAmount: null, lines: [], incomeKind: "principal",
   };
   const remuEnv: Group = {
     id: 31, accountId: "a1", name: "Prime", direction: "in", kind: "envelope",
-    monthlyAmount: null, keywords: [], lines: [], incomeKind: "supplementary",
+    monthlyAmount: null, lines: [], incomeKind: "supplementary",
   };
   const txns = [
     tx({ id: "1", date: "2026-07-01", amount: 2000, label: "SAL", groupId: 30 }),
@@ -182,7 +182,7 @@ test("clampMonth bounds within [min, max]", () => {
 });
 
 test("grandTotals sum all sections per month (expenses and income)", () => {
-  const salaire: Group = { id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "recurring", monthlyAmount: null, keywords: [], lines: [{ id: 91, name: "Paie", amount: 2000, day: 1, keyword: "REMU" }], incomeKind: "principal" };
+  const salaire: Group = { id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "recurring", monthlyAmount: null, lines: [{ id: 91, name: "Paie", amount: 2000, day: 1 }], incomeKind: "principal" };
   const txns = [
     tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
     tx({ id: "2", date: "2026-07-01", amount: 2000, label: "VIR REMU", groupId: 9 }),
@@ -193,8 +193,8 @@ test("grandTotals sum all sections per month (expenses and income)", () => {
 });
 
 test("monthlyOverspend sums out-group overspends per month, ignores under-budget and income", () => {
-  const c2: Group = { ...courses, id: 3, name: "C2", monthlyAmount: 50, keywords: ["LECLERC"] };
-  const salaire: Group = { id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "envelope", monthlyAmount: 2000, keywords: ["REMU"], lines: [] };
+  const c2: Group = { ...courses, id: 3, name: "C2", monthlyAmount: 50 };
+  const salaire: Group = { id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "envelope", monthlyAmount: 2000, lines: [] };
   const txns = [
     tx({ id: "1", date: "2026-07-10", amount: -450, label: "CARREFOUR", groupId: 1 }), // budget 300 -> dépassement 150
     tx({ id: "2", date: "2026-07-10", amount: -20, label: "LECLERC", groupId: 3 }), // budget 50 -> sous budget, 0
@@ -282,7 +282,7 @@ test("no uncategorized section when every transaction has a group", () => {
 test("la rémunération principale n'est pas réalisée sur les mois futurs (Reçu 0, budget conservé)", () => {
   const principal: Group = {
     id: 30, accountId: "a1", name: "Rémunération principale", direction: "in",
-    kind: "envelope", monthlyAmount: 2000, keywords: [], lines: [], incomeKind: "principal",
+    kind: "envelope", monthlyAmount: 2000, lines: [], incomeKind: "principal",
   };
   const sections = computeHistory([principal], [], ["2026-07", "2026-08"], "2026-07");
   const row = sections.find((s) => s.kind === "income")!.rows[0];
@@ -294,7 +294,7 @@ test("la rémunération principale n'est pas réalisée sur les mois futurs (Re�
 test("la rémunération supplémentaire n'est pas projetée (Reçu futur = 0)", () => {
   const supp: Group = {
     id: 31, accountId: "a1", name: "Rémunération supplémentaire", direction: "in",
-    kind: "envelope", monthlyAmount: 500, keywords: [], lines: [], incomeKind: "supplementary",
+    kind: "envelope", monthlyAmount: 500, lines: [], incomeKind: "supplementary",
   };
   const sections = computeHistory([supp], [], ["2026-07", "2026-08"], "2026-07");
   const row = sections.find((s) => s.kind === "income")!.rows[0];
@@ -305,7 +305,7 @@ test("la rémunération supplémentaire n'est pas projetée (Reçu futur = 0)", 
 
 const salaire: Group = {
   id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "envelope",
-  monthlyAmount: 2000, keywords: ["REMU"], lines: [],
+  monthlyAmount: 2000, lines: [],
 };
 
 test("computeSolde: le bas du mois courant colle au solde de la banque", () => {
@@ -359,11 +359,11 @@ test("computeSolde: un mois futur reste plat (rien de réalisé), ancré sur le 
 test("Total rémunérations, colonne Budget : ne compte que la principale (pas la supplémentaire)", () => {
   const principal: Group = {
     id: 40, accountId: "a1", name: "Rémunération principale", direction: "in",
-    kind: "envelope", monthlyAmount: 2000, keywords: [], lines: [], incomeKind: "principal",
+    kind: "envelope", monthlyAmount: 2000, lines: [], incomeKind: "principal",
   };
   const supplementaire: Group = {
     id: 41, accountId: "a1", name: "Rémunération supplémentaire", direction: "in",
-    kind: "envelope", monthlyAmount: 500, keywords: [], lines: [], incomeKind: "supplementary",
+    kind: "envelope", monthlyAmount: 500, lines: [], incomeKind: "supplementary",
   };
   const sections = computeHistory([principal, supplementaire], [], ["2026-07"], "2026-07");
   const income = sections.find((s) => s.kind === "income")!;
@@ -390,8 +390,8 @@ test("computeSolde: fenêtre entièrement future ancre l'ouverture sur le solde 
 
 test("computePlannedSoldes: prévu = départ + revenus − budget ; si dépassement retire le dépassement", () => {
   // Principale 2000 (in), une dépense budget 300 dont on a dépensé 350 ce mois (dépassement 50).
-  const principal: Group = { id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", kind: "envelope", monthlyAmount: 2000, keywords: [], lines: [], incomeKind: "principal" };
-  const courses2: Group = { id: 2, accountId: "a1", name: "Courses", direction: "out", kind: "envelope", monthlyAmount: 300, keywords: [], lines: [], incomeKind: null };
+  const principal: Group = { id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", kind: "envelope", monthlyAmount: 2000, lines: [], incomeKind: "principal" };
+  const courses2: Group = { id: 2, accountId: "a1", name: "Courses", direction: "out", kind: "envelope", monthlyAmount: 300, lines: [], incomeKind: null };
   const txns = [
     tx({ id: "s", date: "2026-07-01", amount: 2000, label: "REMU", groupId: 1 }),
     tx({ id: "c", date: "2026-07-10", amount: -350, label: "CARREFOUR", groupId: 2 }),
@@ -437,7 +437,7 @@ test("computePlannedSoldes: le débordement net des non catégorisés entre dans
 });
 
 test("computePlannedSoldes: la supplémentaire compte au mois courant mais pas en projection", () => {
-  const supp: Group = { id: 3, accountId: "a1", name: "Rémunération supplémentaire", direction: "in", kind: "envelope", monthlyAmount: 500, keywords: [], lines: [], incomeKind: "supplementary" };
+  const supp: Group = { id: 3, accountId: "a1", name: "Rémunération supplémentaire", direction: "in", kind: "envelope", monthlyAmount: 500, lines: [], incomeKind: "supplementary" };
   const months = ["2026-07", "2026-08"];
   const sections = computeHistory([supp], [], months, "2026-07");
   const solde = computeSolde(sections, months, "2026-07", 1000);
@@ -448,8 +448,8 @@ test("computePlannedSoldes: la supplémentaire compte au mois courant mais pas e
 });
 
 test("computePlannedSoldes : les mois futurs reconduisent les dépassements retenus, pas ceux du mois courant", () => {
-  const principal: Group = { id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", kind: "envelope", monthlyAmount: 2000, keywords: [], lines: [], incomeKind: "principal" };
-  const courses2: Group = { id: 2, accountId: "a1", name: "Courses", direction: "out", kind: "envelope", monthlyAmount: 300, keywords: [], lines: [], incomeKind: null };
+  const principal: Group = { id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", kind: "envelope", monthlyAmount: 2000, lines: [], incomeKind: "principal" };
+  const courses2: Group = { id: 2, accountId: "a1", name: "Courses", direction: "out", kind: "envelope", monthlyAmount: 300, lines: [], incomeKind: null };
   const txns = [
     tx({ id: "s", date: "2026-07-01", amount: 2000, label: "REMU", groupId: 1 }),
     tx({ id: "c", date: "2026-07-10", amount: -350, label: "CARREFOUR", groupId: 2 }), // dépassement courant : 50

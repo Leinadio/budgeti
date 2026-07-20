@@ -4,15 +4,15 @@ import type { Group, Txn } from "../../src/lib/forecast";
 
 const principalGroup: Group = {
   id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", kind: "recurring",
-  monthlyAmount: null, keywords: [], lines: [], incomeKind: "principal",
+  monthlyAmount: null, lines: [], incomeKind: "principal",
 };
 const supGroup: Group = {
   id: 2, accountId: "a1", name: "Rémunération supplémentaire", direction: "in", kind: "envelope",
-  monthlyAmount: 0, keywords: [], lines: [], incomeKind: "supplementary",
+  monthlyAmount: 0, lines: [], incomeKind: "supplementary",
 };
 const courses: Group = {
   id: 3, accountId: "a1", name: "Courses", direction: "out", kind: "envelope",
-  monthlyAmount: 652.09, keywords: [], lines: [], incomeKind: null,
+  monthlyAmount: 652.09, lines: [], incomeKind: null,
 };
 
 function txn(p: Partial<Txn> & { id: string; date: string; amount: number; groupId: number | null }): Txn {

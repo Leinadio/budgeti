@@ -8,7 +8,6 @@ export type GroupLine = {
   name: string;
   amount: number;
   day: number;
-  keyword: string;
 };
 
 export type Group = {
@@ -18,7 +17,6 @@ export type Group = {
   direction: Direction;
   kind: "envelope" | "recurring";
   monthlyAmount: number | null;
-  keywords: string[];
   lines: GroupLine[];
   incomeKind?: "principal" | "supplementary" | null;
   startMonth?: string | null;
@@ -89,13 +87,7 @@ function prevMonthKey(m: string): string {
 }
 
 function toOwnable(g: Group): OwnableGroup {
-  return {
-    id: g.id,
-    accountId: g.accountId,
-    direction: g.direction,
-    kind: g.kind,
-    keywords: g.kind === "envelope" ? g.keywords : g.lines.map((l) => l.keyword),
-  };
+  return { id: g.id, accountId: g.accountId, direction: g.direction, kind: g.kind };
 }
 
 export function computeForecast(

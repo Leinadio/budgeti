@@ -5,7 +5,6 @@ export type GroupLineRow = {
   name: string;
   amount: number;
   day: number;
-  keyword: string;
 };
 
 export type GroupRow = {
@@ -18,7 +17,6 @@ export type GroupRow = {
   incomeKind: "principal" | "supplementary" | null;
   startMonth: string | null;
   endMonth: string | null;
-  keywords: string[];
   lines: GroupLineRow[];
 };
 
@@ -29,15 +27,13 @@ export function listGroups(db: Database.Database): GroupRow[] {
               income_kind AS incomeKind, start_month AS startMonth, end_month AS endMonth
        FROM groups ORDER BY name`,
     )
-    .all() as (Omit<GroupRow, "keywords" | "lines" | "incomeKind"> & { incomeKind: string | null })[];
-  const kwStmt = db.prepare(`SELECT keyword FROM group_keywords WHERE group_id = ? ORDER BY id`);
+    .all() as (Omit<GroupRow, "lines" | "incomeKind"> & { incomeKind: string | null })[];
   const lineStmt = db.prepare(
-    `SELECT id, name, amount, day, keyword FROM group_lines WHERE group_id = ? ORDER BY id`,
+    `SELECT id, name, amount, day FROM group_lines WHERE group_id = ? ORDER BY id`,
   );
   return groups.map((g) => ({
     ...g,
     incomeKind: g.incomeKind === "principal" || g.incomeKind === "supplementary" ? g.incomeKind : null,
-    keywords: (kwStmt.all(g.id) as { keyword: string }[]).map((r) => r.keyword),
     lines: lineStmt.all(g.id) as GroupLineRow[],
   }));
 }
@@ -99,43 +95,21 @@ export function renameGroup(db: Database.Database, id: number, name: string): vo
   db.prepare(`UPDATE groups SET name = ? WHERE id = ?`).run(name, id);
 }
 
-export function addKeyword(db: Database.Database, groupId: number, keyword: string): void {
-  db.prepare(
-    `INSERT INTO group_keywords (group_id, keyword)
-     SELECT ?, ? WHERE NOT EXISTS (
-       SELECT 1 FROM group_keywords WHERE group_id = ? AND keyword = ?
-     )`,
-  ).run(groupId, keyword, groupId, keyword);
-}
-
-// Renomme un mot-clé existant, sauf si le nouveau libellé existe déjà dans le groupe.
-export function updateKeyword(
-  db: Database.Database,
-  groupId: number,
-  oldKeyword: string,
-  newKeyword: string,
-): void {
-  db.prepare(
-    `UPDATE group_keywords SET keyword = ? WHERE group_id = ? AND keyword = ?
-     AND NOT EXISTS (
-       SELECT 1 FROM group_keywords WHERE group_id = ? AND keyword = ?
-     )`,
-  ).run(newKeyword, groupId, oldKeyword, groupId, newKeyword);
-}
-
+// La colonne group_lines.keyword est NOT NULL (héritée de l'ancien matching par
+// mot-clé, désormais mort) : on y écrit '' en dur pour ne pas violer la contrainte,
+// sans l'exposer dans la signature publique.
 export function insertLine(
   db: Database.Database,
   groupId: number,
   name: string,
   amount: number,
   day: number,
-  keyword: string,
 ): number {
   const info = db
     .prepare(
-      `INSERT INTO group_lines (group_id, name, amount, day, keyword) VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO group_lines (group_id, name, amount, day, keyword) VALUES (?, ?, ?, ?, '')`,
     )
-    .run(groupId, name, amount, day, keyword);
+    .run(groupId, name, amount, day);
   return Number(info.lastInsertRowid);
 }
 
@@ -145,11 +119,8 @@ export function updateLine(
   name: string,
   amount: number,
   day: number,
-  keyword: string,
 ): void {
-  db.prepare(
-    `UPDATE group_lines SET name = ?, amount = ?, day = ?, keyword = ? WHERE id = ?`,
-  ).run(name, amount, day, keyword, id);
+  db.prepare(`UPDATE group_lines SET name = ?, amount = ?, day = ? WHERE id = ?`).run(name, amount, day, id);
 }
 
 export function deleteLine(db: Database.Database, id: number): void {

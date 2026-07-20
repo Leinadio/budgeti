@@ -3,20 +3,20 @@ import { computeForecast, type Group, type Txn } from "../../src/lib/forecast";
 
 const courses: Group = {
   id: 1, accountId: "a1", name: "Courses", direction: "out", kind: "envelope",
-  monthlyAmount: 300, keywords: ["CARREFOUR", "LECLERC"], lines: [],
+  monthlyAmount: 300, lines: [],
 };
 const abo: Group = {
   id: 2, accountId: "a1", name: "Abonnements", direction: "out", kind: "recurring",
-  monthlyAmount: null, keywords: [],
+  monthlyAmount: null,
   lines: [
-    { id: 11, name: "Spotify", amount: 10, day: 3, keyword: "SPOTIFY" },
-    { id: 12, name: "Netflix", amount: 15, day: 8, keyword: "NETFLIX" },
+    { id: 11, name: "Spotify", amount: 10, day: 3 },
+    { id: 12, name: "Netflix", amount: 15, day: 8 },
   ],
 };
 const salaire: Group = {
   id: 3, accountId: "a1", name: "Salaire", direction: "in", kind: "recurring",
-  monthlyAmount: null, keywords: [],
-  lines: [{ id: 31, name: "Rémunération", amount: 2000, day: 1, keyword: "REMU" }],
+  monthlyAmount: null,
+  lines: [{ id: 31, name: "Rémunération", amount: 2000, day: 1 }],
 };
 
 function tx(p: Partial<Txn>): Txn {
@@ -101,7 +101,7 @@ test("recurring in-line added when unseen", () => {
 });
 
 test("ambiguous transaction counts in no group", () => {
-  const dup: Group = { ...courses, id: 4, name: "Courses2", keywords: ["CARREFOUR"] };
+  const dup: Group = { ...courses, id: 4, name: "Courses2" };
   const txns = [tx({ id: "t1", amount: -50, label: "CARREFOUR" })];
   const f = computeForecast("a1", 1000, [courses, dup], txns, "2026-07");
   // ambiguë -> non comptée : les deux enveloppes gardent reste plein (300 chacune)
@@ -111,7 +111,7 @@ test("ambiguous transaction counts in no group", () => {
 
 test("manual attachment overrides keyword", () => {
   // "CARREFOUR" matcherait Courses, mais rattaché manuellement à l'enveloppe id 5
-  const autre: Group = { id: 5, accountId: "a1", name: "Autre", direction: "out", kind: "envelope", monthlyAmount: 100, keywords: [], lines: [] };
+  const autre: Group = { id: 5, accountId: "a1", name: "Autre", direction: "out", kind: "envelope", monthlyAmount: 100, lines: [] };
   const txns = [tx({ id: "t1", amount: -40, label: "CARREFOUR", groupId: 5 })];
   const f = computeForecast("a1", 1000, [courses, autre], txns, "2026-07");
   expect(f.groups.find((g) => g.id === 5)!.spent).toBe(40); // compte dans Autre
@@ -133,7 +133,7 @@ test("manual line attachment marks the line seen even without keyword match", ()
 test("income envelope adds to estimates instead of subtracting", () => {
   const salaireEnv: Group = {
     id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "envelope",
-    monthlyAmount: 2000, keywords: ["REMU"], lines: [],
+    monthlyAmount: 2000, lines: [],
   };
   const f = computeForecast("a1", 1000, [salaireEnv], [], "2026-07");
   // rien reçu -> reste à recevoir 2000 : current 1000 + 2000 = 3000
@@ -185,7 +185,7 @@ test("next month starts from current estimate and applies full amounts", () => {
 test("rémunération principale : ajoutée à l'estimé du mois courant ET du mois suivant", () => {
   const principal: Group = {
     id: 40, accountId: "a1", name: "Rémunération principale", direction: "in",
-    kind: "envelope", monthlyAmount: 2000, keywords: [], lines: [], incomeKind: "principal",
+    kind: "envelope", monthlyAmount: 2000, lines: [], incomeKind: "principal",
   };
   const f = computeForecast("a1", 100, [principal], [], "2026-07");
   expect(f.currentEstimate).toBe(2100); // 100 + 2000 attendus
@@ -195,7 +195,7 @@ test("rémunération principale : ajoutée à l'estimé du mois courant ET du mo
 test("rémunération supplémentaire : mois courant seulement, pas de projection au mois suivant", () => {
   const supp: Group = {
     id: 41, accountId: "a1", name: "Rémunération supplémentaire", direction: "in",
-    kind: "envelope", monthlyAmount: 500, keywords: [], lines: [], incomeKind: "supplementary",
+    kind: "envelope", monthlyAmount: 500, lines: [], incomeKind: "supplementary",
   };
   const f = computeForecast("a1", 100, [supp], [], "2026-07");
   expect(f.currentEstimate).toBe(600); // 100 + 500 attendus ce mois
