@@ -1,5 +1,5 @@
 import { expect, test, describe, it } from "vitest";
-import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde, computePlannedSoldes, budgetInForce, toDatedBudgets, computeOverspends } from "../../src/lib/history";
+import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde, computePlannedSoldes, budgetInForce, toDatedBudgets, computeOverspends, onceBudgetWrites } from "../../src/lib/history";
 import { isGroupAlive, type Group, type Txn } from "../../src/lib/forecast";
 
 const courses: Group = {
@@ -605,5 +605,49 @@ describe("durée de vie des groupes", () => {
     const txn: Txn = { id: "t1", date: "2026-07-10", amount: -500, label: "x", accountId: "a1", groupId: 60 };
     const r = computeOverspends([ponctuel], [txn], "2026-07", []);
     expect(r.retained.byGroup[60]).toBeUndefined();
+  });
+});
+
+describe("onceBudgetWrites (changement de budget « ce mois seulement »)", () => {
+  const BASE = 100;
+
+  it("(a) première application : deux écritures — mois = nouveau, mois+1 = base", () => {
+    const { writes } = onceBudgetWrites([], BASE, "2026-08", 150);
+    expect(writes).toEqual([
+      { effectiveMonth: "2026-08", amount: 150 },
+      { effectiveMonth: "2026-09", amount: 100 },
+    ]);
+  });
+
+  it("(b) réapplication sur le même mois : mois+1 reste la base, pas la valeur once précédente", () => {
+    // État après (a) : entrée once à 2026-08 et restauration base à 2026-09.
+    const existing = [
+      { effectiveMonth: "2026-08", amount: 150 },
+      { effectiveMonth: "2026-09", amount: 100 },
+    ];
+    const { writes } = onceBudgetWrites(existing, BASE, "2026-08", 200);
+    // Le mois est réécrit ; 2026-09 existe déjà → pas d'écriture, il garde la base 100
+    // (l'ancienne logique aurait restauré 150, corrompant le mois suivant).
+    expect(writes).toEqual([{ effectiveMonth: "2026-08", amount: 200 }]);
+    expect(writes.some((w) => w.effectiveMonth === "2026-09")).toBe(false);
+  });
+
+  it("(c) une entrée existe déjà à mois+1 : elle n'est pas écrasée", () => {
+    // Changement futur légitime posé à 2026-09 (500), aucune entrée à 2026-08.
+    const existing = [{ effectiveMonth: "2026-09", amount: 500 }];
+    const { writes } = onceBudgetWrites(existing, BASE, "2026-08", 150);
+    expect(writes).toEqual([{ effectiveMonth: "2026-08", amount: 150 }]);
+    expect(writes.some((w) => w.effectiveMonth === "2026-09")).toBe(false);
+  });
+
+  it("restaure la valeur sous-jacente en vigueur (entrée datée antérieure) à mois+1", () => {
+    // Une hausse durable à 2026-05 (300) ; on applique once à 2026-08 → mois+1 doit
+    // revenir à 300 (valeur en vigueur), pas à la base.
+    const existing = [{ effectiveMonth: "2026-05", amount: 300 }];
+    const { writes } = onceBudgetWrites(existing, BASE, "2026-08", 150);
+    expect(writes).toEqual([
+      { effectiveMonth: "2026-08", amount: 150 },
+      { effectiveMonth: "2026-09", amount: 300 },
+    ]);
   });
 });

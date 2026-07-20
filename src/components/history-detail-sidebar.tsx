@@ -225,6 +225,11 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
   const [newName, setNewName] = useState("");
   const [newAmount, setNewAmount] = useState("");
   const [newDay, setNewDay] = useState("1");
+  // Liste des lignes affichée, en état local optimiste : `info.lines` est un
+  // instantané capturé à l'ouverture du panneau, que router.refresh() ne met pas à
+  // jour. On la maintient ici pour que l'ajout / la suppression se reflètent tout de
+  // suite (la vraie valeur sera rechargée à la prochaine ouverture du panneau).
+  const [lines, setLines] = useState(info.lines);
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
     await fn();
@@ -300,14 +305,19 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
         {info.kind === "recurring" && (
           <div className="flex flex-col gap-3">
             <Label className="font-normal">Lignes</Label>
-            {info.lines.length === 0 && <p className="text-muted-foreground text-sm">Aucune ligne pour l&apos;instant.</p>}
-            {info.lines.map((l) => (
+            {lines.length === 0 && <p className="text-muted-foreground text-sm">Aucune ligne pour l&apos;instant.</p>}
+            {lines.map((l) => (
               <LineRow
                 key={l.id}
                 line={l}
                 busy={busy}
                 onSave={(n, a, d) => run(() => editGroupLine(l.id, n, a, d))}
-                onRemove={() => run(() => removeGroupLine(l.id))}
+                onRemove={() =>
+                  run(async () => {
+                    await removeGroupLine(l.id);
+                    setLines((cur) => cur.filter((x) => x.id !== l.id));
+                  })
+                }
               />
             ))}
             {/* Ajout d'une ligne */}
@@ -331,7 +341,12 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
                 disabled={busy || !newName.trim()}
                 onClick={() =>
                   run(async () => {
-                    await addGroupLine(info.groupId, newName.trim(), parseFloat(newAmount) || 0, parseInt(newDay, 10) || 1);
+                    const n = newName.trim();
+                    const a = parseFloat(newAmount) || 0;
+                    const d = parseInt(newDay, 10) || 1;
+                    await addGroupLine(info.groupId, n, a, d);
+                    // Id temporaire négatif : uniquement clé React, jamais persisté.
+                    setLines((cur) => [...cur, { id: -Date.now(), name: n, amount: a, day: d }]);
                     setNewName("");
                     setNewAmount("");
                     setNewDay("1");

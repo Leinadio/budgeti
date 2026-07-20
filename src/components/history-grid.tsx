@@ -1537,7 +1537,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
     // le passé pour un montant appliqué « à partir de ce mois »). Nature et lignes
     // viennent du SelectGroup enrichi (pas de requête supplémentaire).
     const sg = groups.find((g) => g.id === r.id);
-    const manageMonth = months.includes(currentMonth) ? currentMonth : months[0];
+    const manageMonth = months.includes(currentMonth) ? currentMonth : months[0] >= currentMonth ? months[0] : currentMonth;
     const manageDetail: CellDetail = {
       title: r.name,
       nodes: [],

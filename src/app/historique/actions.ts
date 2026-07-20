@@ -13,7 +13,7 @@ import {
   listGroups,
 } from "../../db/repositories/groups";
 import { monthKey } from "../../lib/money";
-import { addMonthsKey, toDatedBudgets, budgetInForce } from "../../lib/history";
+import { addMonthsKey, toDatedBudgets, budgetInForce, onceBudgetWrites } from "../../lib/history";
 import type { Group } from "../../lib/forecast";
 import { revalidatePath } from "next/cache";
 
@@ -105,13 +105,14 @@ export async function setGroupAmount(
   if (!/^\d{4}-\d{2}$/.test(month) || !Number.isFinite(amount) || amount < 0) return;
   const database = db();
   if (scope === "once") {
-    // Montant précédent en vigueur juste avant l'écriture à `month`, pour le restaurer après.
     const g = listGroups(database).find((x) => x.id === groupId);
     if (!g) return;
-    const dated = toDatedBudgets(listBudgetAmounts(database));
-    const prev = budgetInForce(g as unknown as Group, month, dated);
-    setBudgetAmount(database, groupId, month, amount);
-    setBudgetAmount(database, groupId, addMonthsKey(month, 1), prev);
+    const grp = g as unknown as Group;
+    const datedForGroup = toDatedBudgets(listBudgetAmounts(database))[groupId] ?? [];
+    // Budget de base du groupe (sans aucune entrée datée), pour la restauration à month+1.
+    const base = budgetInForce(grp, month, {});
+    const { writes } = onceBudgetWrites(datedForGroup, base, month, amount);
+    for (const w of writes) setBudgetAmount(database, groupId, w.effectiveMonth, w.amount);
   } else {
     setBudgetAmount(database, groupId, month, amount);
   }

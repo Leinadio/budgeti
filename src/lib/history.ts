@@ -110,6 +110,33 @@ export function budgetInForce(g: Group, month: string, dated?: DatedBudgets): nu
   return amount ?? budgetOf(g);
 }
 
+// Écritures datées d'un changement de budget « ce mois seulement » (once).
+// À partir des entrées datées existantes du groupe, du budget de base (sans entrée
+// datée), du mois visé et du nouveau montant, renvoie la ou les écritures à poser :
+//   - le nouveau montant à `month` ;
+//   - la restauration du montant sous-jacent réel à `month+1`, UNIQUEMENT s'il
+//     n'existe pas déjà une entrée datée exactement à `month+1`.
+// Le montant sous-jacent réel est calculé en IGNORANT toute entrée datée dont
+// effectiveMonth === month : réappliquer « once » sur le même mois ne restaure donc
+// jamais la valeur ponctuelle précédente (qui corromprait le mois suivant), mais bien
+// la valeur de base sous-jacente. Ne jamais écraser une entrée future légitime à month+1.
+export function onceBudgetWrites(
+  datedForGroup: { effectiveMonth: string; amount: number }[],
+  baseBudget: number,
+  month: string,
+  amount: number,
+): { writes: { effectiveMonth: string; amount: number }[] } {
+  const next = addMonthsKey(month, 1);
+  // Valeur sous-jacente en vigueur à `month`, en ignorant une éventuelle entrée
+  // datée déjà posée exactement à `month` (la précédente application « once »).
+  let prev = baseBudget;
+  for (const b of datedForGroup) if (b.effectiveMonth !== month && b.effectiveMonth <= month) prev = b.amount;
+  const writes = [{ effectiveMonth: month, amount }];
+  // On ne restaure `prev` à month+1 que si aucun changement futur légitime n'y est déjà posé.
+  if (!datedForGroup.some((b) => b.effectiveMonth === next)) writes.push({ effectiveMonth: next, amount: prev });
+  return { writes };
+}
+
 // Regroupe les lignes du repository par groupe, en conservant le tri par mois.
 export function toDatedBudgets(rows: { groupId: number; effectiveMonth: string; amount: number }[]): DatedBudgets {
   const out: DatedBudgets = {};
