@@ -1,8 +1,11 @@
 "use client";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { X, ChevronRight, ChevronDown } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { CellDetail, DetailNode } from "@/lib/history-explain";
+import type { CellDetail, DetailNode, OverspendActionInfo } from "@/lib/history-explain";
+import { monthLabel } from "@/lib/transactions-view";
+import { decideOverspend } from "@/app/historique/actions";
 import { Sidebar, SidebarHeader, SidebarContent } from "@/components/ui/sidebar";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 
@@ -77,6 +80,68 @@ function DetailRow({ row, selected, onToggle, onSelect }: {
         </div>
       </TableCell>
     </TableRow>
+  );
+}
+
+// Bloc de décision d'un dépassement : affiché sous le détail quand la case
+// cliquée est une Balance en dépassement. « Exceptionnel » enregistre en un
+// clic ; « Permanent » déplie un mini-formulaire avec le nouveau budget
+// pré-rempli (budget + dépassement), ajustable avant validation.
+function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
+  const router = useRouter();
+  const [openForm, setOpenForm] = useState(false);
+  const [value, setValue] = useState(() => String(Math.round(((action.currentBudget ?? 0) + action.amount) * 100) / 100));
+  const [busy, setBusy] = useState(false);
+  const decide = async (decision: "exceptional" | "permanent", newBudget?: number) => {
+    setBusy(true);
+    await decideOverspend(action.accountId, action.groupId, action.month, decision, newBudget);
+    setBusy(false);
+    setOpenForm(false);
+    router.refresh();
+  };
+  return (
+    <div className="mt-4 rounded-md border p-3 text-sm">
+      <p>
+        Dépassement de {fmtAbs(action.amount)} en {monthLabel(action.month)} — que veux-tu en faire ?
+      </p>
+      {action.decision && (
+        <p className="text-muted-foreground mt-1">
+          Décidé : {action.decision === "exceptional" ? "exceptionnel" : "permanent"} (modifiable)
+        </p>
+      )}
+      <div className="mt-2 flex gap-2">
+        <button type="button" disabled={busy} onClick={() => decide("exceptional")} className="rounded-md border px-2 py-1 hover:bg-muted">
+          Exceptionnel
+        </button>
+        {action.currentBudget != null && (
+          <button type="button" disabled={busy} onClick={() => setOpenForm((v) => !v)} className="rounded-md border px-2 py-1 hover:bg-muted">
+            Permanent
+          </button>
+        )}
+      </div>
+      {openForm && action.currentBudget != null && (
+        <div className="mt-2 flex items-center gap-2">
+          <label className="text-muted-foreground" htmlFor="new-budget">Nouveau budget</label>
+          <input
+            id="new-budget"
+            type="number"
+            step="0.01"
+            min="0"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            className="w-24 rounded-md border px-2 py-1 text-right tabular-nums"
+          />
+          <button
+            type="button"
+            disabled={busy || !(parseFloat(value) > 0)}
+            onClick={() => decide("permanent", parseFloat(value))}
+            className="bg-primary text-primary-foreground rounded-md px-2 py-1"
+          >
+            Valider
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -187,6 +252,7 @@ function DetailBody({ detail, onClose, selectedPanel, onSelectRow }: {
             })()}
           </TableBody>
         </Table>
+        {detail.overspendAction && <OverspendActionBlock action={detail.overspendAction} />}
         {detail.note && <p className="text-muted-foreground mt-3 text-xs">{detail.note}</p>}
       </SidebarContent>
     </>

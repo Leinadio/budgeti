@@ -32,7 +32,24 @@ export type DetailNode = { label: string; amount: number; children?: DetailNode[
 // de surligner cette case en cliquant la ligne « Total » du side panel.
 // description : si présent, le détail est une explication de colonne (texte, un
 // paragraphe par entrée) et non un calcul — le panneau l'affiche alors tel quel.
-export type CellDetail = { title: string; subtitle?: string; nodes: DetailNode[]; result: number; note?: string; cellRef?: string; description?: string[] };
+// overspendAction : présent quand le détail vient d'une Balance en dépassement d'un
+// mois passé ou courant. Pilote le bloc de décision affiché sous le tableau du
+// détail dans le side panel (voir OverspendActionBlock).
+export type CellDetail = { title: string; subtitle?: string; nodes: DetailNode[]; result: number; note?: string; cellRef?: string; description?: string[]; overspendAction?: OverspendActionInfo };
+
+// Info nécessaire au bloc de décision d'un dépassement de budget : quel groupe (0 =
+// non catégorisés), quel mois, de combien, et la décision déjà prise le cas échéant.
+// currentBudget = null pour les non catégorisés (pas de budget, donc pas d'option
+// « permanent »).
+export type OverspendActionInfo = {
+  accountId: string;
+  groupId: number; // 0 = non catégorisés
+  groupName: string;
+  month: string; // YYYY-MM
+  amount: number; // dépassement, positif
+  decision: "exceptional" | "permanent" | null; // null = non tranché
+  currentBudget: number | null; // null = pas d'option « permanent » (non catégorisés)
+};
 
 export function sumOf(nodes: DetailNode[]): number {
   return nodes.reduce((s, n) => s + n.amount, 0);

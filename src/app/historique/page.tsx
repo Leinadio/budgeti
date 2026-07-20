@@ -139,6 +139,8 @@ export default async function HistoriquePage({
                   solde={solde}
                   planned={planned}
                   retained={overspends.retained}
+                  accountId={a.id}
+                  decisions={decisions.map(({ groupId, month, decision }) => ({ groupId, month, decision }))}
                 />
               )}
             </TabsContent>

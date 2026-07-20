@@ -23,6 +23,10 @@ import {
   txnNode,
 } from "@/lib/history-explain";
 
+// Décision déjà prise sur un dépassement (groupId, mois), telle que chargée en page
+// (Task 4). groupId = 0 pour les non catégorisés.
+type OverspendDecisionInfo = { groupId: number; month: string; decision: "exceptional" | "permanent" };
+
 // Groupes du compte, pour le menu de (ré)assignation sur chaque transaction.
 type SelectGroup = { id: number; name: string; lines: { id: number; name: string }[] };
 const MUTED40 = "bg-[color-mix(in_oklab,var(--muted)_40%,var(--background))]";
@@ -416,7 +420,7 @@ function soldeActuelDetail(
 // detailRow : ligne de groupe (transactions/postes) permettant de construire le
 // détail cliquable des cellules. Absente pour les sous-lignes (postes d'un
 // récurrent) : ces cellules restent non cliquables (hors périmètre, cf. ci-dessous).
-function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, subtitleOf, detailRow, months, currentMonth, rowKey, selCellKey, prevRowKey, incomeKind, depassCumulRows }: {
+function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, subtitleOf, detailRow, months, currentMonth, rowKey, selCellKey, prevRowKey, incomeKind, depassCumulRows, accountId, decisionByKey }: {
   cells: MonthCell[];
   mode: "out" | "in" | "total";
   solde?: (number | null)[];
@@ -442,6 +446,11 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
   // mois, pour décomposer le « Dépassement cumulé » du solde si dépassement.
   // Absent pour les sous-lignes.
   depassCumulRows?: { id: number; name: string; amount: number }[][];
+  // Compte courant et décisions déjà prises : pour attacher le bloc de décision
+  // (overspendAction) sur la Balance d'une ligne de groupe en dépassement. Absents
+  // pour les sous-lignes (pas d'action sur un poste).
+  accountId?: string;
+  decisionByKey?: Map<string, "exceptional" | "permanent">;
 }) {
   return (
     <>
@@ -481,6 +490,19 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
                 { subtitle, result: c.balance },
               )
             : null;
+        // Bloc de décision : uniquement sur une Balance en dépassement d'un mois
+        // passé ou courant (les mois futurs n'ont rien de réel à trancher).
+        if (resteDetail && mode === "out" && month <= currentMonth && c.balance < -0.005 && r && accountId) {
+          resteDetail.overspendAction = {
+            accountId,
+            groupId: r.id,
+            groupName: r.name,
+            month,
+            amount: -c.balance,
+            decision: decisionByKey?.get(`${r.id}::${month}`) ?? null,
+            currentBudget: c.budgeted,
+          };
+        }
 
         const s = solde?.[i];
         const net = c.recu - c.depense;
@@ -625,7 +647,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
 // donc leur somme aussi) : toujours cliquable. Pour les non catégorisés, budget et
 // balance sont toujours à 0 : l'invariant ne tient que si dépensé == 0, donc en
 // pratique non cliquable (comme documenté au Task 3 pour ce cas).
-function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPrevu, planDepass, uncatInSec, selCellKey, prevRowKey, retained }: {
+function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPrevu, planDepass, uncatInSec, selCellKey, prevRowKey, retained, accountId, decisionByKey }: {
   sec: HistorySection;
   months: string[];
   currentMonth: string;
@@ -646,6 +668,10 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
   // Dépassement non catégorisés retenu (non tranché) : reconduit sur les mois
   // futurs à la place du dépassement du mois courant (cf. Task 4).
   retained?: RetainedOverspends;
+  // Compte courant et décisions déjà prises : pour attacher le bloc de décision sur
+  // la Balance non catégorisés en dépassement (section « out » uniquement).
+  accountId?: string;
+  decisionByKey?: Map<string, "exceptional" | "permanent">;
 }) {
   const isUncat = sec.kind === "uncategorized";
   // Section « non catégorisés » côté reçus (affichée sous les rémunérations).
@@ -713,6 +739,20 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
               : [],
           { subtitle, result: resteVal },
         );
+        // Bloc de décision : uniquement la section Non catégorisés « out », en
+        // dépassement, sur un mois passé ou courant. Pas d'option « permanent »
+        // (currentBudget: null — les non catégorisés n'ont pas de budget).
+        if (isUncat && !uncatIn && resteVal < -0.005 && month <= currentMonth && accountId) {
+          resteDetail.overspendAction = {
+            accountId,
+            groupId: 0,
+            groupName: "Non catégorisés",
+            month,
+            amount: -resteVal,
+            decision: decisionByKey?.get(`0::${month}`) ?? null,
+            currentBudget: null,
+          };
+        }
 
         const s = solde?.[i];
         const net = c.recu - c.depense;
@@ -1231,7 +1271,7 @@ function scrollableAncestor(el: HTMLElement, axis: "x" | "y"): HTMLElement | nul
   return null;
 }
 
-export function HistoryGrid({ months, currentMonth, forecast, sections, overspend, grand, groups, solde, planned, retained, onSelect, selected, anchor }: {
+export function HistoryGrid({ months, currentMonth, forecast, sections, overspend, grand, groups, solde, planned, retained, onSelect, selected, anchor, accountId, decisions }: {
   months: string[];
   currentMonth: string;
   forecast: AccountForecast;
@@ -1252,7 +1292,17 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
   // Case ancre = montant cliqué dans le tableau ; reste surligné tant que le panneau
   // est ouvert, en plus de la case active.
   anchor?: string | null;
+  // Compte affiché : nécessaire au bloc de décision d'un dépassement (Task 6).
+  accountId: string;
+  // Décisions déjà prises sur des dépassements (groupId, mois), chargées en page.
+  decisions?: OverspendDecisionInfo[];
 }) {
+  // Décision déjà prise, indexée par « groupId::mois » : sert à attacher
+  // overspendAction sur les Balances rouges (cf. AmountCells / SectionTotalsCells).
+  const decisionByKey = useMemo(
+    () => new Map((decisions ?? []).map((d) => [`${d.groupId}::${d.month}`, d.decision])),
+    [decisions],
+  );
   const [open, setOpen] = useState<Set<string>>(new Set());
   const toggle = (k: string) =>
     setOpen((prev) => {
@@ -1451,6 +1501,8 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
             prevRowKey={prevSoldeRowKey.get(selfKey)}
             incomeKind={r.incomeKind}
             depassCumulRows={depassCumulByRow.get(r.id)}
+            accountId={accountId}
+            decisionByKey={decisionByKey}
           />
         </TableRow>
         {gOpen && (
@@ -1580,6 +1632,8 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
             selCellKey={selCellKey}
             prevRowKey={prevSoldeRowKey.get(rowKey)}
             retained={retained}
+            accountId={accountId}
+            decisionByKey={decisionByKey}
           />
         </TableRow>
         {uOpen && sec.txns?.map((t) => (

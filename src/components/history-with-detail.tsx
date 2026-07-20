@@ -20,6 +20,10 @@ export function HistoryWithDetail(props: {
   solde: SoldeColumn;
   planned: PlannedSoldes;
   retained?: RetainedOverspends;
+  // Compte affiché et décisions déjà prises sur des dépassements : nécessaires au
+  // bloc de décision du side panel (Task 6).
+  accountId: string;
+  decisions?: { groupId: number; month: string; decision: "exceptional" | "permanent" }[];
 }) {
   const { setDetail, selected, anchor } = useDetailSidebar();
   return (
