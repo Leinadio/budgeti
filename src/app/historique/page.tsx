@@ -3,11 +3,12 @@ import { listAccounts } from "../../db/repositories/accounts";
 import { listTransactions } from "../../db/repositories/transactions";
 import { listGroups } from "../../db/repositories/groups";
 import { listBudgetAmounts } from "../../db/repositories/budget-amounts";
+import { listOverspendDecisions } from "../../db/repositories/overspend-decisions";
 import {
   computeHistory, grandTotals, monthlyOverspend, monthsWithData, computeSolde,
   computePlannedSoldes, addMonthsKey, monthRange, isMonthKey, clampMonth,
   sliceHistorySections, sliceSoldeColumn, slicePlannedSoldes, computeTableEstimate,
-  toDatedBudgets,
+  toDatedBudgets, computeOverspends,
 } from "../../lib/history";
 import { computeForecast, type Group, type Txn } from "../../lib/forecast";
 import { monthRemuneration } from "../../lib/remuneration";
@@ -102,7 +103,9 @@ export default async function HistoriquePage({
           const estimateValue =
             computeTableEstimate(sectionsFull, calcMonths, currentMonth, a.balance)?.value ?? forecast.currentEstimate;
           const soldeFull = computeSolde(sectionsFull, calcMonths, currentMonth, a.balance, estimateValue);
-          const plannedFull = computePlannedSoldes(sectionsFull, calcMonths, currentMonth, soldeFull.openings, estimateValue);
+          const decisions = listOverspendDecisions(database, a.id);
+          const overspends = computeOverspends(groups, txns, currentMonth, decisions, datedBudgets);
+          const plannedFull = computePlannedSoldes(sectionsFull, calcMonths, currentMonth, soldeFull.openings, estimateValue, overspends.retained);
           const sections = sliceHistorySections(sectionsFull, calcMonths, k);
           const solde = sliceSoldeColumn(soldeFull, k);
           const planned = slicePlannedSoldes(plannedFull, k);
@@ -135,6 +138,7 @@ export default async function HistoriquePage({
                   groups={selectGroups}
                   solde={solde}
                   planned={planned}
+                  retained={overspends.retained}
                 />
               )}
             </TabsContent>

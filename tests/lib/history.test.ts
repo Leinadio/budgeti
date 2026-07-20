@@ -447,6 +447,27 @@ test("computePlannedSoldes: la supplémentaire compte au mois courant mais pas e
   expect(p.prevuClosings[1]).toBeCloseTo(open + 500, 2); // futur : +0 (pas de projection)
 });
 
+test("computePlannedSoldes : les mois futurs reconduisent les dépassements retenus, pas ceux du mois courant", () => {
+  const principal: Group = { id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", kind: "envelope", monthlyAmount: 2000, keywords: [], lines: [], incomeKind: "principal" };
+  const courses2: Group = { id: 2, accountId: "a1", name: "Courses", direction: "out", kind: "envelope", monthlyAmount: 300, keywords: [], lines: [], incomeKind: null };
+  const txns = [
+    tx({ id: "s", date: "2026-07-01", amount: 2000, label: "REMU", groupId: 1 }),
+    tx({ id: "c", date: "2026-07-10", amount: -350, label: "CARREFOUR", groupId: 2 }), // dépassement courant : 50
+  ];
+  const months = ["2026-07", "2026-08"];
+  const sections = computeHistory([principal, courses2], txns, months, "2026-07");
+  const solde = computeSolde(sections, months, "2026-07", 5000);
+  const open = solde.openings[0];
+  // Non tranché : retained = 50 -> août le soustrait (comme avant).
+  const pending = computePlannedSoldes(sections, months, "2026-07", solde.openings, null, { byGroup: { 2: 50 }, uncat: 0 });
+  expect(pending.depassClosings[1]).toBeCloseTo((open + 2000 - 300 - 50) + (2000 - 300 - 50), 2);
+  // Tranché (exceptionnel) : retained vide -> août ne soustrait plus rien.
+  const decided = computePlannedSoldes(sections, months, "2026-07", solde.openings, null, { byGroup: {}, uncat: 0 });
+  expect(decided.depassClosings[1]).toBeCloseTo((open + 2000 - 300 - 50) + (2000 - 300), 2);
+  // Le mois courant reste factuel dans les deux cas (dépassement réel de 50).
+  expect(decided.depassClosings[0]).toBeCloseTo(open + 2000 - 300 - 50, 2);
+});
+
 test("budgets datés : le budget en vigueur dépend du mois, sans rétroactivité", () => {
   const dated = { 1: [{ effectiveMonth: "2026-08", amount: 400 }] };
   const txns = [tx({ id: "1", date: "2026-07-10", amount: -350, label: "CARREFOUR", groupId: 1 })];

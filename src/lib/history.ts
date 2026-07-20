@@ -574,7 +574,7 @@ export function computeOverspends(
 // la colonne se lit ainsi en continu jusqu'au « Solde actuel ».
 export function computePlannedSoldes(
   sections: HistorySection[], months: string[], currentMonth: string, openingsReal: number[],
-  currentEstimate?: number | null,
+  currentEstimate?: number | null, retained?: RetainedOverspends,
 ): PlannedSoldes {
   const n = months.length;
   let ci = months.indexOf(currentMonth);
@@ -609,14 +609,16 @@ export function computePlannedSoldes(
         // Rien de planifié : le prévu traverse. À l'étape « dépenses », le « si
         // dépassement » retire le débordement net des non catégorisés (maintenu).
         const dir = sec.uncatDirection ?? "out";
-        if (dir === "out") runD -= uncatOverspend(sections, osMonth);
+        if (dir === "out")
+          runD -= anchored ? uncatOverspend(sections, osMonth) : retained ? retained.uncat : uncatOverspend(sections, osMonth);
         (uncatPrevuRunning[dir] ??= new Array<number | null>(n).fill(null))[i] = runP;
         (uncatDepassRunning[dir] ??= new Array<number | null>(n).fill(null))[i] = runD;
       } else {
         for (const r of sec.rows) {
           const net = rowRevenus(r, i, isCurrent) - rowBudget(r, i);
           runP += net;
-          runD += net - rowOverspend(r, osMonth);
+          const os = anchored ? rowOverspend(r, osMonth) : retained ? retained.byGroup[r.id] ?? 0 : rowOverspend(r, osMonth);
+          runD += net - os;
           prevuRowRunning[r.id][i] = runP;
           depassRowRunning[r.id][i] = runD;
         }

@@ -4,7 +4,7 @@ import { ArrowUpRight, ArrowDownRight, ChevronDown, ChevronRight } from "lucide-
 import { cn } from "@/lib/utils";
 import { monthLabel } from "@/lib/transactions-view";
 import type { AccountForecast } from "@/lib/forecast";
-import { type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn, type SoldeColumn, type PlannedSoldes, uncatOverspend, computeTableEstimate } from "@/lib/history";
+import { type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn, type SoldeColumn, type PlannedSoldes, type RetainedOverspends, uncatOverspend, computeTableEstimate } from "@/lib/history";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TruncatedText } from "@/components/truncated-text";
 import { GroupSelectField } from "@/components/group-select-field";
@@ -624,7 +624,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
 // donc leur somme aussi) : toujours cliquable. Pour les non catégorisés, budget et
 // balance sont toujours à 0 : l'invariant ne tient que si dépensé == 0, donc en
 // pratique non cliquable (comme documenté au Task 3 pour ce cas).
-function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPrevu, planDepass, uncatInSec, selCellKey, prevRowKey }: {
+function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPrevu, planDepass, uncatInSec, selCellKey, prevRowKey, retained }: {
   sec: HistorySection;
   months: string[];
   currentMonth: string;
@@ -642,6 +642,9 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
   selCellKey?: ReadonlySet<string>;
   // Ligne dont le solde est le « Solde précédent » de cette section (prédécesseur).
   prevRowKey?: string;
+  // Dépassement non catégorisés retenu (non tranché) : reconduit sur les mois
+  // futurs à la place du dépassement du mois courant (cf. Task 4).
+  retained?: RetainedOverspends;
 }) {
   const isUncat = sec.kind === "uncategorized";
   // Section « non catégorisés » côté reçus (affichée sous les rémunérations).
@@ -726,12 +729,15 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
 
         // Dépassement des non catégorisés = la part rouge de leur Balance (dépensé
         // au-delà des reçus non catégorisés). Sert au calcul du solde si dépassement.
-        // Mois futur : celui du mois courant, maintenu.
+        // Mois futur : le dépassement retenu (non tranché) si fourni, sinon repli sur
+        // celui du mois courant, maintenu.
         const ciIdx = months.indexOf(currentMonth);
-        const srcI = month <= currentMonth || ciIdx === -1 ? i : ciIdx;
+        const isFuture = month > currentMonth;
+        const srcI = isFuture && ciIdx !== -1 ? ciIdx : i;
         const cDep = sec.totals[srcI];
         const inRecuSrc = uncatInSec?.totals[srcI]?.recu ?? 0;
-        const depassVal = isUncat ? Math.max(0, cDep.depense - inRecuSrc - cDep.budgeted) : 0;
+        const currentDepassVal = Math.max(0, cDep.depense - inRecuSrc - cDep.budgeted);
+        const depassVal = isUncat ? (isFuture ? retained?.uncat ?? currentDepassVal : currentDepassVal) : 0;
 
         // Non catégorisés comme étape du plan : planPrevu/planDepass fournissent les
         // valeurs courues à cette ligne (le débordement net est déjà retiré de la
@@ -895,7 +901,7 @@ function IncomeTotalCells({ sec, months, currentMonth, onSelect, selCellKey }: {
 // Reste : cliquable seulement si l'invariant budget − dépensé == balance tient
 // (souvent faux au global : la section Rémunérations a un budget mais pas de
 // dépense, donc généralement non cliquable — ce qui est acceptable, cf. brief).
-function GrandTotalsCells({ sections, grand, solde, planned, overspend, months, currentMonth, currentEstimate, onSelect, selCellKey }: {
+function GrandTotalsCells({ sections, grand, solde, planned, overspend, months, currentMonth, currentEstimate, onSelect, selCellKey, retained }: {
   sections: HistorySection[];
   grand: MonthCell[];
   solde: SoldeColumn;
@@ -908,6 +914,9 @@ function GrandTotalsCells({ sections, grand, solde, planned, overspend, months, 
   currentEstimate?: number;
   onSelect?: (d: CellDetail) => void;
   selCellKey?: ReadonlySet<string>;
+  // Dépassements retenus (non tranchés) : reconduits sur les mois futurs à la place
+  // des dépassements réels du mois courant (cf. Task 4).
+  retained?: RetainedOverspends;
 }) {
   return (
     <>
@@ -1004,14 +1013,22 @@ function GrandTotalsCells({ sections, grand, solde, planned, overspend, months, 
               )
             : null;
         // Dépassement cumulé du grand total = dépassement total maintenu, décomposé
-        // par groupe. Les montants viennent du mois courant (maintenus, cf. cs), mais
-        // les renvois pointent vers les cases Balance du mois affiché : la
-        // surbrillance reste dans la colonne du mois cliqué.
-        const uncatOs = uncatOverspend(sections, cs);
+        // par groupe. Mois passés/courant : montants réels du mois affiché. Mois
+        // futurs : dépassements retenus (non tranchés) si fournis, sinon repli sur
+        // ceux du mois courant (cf. cs). Les renvois pointent toujours vers les cases
+        // Balance du mois affiché : la surbrillance reste dans la colonne du mois cliqué.
+        const isFuture = month > currentMonth;
+        const uncatOs = isFuture ? retained?.uncat ?? uncatOverspend(sections, cs) : uncatOverspend(sections, cs);
+        const overspendRows: { id: number; name: string; amount: number }[] =
+          isFuture && retained
+            ? allRows
+                .filter((r) => r.direction === "out" && (retained.byGroup[r.id] ?? 0) > 0.005)
+                .map((r) => ({ id: r.id, name: r.name, amount: -(retained.byGroup[r.id] ?? 0) }))
+            : allRows
+                .filter((r) => r.direction === "out" && r.cells[cs].balance < 0)
+                .map((r) => ({ id: r.id, name: r.name, amount: r.cells[cs].balance }));
         const grandOverspendChildren: DetailNode[] = [
-          ...allRows
-            .filter((r) => r.direction === "out" && r.cells[cs].balance < 0)
-            .map((r): DetailNode => ({ label: r.name, amount: r.cells[cs].balance, ref: cellKey(groupRow(r.id), "reste", i) })),
+          ...overspendRows.map((r): DetailNode => ({ label: r.name, amount: r.amount, ref: cellKey(groupRow(r.id), "reste", i) })),
           // Débordement net des non catégorisés (dépensé au-delà des reçus), inclus
           // dans la chaîne « si dépassement » comme les dépassements de budget.
           ...(uncatOs > 0.005
@@ -1213,7 +1230,7 @@ function scrollableAncestor(el: HTMLElement, axis: "x" | "y"): HTMLElement | nul
   return null;
 }
 
-export function HistoryGrid({ months, currentMonth, forecast, sections, overspend, grand, groups, solde, planned, onSelect, selected, anchor }: {
+export function HistoryGrid({ months, currentMonth, forecast, sections, overspend, grand, groups, solde, planned, retained, onSelect, selected, anchor }: {
   months: string[];
   currentMonth: string;
   forecast: AccountForecast;
@@ -1223,6 +1240,9 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
   groups: SelectGroup[];
   solde: SoldeColumn;
   planned: PlannedSoldes;
+  // Dépassements retenus (non tranchés) par groupe et pour les non catégorisés :
+  // ce que les mois futurs de la chaîne « si dépassement » reconduisent (cf. Task 4).
+  retained?: RetainedOverspends;
   // Clic sur un montant : remonté au parent, qui l'affiche dans la sidebar.
   onSelect: (d: CellDetail) => void;
   // Cases actives choisies depuis le side panel (clés data-cellkey, null = aucune).
@@ -1307,19 +1327,24 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
   // Pour chaque ligne porteuse de plan (dans l'ordre d'accumulation de
   // computePlannedSoldes) et chaque mois, la liste des dépassements de budget par
   // groupe cumulés jusqu'à elle incluse. Sert à décomposer le « Dépassement
-  // cumulé » du solde si dépassement. Mois passés / courant : dépassements du mois
-  // affiché (le plan s'y ancre) ; mois futurs : dépassements du mois courant maintenus.
+  // cumulé » du solde si dépassement. Mois passés / courant : dépassements réels du
+  // mois affiché (le plan s'y ancre) ; mois futurs : dépassements retenus (non
+  // tranchés) si fournis, sinon repli sur les dépassements réels du mois courant.
   const depassCumulByRow = useMemo(() => {
     const map = new Map<number, { id: number; name: string; amount: number }[][]>();
     if (ciSafe < 0) return map;
+    const realOs = (r: HistoryRow, m: number) => {
+      const cell = r.cells[m];
+      return r.direction === "out" && cell ? Math.max(0, cell.depense - cell.budgeted) : 0;
+    };
     for (let i = 0; i < months.length; i++) {
-      const osMonth = months[i] <= currentMonth ? i : ciSafe;
+      const isFuture = months[i] > currentMonth;
+      const osMonth = isFuture ? ciSafe : i;
       const acc: { id: number; name: string; amount: number }[] = [];
       for (const sec of sections) {
         if (sec.kind === "uncategorized") continue;
         for (const r of sec.rows) {
-          const cell = r.cells[osMonth];
-          const os = r.direction === "out" && cell ? Math.max(0, cell.depense - cell.budgeted) : 0;
+          const os = isFuture && retained ? retained.byGroup[r.id] ?? 0 : realOs(r, osMonth);
           if (os > 0.005) acc.push({ id: r.id, name: r.name, amount: os });
           let lists = map.get(r.id);
           if (!lists) map.set(r.id, (lists = []));
@@ -1328,7 +1353,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
       }
     }
     return map;
-  }, [sections, ciSafe, months, currentMonth]);
+  }, [sections, ciSafe, months, currentMonth, retained]);
 
   // Estimé de fin du mois courant, aligné sur le tableau : Solde actuel + les
   // rémunérations restant à recevoir − les Balances vertes non nulles (le budget
@@ -1553,6 +1578,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
             uncatInSec={dir === "out" ? sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in") : undefined}
             selCellKey={selCellKey}
             prevRowKey={prevSoldeRowKey.get(rowKey)}
+            retained={retained}
           />
         </TableRow>
         {uOpen && sec.txns?.map((t) => (
@@ -1777,7 +1803,7 @@ export function HistoryGrid({ months, currentMonth, forecast, sections, overspen
           <TableCell className="sticky left-0 z-10 bg-[color-mix(in_oklab,var(--muted)_60%,var(--background))] p-0">
             <FirstColBox>Solde actuel</FirstColBox>
           </TableCell>
-          <GrandTotalsCells sections={sections} grand={grand} solde={solde} planned={planned} overspend={overspend} months={months} currentMonth={currentMonth} currentEstimate={estimateValue} onSelect={onSelect} selCellKey={selCellKey} />
+          <GrandTotalsCells sections={sections} grand={grand} solde={solde} planned={planned} overspend={overspend} months={months} currentMonth={currentMonth} currentEstimate={estimateValue} onSelect={onSelect} selCellKey={selCellKey} retained={retained} />
         </TableRow>
         {/* Estimé fin de mois : mois courant = Solde actuel + rémunérations restant
             à recevoir − Balances vertes (le budget restant, supposé dépensé d'ici la
