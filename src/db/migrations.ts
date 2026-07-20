@@ -139,3 +139,14 @@ export function migrateRemunerationPrincipalToEnvelope(db: Database.Database): v
     }
   })();
 }
+
+// Durée de vie des groupes : mois de départ / de fin. Les groupes existants
+// deviennent permanents et visibles partout (start_month très ancien).
+export function migrateGroupLifespan(db: Database.Database) {
+  const cols = db.prepare("PRAGMA table_info(groups)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "start_month"))
+    db.exec(`ALTER TABLE groups ADD COLUMN start_month TEXT`);
+  if (!cols.some((c) => c.name === "end_month"))
+    db.exec(`ALTER TABLE groups ADD COLUMN end_month TEXT`);
+  db.exec(`UPDATE groups SET start_month = '2000-01' WHERE start_month IS NULL`);
+}

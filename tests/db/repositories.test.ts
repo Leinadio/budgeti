@@ -12,7 +12,9 @@ import {
   insertLine,
   deleteLine,
   hasIncomeGroup,
+  renameGroup,
 } from "../../src/db/repositories/groups";
+import { migrateGroupLifespan } from "../../src/db/migrations";
 
 test("transaction upsert dedupes by id and lists back", () => {
   const db = getDb(":memory:");
@@ -34,7 +36,7 @@ test("settings round-trip", () => {
 test("envelope group: keywords add/list/remove", () => {
   const db = getDb(":memory:");
   upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300);
+  const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2000-01", null);
   addKeyword(db, gid, "CARREFOUR");
   addKeyword(db, gid, "LECLERC");
   const g = listGroups(db)[0];
@@ -52,7 +54,7 @@ test("envelope group: keywords add/list/remove", () => {
 test("recurring group: dated lines summed, delete cascades", () => {
   const db = getDb(":memory:");
   upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  const gid = insertRecurringGroup(db, "a1", "Abonnements", "out");
+  const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2000-01", null);
   insertLine(db, gid, "Spotify", 10, 3, "SPOTIFY");
   insertLine(db, gid, "Netflix", 15, 8, "NETFLIX");
   const g = listGroups(db)[0];
@@ -93,9 +95,9 @@ test("deleteAccount removes the account, its transactions, its groups+lines, and
   upsertAccount(db, { id: "a2", name: "CIC", iban_masked: null, balance: 50, currency: "EUR", last_synced: null });
   upsertTransaction(db, { id: "t1", account_id: "a1", date: "2026-07-01", amount: -10, label: "X", category_id: null });
   upsertTransaction(db, { id: "t2", account_id: "a2", date: "2026-07-01", amount: -20, label: "Y", category_id: null });
-  const g1 = insertRecurringGroup(db, "a1", "Abonnements", "out");
+  const g1 = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2000-01", null);
   insertLine(db, g1, "Spotify", 10, 3, "SPOTIFY");
-  const g2 = insertRecurringGroup(db, "a2", "Courses", "out");
+  const g2 = insertRecurringGroup(db, "a2", "Courses", "out", null, "2000-01", null);
   setSetting(db, "account_uids", JSON.stringify(["a1", "a2"]));
 
   deleteAccount(db, "a1");
@@ -112,7 +114,7 @@ test("deleteAccount removes the account, its transactions, its groups+lines, and
 test("setTransactionGroup attaches and detaches", () => {
   const db = getDb(":memory:");
   upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300);
+  const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2000-01", null);
   upsertTransaction(db, { id: "t1", account_id: "a1", date: "2026-07-01", amount: -30, label: "X", category_id: null });
   setTransactionGroup(db, "t1", gid);
   expect(listTransactions(db)[0].groupId).toBe(gid);
@@ -123,9 +125,9 @@ test("setTransactionGroup attaches and detaches", () => {
 test("groups carry income_kind for income classification", () => {
   const db = getDb(":memory:");
   upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  const p = insertRecurringGroup(db, "a1", "Rémunération principale", "in", "principal");
-  const s = insertEnvelopeGroup(db, "a1", "Rémunération supplémentaire", "in", 0, "supplementary");
-  const c = insertEnvelopeGroup(db, "a1", "Courses", "out", 300);
+  const p = insertRecurringGroup(db, "a1", "Rémunération principale", "in", "principal", "2000-01", null);
+  const s = insertEnvelopeGroup(db, "a1", "Rémunération supplémentaire", "in", 0, "supplementary", "2000-01", null);
+  const c = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2000-01", null);
   const byId = Object.fromEntries(listGroups(db).map((g) => [g.id, g]));
   expect(byId[p].incomeKind).toBe("principal");
   expect(byId[s].incomeKind).toBe("supplementary");
@@ -136,8 +138,42 @@ test("hasIncomeGroup détecte une rémunération existante du même type", () =>
   const db = getDb(":memory:");
   upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
   upsertAccount(db, { id: "a2", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  insertEnvelopeGroup(db, "a1", "Rémunération principale", "in", 2000, "principal");
+  insertEnvelopeGroup(db, "a1", "Rémunération principale", "in", 2000, "principal", "2000-01", null);
   expect(hasIncomeGroup(db, "a1", "principal")).toBe(true);
   expect(hasIncomeGroup(db, "a1", "supplementary")).toBe(false);
   expect(hasIncomeGroup(db, "a2", "principal")).toBe(false);
+});
+
+test("stocke et relit la durée de vie d'un groupe (start_month / end_month)", () => {
+  const db = getDb(":memory:");
+  upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
+  const permanent = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-07", null);
+  const ponctuel = insertEnvelopeGroup(db, "a1", "Cadeau", "out", 50, null, "2026-08", "2026-08");
+  const rec = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-07", null);
+  const groups = listGroups(db);
+  const byId = (id: number) => groups.find((g) => g.id === id)!;
+  expect(byId(permanent).startMonth).toBe("2026-07");
+  expect(byId(permanent).endMonth).toBeNull();
+  expect(byId(ponctuel).endMonth).toBe("2026-08");
+  expect(byId(rec).startMonth).toBe("2026-07");
+});
+
+test("renomme un groupe sans toucher au reste", () => {
+  const db = getDb(":memory:");
+  upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
+  const id = insertEnvelopeGroup(db, "a1", "Ancien", "out", 100, null, "2026-07", null);
+  renameGroup(db, id, "Nouveau");
+  expect(listGroups(db).find((g) => g.id === id)!.name).toBe("Nouveau");
+});
+
+test("les groupes créés avant migration sont visibles partout (start_month '2000-01')", () => {
+  const db = getDb(":memory:");
+  upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
+  // Simule une base pré-migration : on insère sans les colonnes, puis on rejoue la migration.
+  db.prepare(
+    "INSERT INTO groups (account_id, name, direction, kind, monthly_amount) VALUES ('a1','Legacy','out','envelope',200)",
+  ).run();
+  db.exec("UPDATE groups SET start_month = NULL, end_month = NULL");
+  migrateGroupLifespan(db);
+  expect(listGroups(db)[0].startMonth).toBe("2000-01");
 });

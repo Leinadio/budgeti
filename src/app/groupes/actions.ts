@@ -33,16 +33,16 @@ export async function addGroup(formData: FormData) {
     if (hasIncomeGroup(db(), accountId, nature)) return; // une seule de chaque
     const parsed = Number.parseFloat(String(formData.get("monthlyAmount")));
     const amount = Number.isFinite(parsed) ? Math.abs(parsed) : 0;
-    insertEnvelopeGroup(db(), accountId, REMU_NAMES[nature], "in", amount, nature);
+    insertEnvelopeGroup(db(), accountId, REMU_NAMES[nature], "in", amount, nature, "2000-01", null);
   } else if (nature === "expense") {
     const name = String(formData.get("name") ?? "").trim();
     if (!name) return;
     const kind = String(formData.get("kind") ?? "");
     if (kind === "envelope") {
       const parsed = Number.parseFloat(String(formData.get("monthlyAmount")));
-      insertEnvelopeGroup(db(), accountId, name, "out", Number.isFinite(parsed) ? Math.abs(parsed) : 0, null);
+      insertEnvelopeGroup(db(), accountId, name, "out", Number.isFinite(parsed) ? Math.abs(parsed) : 0, null, "2000-01", null);
     } else if (kind === "recurring") {
-      insertRecurringGroup(db(), accountId, name, "out", null);
+      insertRecurringGroup(db(), accountId, name, "out", null, "2000-01", null);
     } else {
       return;
     }

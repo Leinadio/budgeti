@@ -60,7 +60,9 @@ CREATE TABLE IF NOT EXISTS groups (
   direction TEXT NOT NULL CHECK (direction IN ('in', 'out')),
   kind TEXT NOT NULL CHECK (kind IN ('envelope', 'recurring')),
   monthly_amount REAL,
-  income_kind TEXT                 -- 'principal' | 'supplementary' | NULL (revenu)
+  income_kind TEXT,                -- 'principal' | 'supplementary' | NULL (revenu)
+  start_month TEXT,                -- 'YYYY-MM' : mois de départ (invisible avant)
+  end_month TEXT                   -- 'YYYY-MM' ou NULL : dernier mois (NULL = permanent)
 );
 
 CREATE TABLE IF NOT EXISTS group_lines (

@@ -105,7 +105,7 @@ test("findReconcileSuggestions enforces boundary at exactly 5-day window", () =>
 
 test("mergeTransactions keeps the bank row, carries tagging, notes the manual label", () => {
   const db = seed();
-  const gid = insertEnvelopeGroup(db, "a1", "Rémunération", "in", 652.09);
+  const gid = insertEnvelopeGroup(db, "a1", "Rémunération", "in", 652.09, null, "2000-01", null);
   const m = insertManualTransaction(db, {
     accountId: "a1", date: "2026-07-01", amount: 652.09, label: "Rémunération juillet",
     groupId: gid, lineId: null, incomeKind: "principal",
@@ -123,7 +123,7 @@ test("mergeTransactions keeps the bank row, carries tagging, notes the manual la
 
 test("mergeTransactions does not delete the manual row when synced target does not exist", () => {
   const db = seed();
-  const gid = insertEnvelopeGroup(db, "a1", "Rémunération", "in", 652.09);
+  const gid = insertEnvelopeGroup(db, "a1", "Rémunération", "in", 652.09, null, "2000-01", null);
   const m = insertManualTransaction(db, {
     accountId: "a1", date: "2026-07-01", amount: 652.09, label: "Rémunération juillet",
     groupId: gid, lineId: null, incomeKind: "principal",

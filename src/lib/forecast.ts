@@ -21,6 +21,8 @@ export type Group = {
   keywords: string[];
   lines: GroupLine[];
   incomeKind?: "principal" | "supplementary" | null;
+  startMonth?: string | null;
+  endMonth?: string | null;
 };
 
 export type Txn = {

@@ -16,6 +16,8 @@ export type GroupRow = {
   kind: "envelope" | "recurring";
   monthlyAmount: number | null;
   incomeKind: "principal" | "supplementary" | null;
+  startMonth: string | null;
+  endMonth: string | null;
   keywords: string[];
   lines: GroupLineRow[];
 };
@@ -23,7 +25,8 @@ export type GroupRow = {
 export function listGroups(db: Database.Database): GroupRow[] {
   const groups = db
     .prepare(
-      `SELECT id, account_id AS accountId, name, direction, kind, monthly_amount AS monthlyAmount, income_kind AS incomeKind
+      `SELECT id, account_id AS accountId, name, direction, kind, monthly_amount AS monthlyAmount,
+              income_kind AS incomeKind, start_month AS startMonth, end_month AS endMonth
        FROM groups ORDER BY name`,
     )
     .all() as (Omit<GroupRow, "keywords" | "lines" | "incomeKind"> & { incomeKind: string | null })[];
@@ -46,12 +49,15 @@ export function insertEnvelopeGroup(
   direction: "in" | "out",
   monthlyAmount: number,
   incomeKind: "principal" | "supplementary" | null = null,
+  startMonth: string,
+  endMonth: string | null,
 ): number {
   const info = db
     .prepare(
-      `INSERT INTO groups (account_id, name, direction, kind, monthly_amount, income_kind) VALUES (?, ?, ?, 'envelope', ?, ?)`,
+      `INSERT INTO groups (account_id, name, direction, kind, monthly_amount, income_kind, start_month, end_month)
+       VALUES (?, ?, ?, 'envelope', ?, ?, ?, ?)`,
     )
-    .run(accountId, name, direction, monthlyAmount, incomeKind);
+    .run(accountId, name, direction, monthlyAmount, incomeKind, startMonth, endMonth);
   return Number(info.lastInsertRowid);
 }
 
@@ -61,12 +67,15 @@ export function insertRecurringGroup(
   name: string,
   direction: "in" | "out",
   incomeKind: "principal" | "supplementary" | null = null,
+  startMonth: string,
+  endMonth: string | null,
 ): number {
   const info = db
     .prepare(
-      `INSERT INTO groups (account_id, name, direction, kind, monthly_amount, income_kind) VALUES (?, ?, ?, 'recurring', NULL, ?)`,
+      `INSERT INTO groups (account_id, name, direction, kind, monthly_amount, income_kind, start_month, end_month)
+       VALUES (?, ?, ?, 'recurring', NULL, ?, ?, ?)`,
     )
-    .run(accountId, name, direction, incomeKind);
+    .run(accountId, name, direction, incomeKind, startMonth, endMonth);
   return Number(info.lastInsertRowid);
 }
 
@@ -96,6 +105,10 @@ export function updateGroup(
   db.prepare(
     `UPDATE groups SET name = ?, direction = ?, monthly_amount = ? WHERE id = ?`,
   ).run(name, direction, monthlyAmount, id);
+}
+
+export function renameGroup(db: Database.Database, id: number, name: string): void {
+  db.prepare(`UPDATE groups SET name = ? WHERE id = ?`).run(name, id);
 }
 
 export function addKeyword(db: Database.Database, groupId: number, keyword: string): void {
