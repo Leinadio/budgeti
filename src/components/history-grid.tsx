@@ -548,9 +548,10 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
               )
             : null;
         const sd = soldeDepass?.[i];
-        // Les montants du « Dépassement cumulé » viennent du mois courant (maintenus,
-        // cf. depassCumulRows), mais les renvois pointent vers les cases Balance du
-        // mois affiché : la surbrillance reste dans la colonne du mois cliqué.
+        // Les montants du « Dépassement cumulé » viennent des dépassements retenus
+        // (non tranchés) sur les mois futurs, ou des dépassements réels du mois courant
+        // et passés ; les renvois pointent vers les cases Balance du mois affiché :
+        // la surbrillance reste dans la colonne du mois cliqué.
         const soldeDepassDetail: CellDetail | null =
           sd != null && sp != null && r
             ? makeDetail(
@@ -737,7 +738,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
         const cDep = sec.totals[srcI];
         const inRecuSrc = uncatInSec?.totals[srcI]?.recu ?? 0;
         const currentDepassVal = Math.max(0, cDep.depense - inRecuSrc - cDep.budgeted);
-        const depassVal = isUncat ? (isFuture ? retained?.uncat ?? currentDepassVal : currentDepassVal) : 0;
+        const depassVal = isUncat && !uncatIn ? (isFuture ? retained?.uncat ?? currentDepassVal : currentDepassVal) : 0;
 
         // Non catégorisés comme étape du plan : planPrevu/planDepass fournissent les
         // valeurs courues à cette ligne (le débordement net est déjà retiré de la
@@ -762,7 +763,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
                 "Solde si dépassement",
                 [
                   { label: "Solde si dépassement précédent", amount: soldeDepassVal + depassVal, ref: prevRowKey ? cellKey(prevRowKey, "soldeDepass", i) : undefined },
-                  // Montant maintenu (mois courant), renvoi vers la Balance du mois affiché.
+                  // Dépassement retenu (non tranché) sur les mois futurs, sinon celui du mois courant, renvoi vers la Balance du mois affiché.
                   { label: "Dépassement", amount: -depassVal, ref: cellKey(rowKey, "reste", i) },
                 ],
                 { subtitle, result: soldeDepassVal },
