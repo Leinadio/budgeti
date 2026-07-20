@@ -162,7 +162,9 @@ const SOLDE_COLS_SET = new Set<ColKey>(["soldeReel", "soldePrevu", "soldeDepass"
 const SOLDE_TINT = "bg-[color-mix(in_oklab,var(--primary)_5%,var(--background))]";
 const SOLDE_SEP = "border-l-2 border-l-muted-foreground/25";
 // Teinte de fond de la colonne Balance (ex-« Reste/Manque ») : un ambré doux qui
-// la distingue de la bande grise des soldes.
+// la distingue de la bande grise des soldes. Posée sur CHAQUE cellule Balance (via
+// renderCols), pas sur le <colgroup>, pour rester visible même sous un fond de
+// ligne opaque (totaux gris, teinte entrant/sortant).
 const BALANCE_TINT = "bg-[color-mix(in_oklab,oklch(0.75_0.16_80)_16%,var(--background))]";
 
 // Teinte de fond du bloc sortant (Récurrents, Enveloppes) : très légère, juste de
@@ -181,9 +183,16 @@ function renderCols(cols: ColKey[], slots: Record<ColKey, (b: boolean) => React.
   const firstSolde = cols.find((c) => SOLDE_COLS_SET.has(c));
   return cols.map((col, idx) => {
     const cell = slots[col](idx === 0);
-    if (col !== firstSolde || !isValidElement(cell)) return cell;
+    if (!isValidElement(cell)) return cell;
+    // La colonne Balance est toujours teintée en jaune, même sous un fond de ligne
+    // (totaux gris, teinte entrant/sortant) : on pose la teinte en BASE de la
+    // cellule, avant sa className propre, pour que la surbrillance de sélection
+    // (CELL_HL) reste au-dessus. SOLDE_SEP (bordure) s'ajoute après, sans conflit.
+    const base = col === "reste" ? BALANCE_TINT : undefined;
+    const sep = col === firstSolde ? SOLDE_SEP : undefined;
+    if (!base && !sep) return cell;
     const el = cell as React.ReactElement<{ className?: string }>;
-    return cloneElement(el, { className: cn(el.props.className, SOLDE_SEP) });
+    return cloneElement(el, { className: cn(base, el.props.className, sep) });
   });
 }
 
@@ -1779,7 +1788,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
         <col />
         {months.map((m) =>
           monthColumns(monthType(m, currentMonth)).map((col) => (
-            <col key={`${m}-${col}`} className={cn(SOLDE_COLS_SET.has(col) && SOLDE_TINT, col === "reste" && BALANCE_TINT)} />
+            <col key={`${m}-${col}`} className={cn(SOLDE_COLS_SET.has(col) && SOLDE_TINT)} />
           )),
         )}
       </colgroup>
