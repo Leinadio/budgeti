@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde, computePlannedSoldes } from "../../src/lib/history";
+import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde, computePlannedSoldes, budgetInForce, toDatedBudgets } from "../../src/lib/history";
 import type { Group, Txn } from "../../src/lib/forecast";
 
 const courses: Group = {
@@ -445,4 +445,34 @@ test("computePlannedSoldes: la supplémentaire compte au mois courant mais pas e
   const open = solde.openings[0];
   expect(p.prevuClosings[0]).toBeCloseTo(open + 500, 2); // courant : +500
   expect(p.prevuClosings[1]).toBeCloseTo(open + 500, 2); // futur : +0 (pas de projection)
+});
+
+test("budgets datés : le budget en vigueur dépend du mois, sans rétroactivité", () => {
+  const dated = { 1: [{ effectiveMonth: "2026-08", amount: 400 }] };
+  const txns = [tx({ id: "1", date: "2026-07-10", amount: -350, label: "CARREFOUR", groupId: 1 })];
+  const sections = computeHistory([courses], txns, ["2026-07", "2026-08"], "2026-07", dated);
+  const row = sections[0].rows[0];
+  // Juillet garde l'ancien budget (300) : le dépassement de 50 reste visible.
+  expect(row.cells[0]).toEqual({ budgeted: 300, depense: 350, recu: 0, balance: -50 });
+  // Août applique le nouveau budget (400), rien de dépensé encore.
+  expect(row.cells[1]).toEqual({ budgeted: 400, depense: 0, recu: 0, balance: 400 });
+});
+
+test("budgetInForce : dernier montant daté <= mois, repli sur monthlyAmount", () => {
+  const dated = { 1: [{ effectiveMonth: "2026-08", amount: 400 }, { effectiveMonth: "2026-10", amount: 450 }] };
+  expect(budgetInForce(courses, "2026-07", dated)).toBe(300); // avant toute ligne datée
+  expect(budgetInForce(courses, "2026-08", dated)).toBe(400);
+  expect(budgetInForce(courses, "2026-09", dated)).toBe(400);
+  expect(budgetInForce(courses, "2026-11", dated)).toBe(450);
+  expect(budgetInForce(courses, "2026-07")).toBe(300); // sans budgets datés
+});
+
+test("toDatedBudgets regroupe et conserve l'ordre par mois", () => {
+  expect(
+    toDatedBudgets([
+      { groupId: 1, effectiveMonth: "2026-08", amount: 400 },
+      { groupId: 2, effectiveMonth: "2026-09", amount: 50 },
+      { groupId: 1, effectiveMonth: "2026-10", amount: 450 },
+    ]),
+  ).toEqual({ 1: [{ effectiveMonth: "2026-08", amount: 400 }, { effectiveMonth: "2026-10", amount: 450 }], 2: [{ effectiveMonth: "2026-09", amount: 50 }] });
 });

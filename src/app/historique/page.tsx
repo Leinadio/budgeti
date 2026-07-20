@@ -2,10 +2,12 @@ import { db } from "../../db/index";
 import { listAccounts } from "../../db/repositories/accounts";
 import { listTransactions } from "../../db/repositories/transactions";
 import { listGroups } from "../../db/repositories/groups";
+import { listBudgetAmounts } from "../../db/repositories/budget-amounts";
 import {
   computeHistory, grandTotals, monthlyOverspend, monthsWithData, computeSolde,
   computePlannedSoldes, addMonthsKey, monthRange, isMonthKey, clampMonth,
   sliceHistorySections, sliceSoldeColumn, slicePlannedSoldes, computeTableEstimate,
+  toDatedBudgets,
 } from "../../lib/history";
 import { computeForecast, type Group, type Txn } from "../../lib/forecast";
 import { monthRemuneration } from "../../lib/remuneration";
@@ -30,6 +32,7 @@ export default async function HistoriquePage({
   const currentMonth = monthKey(new Date().toISOString().slice(0, 10));
   const accounts = listAccounts(database);
   const allGroups = listGroups(database);
+  const datedBudgets = toDatedBudgets(listBudgetAmounts(database));
   const allTxns: Txn[] = listTransactions(database).map((t) => ({
     id: t.id,
     date: t.date,
@@ -92,7 +95,7 @@ export default async function HistoriquePage({
           const calcMonths = monthRange(calcFrom, to);
           const k = calcMonths.length - months.length;
           const forecast = computeForecast(a.id, a.balance, groups, txns, currentMonth);
-          const sectionsFull = computeHistory(groups, txns, calcMonths, currentMonth);
+          const sectionsFull = computeHistory(groups, txns, calcMonths, currentMonth, datedBudgets);
           // Estimé de fin du mois courant aligné sur le tableau (Balances vertes +
           // rémunérations restant à recevoir) : c'est lui qui ancre les chaînes des
           // mois futurs.

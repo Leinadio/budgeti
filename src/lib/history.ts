@@ -96,6 +96,26 @@ function budgetOf(g: Group): number {
   return g.kind === "envelope" ? g.monthlyAmount ?? 0 : g.lines.reduce((s, l) => s + l.amount, 0);
 }
 
+// Budgets datés : pour chaque groupe, la liste de ses montants avec leur mois
+// d'entrée en vigueur (triée par mois croissant). Le montant en vigueur pour un
+// mois M est celui de la dernière entrée dont effectiveMonth <= M ; sans entrée
+// applicable, on retombe sur le budget « constant » du groupe (monthlyAmount ou
+// somme des lignes). Jamais rétroactif : un mois passé garde son ancien budget.
+export type DatedBudgets = Record<number, { effectiveMonth: string; amount: number }[]>;
+
+export function budgetInForce(g: Group, month: string, dated?: DatedBudgets): number {
+  let amount: number | null = null;
+  for (const b of dated?.[g.id] ?? []) if (b.effectiveMonth <= month) amount = b.amount;
+  return amount ?? budgetOf(g);
+}
+
+// Regroupe les lignes du repository par groupe, en conservant le tri par mois.
+export function toDatedBudgets(rows: { groupId: number; effectiveMonth: string; amount: number }[]): DatedBudgets {
+  const out: DatedBudgets = {};
+  for (const r of rows) (out[r.groupId] ??= []).push({ effectiveMonth: r.effectiveMonth, amount: r.amount });
+  return out;
+}
+
 function toOwnable(g: Group): OwnableGroup {
   return {
     id: g.id,
@@ -119,6 +139,7 @@ export function computeHistory(
   txns: Txn[],
   months: string[],
   currentMonth: string,
+  dated?: DatedBudgets,
 ): HistorySection[] {
   const ownable = groups.map(toOwnable);
   const owned = txns.map((t) => {
@@ -148,11 +169,12 @@ export function computeHistory(
   // entier). Les projections vivent dans les chaînes de plan (Solde prévu / si
   // dépassement), pas dans les cellules réelles.
   const cellsFor = (
-    budgeted: number,
+    budgetedOf: (m: string) => number,
     isOut: boolean,
     realizedOf: (m: string) => number,
   ): MonthCell[] =>
     months.map((m) => {
+      const budgeted = budgetedOf(m);
       const realized = m > currentMonth ? 0 : realizedOf(m);
       return {
         budgeted,
@@ -166,14 +188,13 @@ export function computeHistory(
     });
 
   const rowFor = (g: Group): HistoryRow => {
-    const budgeted = budgetOf(g);
     const isOut = g.direction === "out";
     // Transactions du groupe (possédées, non exclues), récentes d'abord.
     const mine = owned
       .filter((o) => o.ownerId === g.id)
       .map((o) => o.t)
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-    const cells = cellsFor(budgeted, isOut, (m) => spent(g.id, m));
+    const cells = cellsFor((m) => budgetInForce(g, m, dated), isOut, (m) => spent(g.id, m));
 
     // Sous-groupes : une ligne par poste du récurrent ; les projections gardent
     // juste le budget de la ligne (pas de dépassement au niveau ligne).
@@ -184,7 +205,7 @@ export function computeHistory(
       return {
         id: l.id,
         name: l.name,
-        cells: cellsFor(l.amount, isOut, realizedOf),
+        cells: cellsFor(() => l.amount, isOut, realizedOf),
         txns: lineTxns.filter(inRange).map(toHistoryTxn),
       };
     });
