@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde, computePlannedSoldes, budgetInForce, toDatedBudgets } from "../../src/lib/history";
+import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde, computePlannedSoldes, budgetInForce, toDatedBudgets, computeOverspends } from "../../src/lib/history";
 import type { Group, Txn } from "../../src/lib/forecast";
 
 const courses: Group = {
@@ -475,4 +475,40 @@ test("toDatedBudgets regroupe et conserve l'ordre par mois", () => {
       { groupId: 1, effectiveMonth: "2026-10", amount: 450 },
     ]),
   ).toEqual({ 1: [{ effectiveMonth: "2026-08", amount: 400 }, { effectiveMonth: "2026-10", amount: 450 }], 2: [{ effectiveMonth: "2026-09", amount: 50 }] });
+});
+
+test("computeOverspends : en attente sur mois terminés, retenu = le plus récent non tranché", () => {
+  const txns = [
+    tx({ id: "1", date: "2026-06-10", amount: -350, label: "CARREFOUR", groupId: 1 }), // juin : dépassement 50
+    tx({ id: "2", date: "2026-07-10", amount: -380, label: "CARREFOUR", groupId: 1 }), // juillet (courant) : dépassement 80
+    tx({ id: "3", date: "2026-06-05", amount: -120, label: "SANS GROUPE" }), // uncat juin : 120 dépensés
+    tx({ id: "4", date: "2026-06-06", amount: 40, label: "REMBOURSEMENT" }), // uncat juin : 40 reçus -> net 80
+  ];
+  const r = computeOverspends([courses], txns, "2026-07", []);
+  // Mois terminés non tranchés : Courses juin (50) et Non catégorisés juin (80).
+  expect(r.pendingClosed).toEqual([
+    { groupId: 1, name: "Courses", month: "2026-06", amount: 50 },
+    { groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 80 },
+  ]);
+  // Retenu pour les projections : le plus récent non tranché de Courses = juillet (80).
+  expect(r.retained.byGroup[1]).toBe(80);
+  expect(r.retained.uncat).toBe(80); // juin, seul mois uncat non tranché
+});
+
+test("computeOverspends : une décision sort le dépassement des rappels et du retenu", () => {
+  const txns = [
+    tx({ id: "1", date: "2026-06-10", amount: -350, label: "CARREFOUR", groupId: 1 }),
+    tx({ id: "2", date: "2026-07-10", amount: -380, label: "CARREFOUR", groupId: 1 }),
+  ];
+  // Juillet tranché : il ne reste que juin, à la fois en attente (mois terminé) et retenu.
+  const r = computeOverspends([courses], txns, "2026-07", [{ groupId: 1, month: "2026-07" }]);
+  expect(r.pendingClosed).toEqual([{ groupId: 1, name: "Courses", month: "2026-06", amount: 50 }]);
+  expect(r.retained.byGroup[1]).toBe(50);
+  // Tout tranché : plus rien nulle part.
+  const r2 = computeOverspends([courses], txns, "2026-07", [
+    { groupId: 1, month: "2026-06" },
+    { groupId: 1, month: "2026-07" },
+  ]);
+  expect(r2.pendingClosed).toEqual([]);
+  expect(r2.retained.byGroup[1] ?? 0).toBe(0);
 });

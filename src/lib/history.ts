@@ -513,6 +513,57 @@ export function uncatOverspend(sections: HistorySection[], i: number): number {
   return Math.max(0, (outT?.depense ?? 0) - (inT?.recu ?? 0) - (outT?.budgeted ?? 0));
 }
 
+// Dépassements par (groupe x mois), avec l'état de décision de l'utilisateur.
+// pendingClosed : dépassements de mois terminés sans décision (bandeau/pastilles).
+// retained : pour chaque groupe (et les non catégorisés via `uncat`), le
+// dépassement non tranché le plus récent (mois courant inclus) — c'est lui que
+// la chaîne « Solde si dépassement » reconduit sur les mois futurs.
+export type PendingOverspend = { groupId: number; name: string; month: string; amount: number };
+export type RetainedOverspends = { byGroup: Record<number, number>; uncat: number };
+
+export function computeOverspends(
+  groups: Group[],
+  txns: Txn[],
+  currentMonth: string,
+  decided: { groupId: number; month: string }[],
+  dated?: DatedBudgets,
+): { pendingClosed: PendingOverspend[]; retained: RetainedOverspends } {
+  const ownable = groups.map(toOwnable);
+  const owned = txns.map((t) => {
+    const o: OwnedTxn = { id: t.id, date: t.date, amount: t.amount, label: t.label, accountId: t.accountId, groupId: t.groupId, excluded: t.excluded };
+    const res = resolveOwnership(o, ownable);
+    return { t, ownerId: res.status === "manual" ? res.groupId : null, month: t.date.slice(0, 7) };
+  });
+  const isDecided = new Set(decided.map((d) => `${d.groupId}::${d.month}`));
+  const months = monthsWithData(txns).filter((m) => m <= currentMonth);
+
+  const pendingClosed: PendingOverspend[] = [];
+  const retained: RetainedOverspends = { byGroup: {}, uncat: 0 };
+  for (const m of months) {
+    // Groupes de dépense : dépensé au-delà du budget en vigueur ce mois-là.
+    for (const g of groups) {
+      if (g.direction !== "out") continue;
+      const spent = owned.filter((o) => o.ownerId === g.id && o.month === m).reduce((s, o) => s + Math.abs(o.t.amount), 0);
+      const os = Math.max(0, spent - budgetInForce(g, m, dated));
+      if (os <= 0.005 || isDecided.has(`${g.id}::${m}`)) continue;
+      if (m < currentMonth) pendingClosed.push({ groupId: g.id, name: g.name, month: m, amount: os });
+      retained.byGroup[g.id] = os; // les mois sont croissants : le dernier écrase = le plus récent
+    }
+    // Non catégorisés : dépensé au-delà des reçus, sans groupe.
+    const uncat = owned.filter((o) => o.ownerId === null && o.month === m);
+    const dep = uncat.filter((o) => o.t.amount < 0).reduce((s, o) => s + Math.abs(o.t.amount), 0);
+    const rec = uncat.filter((o) => o.t.amount > 0).reduce((s, o) => s + o.t.amount, 0);
+    const os = Math.max(0, dep - rec);
+    if (os > 0.005 && !isDecided.has(`0::${m}`)) {
+      if (m < currentMonth) pendingClosed.push({ groupId: 0, name: "Non catégorisés", month: m, amount: os });
+      retained.uncat = os;
+    }
+  }
+  // Tri : par mois puis nom, pour un bandeau stable.
+  pendingClosed.sort((a, b) => (a.month < b.month ? -1 : a.month > b.month ? 1 : a.name.localeCompare(b.name)));
+  return { pendingClosed, retained };
+}
+
 // Chaînes de solde « plan » : prévu (revenus − budget) et « si dépassement »
 // (prévu − dépassement). Mois passés et courant : ancrés à l'argent de départ réel
 // du mois, dépassement du mois lui-même. Mois futurs : le premier part de l'estimé
