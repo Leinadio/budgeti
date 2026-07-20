@@ -543,7 +543,9 @@ export function computeOverspends(
   const owned = txns.map((t) => {
     const o: OwnedTxn = { id: t.id, date: t.date, amount: t.amount, label: t.label, accountId: t.accountId, groupId: t.groupId, excluded: t.excluded };
     const res = resolveOwnership(o, ownable);
-    return { t, ownerId: res.status === "manual" ? res.groupId : null, month: t.date.slice(0, 7) };
+    const month = t.date.slice(0, 7);
+    const g = res.status === "manual" ? groups.find((x) => x.id === res.groupId) : undefined;
+    return { t, ownerId: g && isGroupAlive(g, month) ? g.id : null, month };
   });
   const isDecided = new Set(decided.map((d) => `${d.groupId}::${d.month}`));
   const months = monthsWithData(txns).filter((m) => m <= currentMonth);
@@ -557,6 +559,7 @@ export function computeOverspends(
     // Groupes de dépense : dépensé au-delà du budget en vigueur ce mois-là.
     for (const g of groups) {
       if (g.direction !== "out") continue;
+      if (!isGroupAlive(g, m)) continue;
       const spent = owned.filter((o) => o.ownerId === g.id && o.month === m).reduce((s, o) => s + Math.abs(o.t.amount), 0);
       const os = Math.max(0, spent - budgetInForce(g, m, dated));
       if (os <= 0.005 || isDecided.has(`${g.id}::${m}`)) continue;

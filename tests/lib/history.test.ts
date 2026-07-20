@@ -598,4 +598,12 @@ describe("durée de vie des groupes", () => {
     expect(netflix.cells[2].budgeted).toBe(15); // août : vivant
     expect(netflix.cells[3].budgeted).toBe(0); // septembre : mort
   });
+
+  it("un groupe mort ne produit pas de dépassement", () => {
+    const ponctuel: Group = { ...courses, id: 60, name: "Cadeau", startMonth: "2026-06", endMonth: "2026-06" };
+    // dépense en juillet, mois où le groupe est mort : elle est non catégorisée, pas un dépassement de groupe
+    const txn: Txn = { id: "t1", date: "2026-07-10", amount: -500, label: "x", accountId: "a1", groupId: 60 };
+    const r = computeOverspends([ponctuel], [txn], "2026-07", []);
+    expect(r.retained.byGroup[60]).toBeUndefined();
+  });
 });

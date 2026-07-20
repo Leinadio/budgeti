@@ -1,4 +1,4 @@
-import { expect, test } from "vitest";
+import { expect, test, it } from "vitest";
 import { computeForecast, type Group, type Txn } from "../../src/lib/forecast";
 
 const courses: Group = {
@@ -200,4 +200,12 @@ test("rémunération supplémentaire : mois courant seulement, pas de projection
   const f = computeForecast("a1", 100, [supp], [], "2026-07");
   expect(f.currentEstimate).toBe(600); // 100 + 500 attendus ce mois
   expect(f.nextEstimate).toBe(600); // pas d'ajout au mois suivant
+});
+
+it("un groupe pas encore né n'entre pas dans l'estimé", () => {
+  const futur: Group = { ...courses, id: 70, name: "Futur", startMonth: "2026-10", endMonth: null };
+  const f = computeForecast("a1", 1000, [futur], [], "2026-07");
+  // Aucun budget projeté : l'estimé courant reste le solde.
+  expect(f.currentEstimate).toBe(1000);
+  expect(f.groups.some((g) => g.id === 70)).toBe(false);
 });

@@ -130,6 +130,7 @@ export function computeForecast(
   const nextSteps: ForecastStep[] = [];
 
   for (const g of groups) {
+    if (!isGroupAlive(g, month)) continue;
     const sign = g.direction === "in" ? 1 : -1;
 
     if (g.kind === "envelope") {
