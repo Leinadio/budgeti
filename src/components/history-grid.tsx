@@ -1954,36 +1954,30 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                 {(!hasPrincipal || !hasSupplementary) && (
                   <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={totalCols} className="p-0">
-                      <div className="flex items-center gap-3 pl-1">
+                      {/* Épinglé à gauche : les boutons d'ajout de rémunération ne
+                          défilent pas avec le tableau lors d'un scroll horizontal. */}
+                      <div className="bg-background sticky left-0 z-10 flex w-fit items-center gap-3 py-0.5 pr-3 pl-1">
                         {!hasPrincipal && (
-                          <div className="flex items-center gap-1">
-                            <Button
-                              type="button"
-                              size="icon-xs"
-                              variant="ghost"
-                              className="text-muted-foreground"
-                              aria-label="Ajouter la rémunération principale"
-                              onClick={() => setAdding((prev) => (prev === "principal" ? null : "principal"))}
-                            >
-                              <Plus />
-                            </Button>
-                            <span className="text-muted-foreground text-xs font-medium">Rémunération principale</span>
-                          </div>
+                          <Button
+                            type="button"
+                            size="xs"
+                            variant="outline"
+                            onClick={() => setAdding((prev) => (prev === "principal" ? null : "principal"))}
+                          >
+                            <Plus />
+                            Rémunération principale
+                          </Button>
                         )}
                         {!hasSupplementary && (
-                          <div className="flex items-center gap-1">
-                            <Button
-                              type="button"
-                              size="icon-xs"
-                              variant="ghost"
-                              className="text-muted-foreground"
-                              aria-label="Ajouter la rémunération supplémentaire"
-                              onClick={() => setAdding((prev) => (prev === "supplementary" ? null : "supplementary"))}
-                            >
-                              <Plus />
-                            </Button>
-                            <span className="text-muted-foreground text-xs font-medium">Rémunération supplémentaire</span>
-                          </div>
+                          <Button
+                            type="button"
+                            size="xs"
+                            variant="outline"
+                            onClick={() => setAdding((prev) => (prev === "supplementary" ? null : "supplementary"))}
+                          >
+                            <Plus />
+                            Rémunération supplémentaire
+                          </Button>
                         )}
                       </div>
                     </TableCell>
@@ -1992,11 +1986,14 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                 {(adding === "principal" || adding === "supplementary") && (
                   <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={totalCols} className="p-0">
-                      <NewRemunerationInline
-                        accountId={accountId}
-                        incomeKind={adding}
-                        onDone={() => setAdding(null)}
-                      />
+                      {/* Épinglé à gauche : le formulaire ne défile pas avec le tableau. */}
+                      <div className="bg-background sticky left-0 z-10 w-fit">
+                        <NewRemunerationInline
+                          accountId={accountId}
+                          incomeKind={adding}
+                          onDone={() => setAdding(null)}
+                        />
+                      </div>
                     </TableCell>
                   </TableRow>
                 )}
@@ -2031,32 +2028,35 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
               {spacer}
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={totalCols} className="p-0">
-                  <div className="flex items-center gap-1 pl-1">
+                  {/* Épinglé à gauche : le bouton + et le libellé de section ne
+                      défilent pas avec le tableau lors d'un scroll horizontal. */}
+                  <div className="bg-background sticky left-0 z-10 flex w-fit items-center py-1 pr-3 pl-1">
                     <Button
                       type="button"
-                      size="icon-xs"
-                      variant="ghost"
-                      className="text-muted-foreground"
-                      aria-label={`Ajouter ${labelOfSection(sectionKind).toLowerCase()}`}
+                      size="xs"
+                      variant="outline"
                       onClick={() => setAdding((prev) => (prev === sectionKind ? null : sectionKind))}
                     >
                       <Plus />
+                      {labelOfSection(sectionKind)}
                     </Button>
-                    <span className="text-muted-foreground text-xs font-medium">{labelOfSection(sectionKind)}</span>
                   </div>
                 </TableCell>
               </TableRow>
               {adding === sectionKind && (
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={totalCols} className="p-0">
-                    <NewGroupInline
-                      accountId={accountId}
-                      kind={sectionKind}
-                      currentMonth={currentMonth}
-                      stripMax={stripMax}
-                      defaultMonth={defaultMonth}
-                      onDone={() => setAdding(null)}
-                    />
+                    {/* Épinglé à gauche : le formulaire ne défile pas avec le tableau. */}
+                    <div className="bg-background sticky left-0 z-10 w-fit">
+                      <NewGroupInline
+                        accountId={accountId}
+                        kind={sectionKind}
+                        currentMonth={currentMonth}
+                        stripMax={stripMax}
+                        defaultMonth={defaultMonth}
+                        onDone={() => setAdding(null)}
+                      />
+                    </div>
                   </TableCell>
                 </TableRow>
               )}

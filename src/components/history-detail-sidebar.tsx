@@ -19,6 +19,17 @@ import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogTrigger,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
 
 const NUM = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmtAbs = (n: number) => NUM.format(Math.abs(n) < 0.005 ? 0 : Math.abs(n)).replace(/[  ]/g, " ");
@@ -365,23 +376,42 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
 
         {/* Suppression du groupe */}
         <div className="border-t pt-4">
-          <Button
-            type="button"
-            size="sm"
-            variant="ghost"
-            disabled={busy}
-            className="text-red-600 hover:text-red-700"
-            onClick={() => {
-              if (!window.confirm("Supprimer ce groupe ? Ses transactions repasseront en Non catégorisés.")) return;
-              run(async () => {
-                await deleteGroupAction(info.groupId);
-                onClose();
-              });
-            }}
-          >
-            <Trash2 className="size-4" />
-            Supprimer le groupe
-          </Button>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                className="text-red-600 hover:text-red-700"
+              >
+                <Trash2 className="size-4" />
+                Supprimer le groupe
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Supprimer ce groupe ?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Le groupe sera supprimé et ses transactions repasseront en Non catégorisés.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Annuler</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-red-600 text-white hover:bg-red-700"
+                  onClick={() =>
+                    run(async () => {
+                      await deleteGroupAction(info.groupId);
+                      onClose();
+                    })
+                  }
+                >
+                  Supprimer
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </SidebarContent>
     </>
