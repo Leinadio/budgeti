@@ -20,6 +20,19 @@ export function listOverspendDecisions(db: Database.Database, accountId: string)
   );
 }
 
+// Lit la décision existante pour un dépassement donné, ou null si non tranché.
+export function getOverspendDecision(
+  db: Database.Database, accountId: string, groupId: number, month: string,
+): OverspendDecision | null {
+  const row = db
+    .prepare(
+      `SELECT account_id AS accountId, group_id AS groupId, month, decision, decided_at AS decidedAt
+       FROM overspend_decisions WHERE account_id = ? AND group_id = ? AND month = ?`,
+    )
+    .get(accountId, groupId, month) as OverspendDecision | undefined;
+  return row ?? null;
+}
+
 export function setOverspendDecision(db: Database.Database, d: OverspendDecision): void {
   db.prepare(
     `INSERT INTO overspend_decisions (account_id, group_id, month, decision, decided_at) VALUES (?, ?, ?, ?, ?)
