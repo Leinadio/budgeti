@@ -175,6 +175,22 @@ const BALANCE_TINT = "bg-[color-mix(in_oklab,oklch(0.75_0.16_80)_16%,var(--backg
 // marquée pour se distinguer).
 const OUT_TINT = "bg-[color-mix(in_oklab,var(--muted)_12%,var(--background))]";
 
+// Teinte de fond selon la NATURE du mois, posée sur tout le bloc du mois via le
+// <colgroup>. Comme les autres teintes de colonne, elle passe sous les fonds de
+// ligne opaques (totaux gris, teintes entrant/sortant) : elle colore donc surtout
+// les cellules de données et l'en-tête du mois. Gris = mois passés, bleu doux =
+// mois courant, vert doux = premier mois futur (le « pont » qui repart de l'estimé
+// de fin du mois courant). Les mois futurs suivants (N+2, …) restent neutres.
+const MONTH_TINT_PAST = "bg-[color-mix(in_oklab,var(--muted)_30%,var(--background))]";
+const MONTH_TINT_CURRENT = "bg-[color-mix(in_oklab,oklch(0.72_0.13_240)_14%,var(--background))]";
+const MONTH_TINT_NEXT = "bg-[color-mix(in_oklab,oklch(0.75_0.14_155)_15%,var(--background))]";
+function monthTint(m: string, mi: number, months: string[], currentMonth: string): string | undefined {
+  if (m < currentMonth) return MONTH_TINT_PAST;
+  if (m === currentMonth) return MONTH_TINT_CURRENT;
+  if (mi > 0 && months[mi - 1] === currentMonth) return MONTH_TINT_NEXT; // premier mois futur (N+1)
+  return undefined; // mois futurs suivants : fond par défaut
+}
+
 // Rend les cellules d'un mois (une par colonne) et ajoute la bordure de séparation
 // sur la première colonne de solde. La teinte de fond des colonnes de solde est
 // posée par le <colgroup> du tableau (elle passe sous le fond des lignes de total,
@@ -1784,12 +1800,17 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
         (w-full par defaut) les colonnes se resserrent quand la sidebar de detail
         s'ouvre et retrecit la zone : le tableau doit defiler, pas se tasser. */}
     <Table className="w-max">
-      {/* Teinte de fond des colonnes de solde (posée sous le fond des lignes). */}
+      {/* Teinte de fond des colonnes (posée sous le fond des lignes) : par nature du
+          mois (passé / courant / premier mois futur) sur tout le bloc du mois, sinon
+          repli sur la teinte neutre des colonnes de solde pour les mois futurs suivants. */}
       <colgroup>
         <col />
-        {months.map((m) =>
+        {months.map((m, mi) =>
           monthColumns(monthType(m, currentMonth)).map((col) => (
-            <col key={`${m}-${col}`} className={cn(SOLDE_COLS_SET.has(col) && SOLDE_TINT)} />
+            <col
+              key={`${m}-${col}`}
+              className={cn(monthTint(m, mi, months, currentMonth) ?? (SOLDE_COLS_SET.has(col) ? SOLDE_TINT : undefined))}
+            />
           )),
         )}
       </colgroup>
