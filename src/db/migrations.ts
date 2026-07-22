@@ -150,3 +150,27 @@ export function migrateGroupLifespan(db: Database.Database) {
     db.exec(`ALTER TABLE groups ADD COLUMN end_month TEXT`);
   db.exec(`UPDATE groups SET start_month = '2000-01' WHERE start_month IS NULL`);
 }
+
+// Retire la FK sur budget_amounts.group_id : la provision « non catégorisés »
+// (group_id = 0) n'a pas de ligne dans groups, la FK faisait échouer l'insertion.
+// Même traitement que overspend_decisions (pas de FK volontairement). Idempotent :
+// no-op si la FK a déjà été retirée (détecté via PRAGMA foreign_key_list).
+export function migrateBudgetAmountsDropGroupFk(db: Database.Database): void {
+  const fks = db.prepare("PRAGMA foreign_key_list(budget_amounts)").all() as { table: string }[];
+  if (!fks.some((fk) => fk.table === "groups")) return;
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE budget_amounts_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER NOT NULL,
+        effective_month TEXT NOT NULL,
+        amount REAL NOT NULL,
+        UNIQUE(group_id, effective_month)
+      );
+      INSERT INTO budget_amounts_new (id, group_id, effective_month, amount)
+        SELECT id, group_id, effective_month, amount FROM budget_amounts;
+      DROP TABLE budget_amounts;
+      ALTER TABLE budget_amounts_new RENAME TO budget_amounts;
+    `);
+  })();
+}

@@ -23,6 +23,12 @@ test("budget_amounts : upsert et lecture triée", () => {
   ]);
 });
 
+test("budget_amounts : provision groupe 0 (non catégorisés) sans FK", () => {
+  const db = freshDb();
+  setBudgetAmount(db, 0, "2026-08", 400);
+  expect(listBudgetAmounts(db)).toEqual([{ groupId: 0, effectiveMonth: "2026-08", amount: 400 }]);
+});
+
 test("overspend_decisions : upsert par (compte, groupe, mois), groupId 0 = non catégorisés", () => {
   const db = freshDb();
   setOverspendDecision(db, { accountId: "a1", groupId: 1, month: "2026-07", decision: "exceptional", decidedAt: "2026-08-01T10:00:00Z" });

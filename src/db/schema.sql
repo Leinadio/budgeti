@@ -89,9 +89,10 @@ CREATE TABLE IF NOT EXISTS reconcile_ignored (
 -- Budgets datés : montant d'un groupe à partir d'un mois donné. Le montant en
 -- vigueur pour un mois M est celui de la ligne au plus grand effective_month <= M ;
 -- sans ligne applicable, on retombe sur groups.monthly_amount.
+-- group_id = 0 = non catégorisés (provision) ; pas de FK volontairement (comme overspend_decisions).
 CREATE TABLE IF NOT EXISTS budget_amounts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
-  group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+  group_id INTEGER NOT NULL,
   effective_month TEXT NOT NULL,   -- YYYY-MM
   amount REAL NOT NULL,
   UNIQUE(group_id, effective_month)

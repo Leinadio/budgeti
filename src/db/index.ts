@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { migrateBudgets, migrateAccountCustomName, migrateGroupsV2, migrateTransactionExcluded, migrateTransactionLineId, migrateTransactionManualFields, migrateReconcileIgnored, migrateGroupIncomeKind, migrateRemunerationPrincipalToEnvelope, migrateGroupLifespan } from "./migrations";
+import { migrateBudgets, migrateAccountCustomName, migrateGroupsV2, migrateTransactionExcluded, migrateTransactionLineId, migrateTransactionManualFields, migrateReconcileIgnored, migrateGroupIncomeKind, migrateRemunerationPrincipalToEnvelope, migrateGroupLifespan, migrateBudgetAmountsDropGroupFk } from "./migrations";
 
 const SCHEMA = readFileSync(join(process.cwd(), "src/db/schema.sql"), "utf8");
 
@@ -23,6 +23,7 @@ export function getDb(path = join(process.cwd(), "data/budget.db")): Database.Da
   migrateGroupIncomeKind(db);
   migrateRemunerationPrincipalToEnvelope(db);
   migrateGroupLifespan(db);
+  migrateBudgetAmountsDropGroupFk(db);
   return db;
 }
 
