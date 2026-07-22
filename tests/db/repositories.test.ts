@@ -52,6 +52,19 @@ test("recurring group: dated lines summed, delete cascades", () => {
   expect(db.prepare("SELECT COUNT(*) AS n FROM group_lines").get()).toEqual({ n: 0 });
 });
 
+// Garde-fou : budget_amounts.group_id n'a plus de FK ON DELETE CASCADE (retirée
+// pour laisser vivre la provision du groupe 0). deleteGroup doit donc purger à la
+// main les budgets datés du groupe supprimé, sous peine de les orphelins en base.
+test("deleteGroup purge aussi les budgets datés (budget_amounts) du groupe", () => {
+  const db = getDb(":memory:");
+  upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
+  const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2000-01", null);
+  setBudgetAmount(db, gid, "2026-08", 350);
+  expect(listBudgetAmounts(db).filter((b) => b.groupId === gid)).toHaveLength(1);
+  deleteGroup(db, gid);
+  expect(listBudgetAmounts(db).filter((b) => b.groupId === gid)).toHaveLength(0);
+});
+
 // Garde-fou contre la régression « ligne fantôme » : insertLine doit renvoyer le
 // vrai id auto-incrémenté de la ligne créée, pour que deleteLine/updateLine
 // appelés juste après (sans recharger la page) visent la bonne ligne en base.

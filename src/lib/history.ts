@@ -293,6 +293,15 @@ export function computeHistory(
     return { kind, rows, totals: sumRows(rows) };
   };
 
+  // Reçus non catégorisés d'un mois (section « in »), indépendamment de la
+  // direction demandée à `uncategorized` ci-dessous : sert à ce que la Balance
+  // stockée de la section « out » inclue les remboursements croisés, comme le
+  // Reste recomposé et affiché dans la grille (history-grid.tsx, resteVal).
+  const uncatInRecuOf = (m: string): number =>
+    owned
+      .filter((o) => o.ownerId === null && o.t.amount > 0 && o.t.date.slice(0, 7) === m)
+      .reduce((s, o) => s + o.t.amount, 0);
+
   // Transactions sans groupe, scindées par sens : les reçus (« in », affichés sous
   // les rémunérations) et les dépenses (« out », affichées après les enveloppes).
   const uncategorized = (direction: "in" | "out"): HistorySection | null => {
@@ -306,12 +315,16 @@ export function computeHistory(
       const depense = monthTxns.filter((t) => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
       const recu = monthTxns.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
       // Les dépenses non catégorisées reçoivent la provision (budget daté du groupe 0)
-      // comme budget : la Balance devient provision − dépensé net, comme une enveloppe.
+      // comme budget : la Balance devient provision + reçus non catégorisés (section
+      // « in ») − dépensé, comme une enveloppe. Le `recu` de CETTE section (« out »)
+      // est toujours 0 (elle ne contient que les sorties) : sans les reçus croisés de
+      // la section « in », la Balance stockée sous-estimerait le Reste réellement
+      // affiché (cf. resteVal dans history-grid.tsx, qui fait le même calcul).
       // Les reçus non catégorisés, eux, n'ont toujours pas de budget (0, reste à 0) :
       // l'argent reçu sans groupe n'est jamais soustrait d'un « reste ».
       if (direction === "out") {
         const budgeted = provisionInForce(dated, m);
-        return { budgeted, depense, recu, balance: budgeted - (depense - recu) };
+        return { budgeted, depense, recu, balance: budgeted + uncatInRecuOf(m) - depense };
       }
       return { budgeted: 0, depense, recu, balance: 0 };
     });

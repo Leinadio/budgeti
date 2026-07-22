@@ -265,7 +265,7 @@ describe("Répartition des transactions sous les groupes", () => {
     expect(sections.map((s) => s.kind)).toEqual(["envelope"]);
   });
 
-  it("devrait séparer les transactions sans groupe en deux blocs : l'argent qui entre et l'argent qui sort", () => {
+  it("devrait séparer les transactions sans groupe en deux blocs : l'argent qui entre et l'argent qui sort, avec une Balance « out » qui inclut les reçus croisés du bloc « in »", () => {
     const txns = [
       tx({ id: "1", date: "2026-07-05", amount: -40, label: "ACHAT X" }), // non catégorisée, qui sort
       tx({ id: "2", date: "2026-07-06", amount: 100, label: "REMBOURSEMENT" }), // non catégorisée, qui entre
@@ -278,9 +278,12 @@ describe("Répartition des transactions sous les groupes", () => {
     expect(uncatIn.txns!.map((t) => t.id)).toEqual(["2"]);
     expect(uncatIn.totals[0]).toEqual({ budgeted: 0, depense: 0, recu: 100, balance: 0 });
     // … et l'argent qui sort dans le bloc « out » (après les enveloppes). Sans
-    // provision (aucun budget daté du groupe 0), la Balance est le plein déficit.
+    // provision (aucun budget daté du groupe 0), la Balance = reçus non catégorisés
+    // du bloc « in » (100) − dépensé (40) = 60. Le `recu` de CETTE section (« out »)
+    // reste 0 (elle ne contient que les sorties) : c'est bien le reçu croisé du bloc
+    // « in » qui alimente la Balance, comme le Reste affiché dans la grille.
     expect(uncatOut.txns!.map((t) => t.id)).toEqual(["1"]);
-    expect(uncatOut.totals[0]).toEqual({ budgeted: 0, depense: 40, recu: 0, balance: -40 });
+    expect(uncatOut.totals[0]).toEqual({ budgeted: 0, depense: 40, recu: 0, balance: 60 });
     expect([...uncatIn.txns!, ...uncatOut.txns!].every((t) => t.groupId === null)).toBe(true);
     // Ordre : l'argent qui entre juste après les rémunérations (ici : en tête), l'argent qui sort en dernier.
     expect(sections.map((s) => (s.kind === "uncategorized" ? `uncat-${s.uncatDirection}` : s.kind))).toEqual([

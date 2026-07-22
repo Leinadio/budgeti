@@ -88,6 +88,10 @@ export function hasIncomeGroup(
 }
 
 export function deleteGroup(db: Database.Database, id: number): void {
+  // budget_amounts.group_id n'a plus de FK ON DELETE CASCADE (retirée pour laisser
+  // vivre la provision du groupe 0 « non catégorisés », jamais supprimé) : on purge
+  // donc à la main les budgets datés du groupe supprimé.
+  db.prepare(`DELETE FROM budget_amounts WHERE group_id = ?`).run(id);
   db.prepare(`DELETE FROM groups WHERE id = ?`).run(id);
 }
 
