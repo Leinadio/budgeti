@@ -82,14 +82,12 @@ function monthType(m: string, currentMonth: string): MonthType {
   return m < currentMonth ? "past" : m === currentMonth ? "current" : "future";
 }
 
-function monthColumns(_type: MonthType): ColKey[] {
-  // Vue uniforme : tous les mois (passés, courant, futurs) affichent les mêmes
-  // colonnes et les mêmes calculs. Sur un mois futur, rien n'est encore réalisé
-  // (Dép./Reçu à 0, Balance = budget entier) et les soldes repartent de l'estimé
-  // de fin du mois courant. Le dépassement n'a pas de colonne : il se lit dans les
-  // montants rouges de la Balance, totalisés sur la ligne « Dépassement hors
-  // budget » en bas du tableau.
-  return ["budgetRem", "budgetDep", "dep", "recu", "reste", "soldeReel", "soldePrevu", "soldeDepass"];
+function monthColumns(type: MonthType): ColKey[] {
+  const base: ColKey[] = ["budgetRem", "budgetDep", "dep", "recu", "reste", "soldeReel", "soldePrevu"];
+  // Sur les mois de projection, « Solde si dépassement » ne dirait que la même chose
+  // que « Solde prévu » (les dépassements permanents sont passés dans le budget) : on
+  // ne l'affiche que sur les mois passés et le mois en cours.
+  return type === "future" ? base : [...base, "soldeDepass"];
 }
 
 const COL_LABEL: Record<ColKey, string> = {
