@@ -106,7 +106,7 @@ export default async function HistoriquePage({
           const decisions = listOverspendDecisions(database, a.id);
           const overspends = computeOverspends(groups, txns, currentMonth, decisions, datedBudgets);
           const currentBudgets = Object.fromEntries(groups.map((g) => [g.id, budgetInForce(g, currentMonth, datedBudgets)]));
-          const plannedFull = computePlannedSoldes(sectionsFull, calcMonths, currentMonth, soldeFull.openings, estimateValue, overspends.retained);
+          const plannedFull = computePlannedSoldes(sectionsFull, calcMonths, currentMonth, soldeFull.openings, estimateValue, datedBudgets);
           const sections = sliceHistorySections(sectionsFull, calcMonths, k);
           const solde = sliceSoldeColumn(soldeFull, k);
           const planned = slicePlannedSoldes(plannedFull, k);
@@ -141,7 +141,6 @@ export default async function HistoriquePage({
                   groups={selectGroups}
                   solde={solde}
                   planned={planned}
-                  retained={overspends.retained}
                   accountId={a.id}
                   decisions={decisions.map(({ groupId, month, decision }) => ({ groupId, month, decision }))}
                   pendingClosed={overspends.pendingClosed}

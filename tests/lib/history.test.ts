@@ -116,14 +116,25 @@ describe("Montants affichés dans le tableau de l'historique", () => {
     expect(env.rows.map((r) => r.name)).toEqual(["Courses"]);
   });
 
-  it("devrait laisser un reste à zéro pour les non catégorisés, qui n'ont pas de budget", () => {
+  it("devrait laisser un reste à zéro pour les non catégorisés qui entrent, qui n'ont pas de budget", () => {
     const txns = [
       tx({ id: "1", date: "2026-07-01", amount: 500, label: "DIVERS", groupId: null }),
       tx({ id: "2", date: "2026-07-05", amount: -80, label: "DIVERS2", groupId: null }),
     ];
     const sections = computeHistory([], txns, ["2026-07"], "2026-07");
-    const uncat = sections.find((s) => s.kind === "uncategorized")!;
-    expect(uncat.totals[0].balance).toBe(0);
+    const uncatIn = sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in")!;
+    expect(uncatIn.totals[0].balance).toBe(0);
+  });
+
+  it("devrait donner un budget (provision) et un solde prévu aux non catégorisés", () => {
+    const dated = { 0: [{ effectiveMonth: "2026-07", amount: 200 }] };
+    const txns = [tx({ id: "a", date: "2026-07-05", amount: -50, label: "SANS GROUPE" })];
+    const months = ["2026-07"];
+    const sections = computeHistory([], txns, months, "2026-07", dated);
+    const uncatOut = sections.find((s) => s.kind === "uncategorized" && (s.uncatDirection ?? "out") === "out")!;
+    // La provision s'affiche comme budget, et la Balance = provision − dépensé net (200 − 50 = 150).
+    expect(uncatOut.totals[0].budgeted).toBeCloseTo(200, 2);
+    expect(uncatOut.totals[0].balance).toBeCloseTo(150, 2);
   });
 
   it("devrait laisser un mois à venir sans dépense, avec tout le budget encore disponible", () => {
@@ -266,9 +277,10 @@ describe("Répartition des transactions sous les groupes", () => {
     // L'argent qui entre dans le bloc « in » (affiché sous les rémunérations)…
     expect(uncatIn.txns!.map((t) => t.id)).toEqual(["2"]);
     expect(uncatIn.totals[0]).toEqual({ budgeted: 0, depense: 0, recu: 100, balance: 0 });
-    // … et l'argent qui sort dans le bloc « out » (après les enveloppes).
+    // … et l'argent qui sort dans le bloc « out » (après les enveloppes). Sans
+    // provision (aucun budget daté du groupe 0), la Balance est le plein déficit.
     expect(uncatOut.txns!.map((t) => t.id)).toEqual(["1"]);
-    expect(uncatOut.totals[0]).toEqual({ budgeted: 0, depense: 40, recu: 0, balance: 0 });
+    expect(uncatOut.totals[0]).toEqual({ budgeted: 0, depense: 40, recu: 0, balance: -40 });
     expect([...uncatIn.txns!, ...uncatOut.txns!].every((t) => t.groupId === null)).toBe(true);
     // Ordre : l'argent qui entre juste après les rémunérations (ici : en tête), l'argent qui sort en dernier.
     expect(sections.map((s) => (s.kind === "uncategorized" ? `uncat-${s.uncatDirection}` : s.kind))).toEqual([
@@ -414,14 +426,17 @@ describe("Les soldes prévisionnels", () => {
     // Mois courant : prévu = open + 2000 − 300 ; ligne dépassement = prévu − 50.
     expect(p.prevuClosings[0]).toBeCloseTo(open + 2000 - 300, 2);
     expect(p.depassClosings[0]).toBeCloseTo(open + 2000 - 300 - 50, 2);
-    // Mois futur : chaîné depuis la clôture du mois courant (même net prévu).
+    // Mois futur : chaîné depuis la clôture du mois courant (même net prévu). Plus
+    // aucun dépassement n'y est ajouté (le budget de Courses n'y dépasse plus), mais
+    // l'écart réel du mois courant (50) reste constant, sans grandir davantage.
     expect(p.prevuClosings[1]).toBeCloseTo((open + 2000 - 300) + (2000 - 300), 2);
-    expect(p.depassClosings[1]).toBeCloseTo((open + 2000 - 300 - 50) + (2000 - 300 - 50), 2);
-    // Avec l'estimation de fin du mois courant : le premier mois futur repart de là.
+    expect(p.depassClosings[1]).toBeCloseTo(p.prevuClosings[1]! - 50, 2);
+    // Avec l'estimation de fin du mois courant : le premier mois futur repart de là,
+    // les deux chaînes reparties du même point -> plus aucun écart.
     const pe = computePlannedSoldes(sections, months, "2026-07", solde.openings, 4200);
     expect(pe.prevuClosings[0]).toBeCloseTo(open + 2000 - 300, 2); // mois courant inchangé
     expect(pe.prevuClosings[1]).toBeCloseTo(4200 + (2000 - 300), 2);
-    expect(pe.depassClosings[1]).toBeCloseTo(4200 + (2000 - 300 - 50), 2);
+    expect(pe.depassClosings[1]).toBeCloseTo(pe.prevuClosings[1]!, 2);
   });
 
   it("devrait faire baisser la ligne des dépassements avec l'argent dépensé sans groupe, l'argent reçu sans groupe n'y changeant rien", () => {
@@ -442,8 +457,8 @@ describe("Les soldes prévisionnels", () => {
     expect(p.depassClosings[0]).toBeCloseTo(open - 300, 2);
     expect(p.uncatDepassRunning.out?.[0]).toBeCloseTo(open - 300, 2);
     expect(p.uncatDepassRunning.in?.[0]).toBeCloseTo(open, 2); // le reçu ne retire rien
-    // Maintenu sur le mois futur.
-    expect(p.depassClosings[1]).toBeCloseTo((p.depassClosings[0] ?? 0) - 300, 2);
+    // Mois futur : plus aucun report, le « si dépassement » rejoint le « prévu ».
+    expect(p.depassClosings[1]).toBeCloseTo(p.prevuClosings[1]!, 2);
   });
 
   it("devrait compter la rémunération supplémentaire dans le mois en cours, mais ne jamais la projeter dans le futur", () => {
@@ -457,25 +472,26 @@ describe("Les soldes prévisionnels", () => {
     expect(p.prevuClosings[1]).toBeCloseTo(open + 500, 2); // futur : +0 (pas de projection)
   });
 
-  it("devrait reporter sur les mois suivants un dépassement retenu (permanent), et ne rien reporter quand il n'y en a pas", () => {
+  it("devrait ne rien reporter sur les mois suivants : le « si dépassement » futur rejoint le « prévu »", () => {
     const principal: Group = { id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", kind: "envelope", monthlyAmount: 2000, lines: [], incomeKind: "principal" };
     const courses2: Group = { id: 2, accountId: "a1", name: "Courses", direction: "out", kind: "envelope", monthlyAmount: 300, lines: [], incomeKind: null };
     const txns = [
       tx({ id: "s", date: "2026-07-01", amount: 2000, label: "REMU", groupId: 1 }),
       tx({ id: "c", date: "2026-07-10", amount: -350, label: "CARREFOUR", groupId: 2 }), // dépassement courant : 50
     ];
-    const months = ["2026-07", "2026-08"];
+    const months = ["2026-07", "2026-08", "2026-09"];
     const sections = computeHistory([principal, courses2], txns, months, "2026-07");
     const solde = computeSolde(sections, months, "2026-07", 5000);
     const open = solde.openings[0];
-    // Retenu (permanent) : 50 est reporté -> août le soustrait.
-    const pending = computePlannedSoldes(sections, months, "2026-07", solde.openings, null, { byGroup: { 2: 50 }, uncat: 0 });
-    expect(pending.depassClosings[1]).toBeCloseTo((open + 2000 - 300 - 50) + (2000 - 300 - 50), 2);
-    // Rien de retenu -> août ne soustrait plus rien.
-    const decided = computePlannedSoldes(sections, months, "2026-07", solde.openings, null, { byGroup: {}, uncat: 0 });
-    expect(decided.depassClosings[1]).toBeCloseTo((open + 2000 - 300 - 50) + (2000 - 300), 2);
-    // Le mois courant reste factuel dans les deux cas (dépassement réel de 50).
-    expect(decided.depassClosings[0]).toBeCloseTo(open + 2000 - 300 - 50, 2);
+    const p = computePlannedSoldes(sections, months, "2026-07", solde.openings);
+    // Le mois courant reste factuel : le dépassement réel de 50 est retiré.
+    expect(p.depassClosings[0]).toBeCloseTo(open + 2000 - 300 - 50, 2);
+    // Les mois futurs ne reportent plus rien de NOUVEAU (Courses reste dans son budget
+    // en août et septembre) : l'écart avec le prévu reste constant (celui du mois
+    // courant, 50), il ne grandit plus mois après mois comme le faisait l'ancien
+    // mécanisme de report (qui aurait redonné -50 sur chaque mois futur en plus).
+    expect(p.depassClosings[1]).toBeCloseTo(p.prevuClosings[1]! - 50, 2);
+    expect(p.depassClosings[2]).toBeCloseTo(p.prevuClosings[2]! - 50, 2);
   });
 
   it("devrait remettre la chaîne « si dépassement » à zéro à chaque section : un dépassement de récurrent ne plombe pas une enveloppe", () => {
@@ -594,9 +610,6 @@ describe("Rappels d'argent dépensé au-delà du budget", () => {
       { groupId: 1, name: "Courses", month: "2026-06", amount: 50 },
       { groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 80 },
     ]);
-    // Rien tranché => rien de retenu : exceptionnel par défaut, aucun report.
-    expect(r.retained.byGroup[1] ?? 0).toBe(0);
-    expect(r.retained.uncat).toBe(0);
     // Pastilles : un dépassement non tranché par élément (le plus récent), mois courant inclus.
     expect(r.pending).toEqual([
       { groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 80 },
@@ -612,41 +625,44 @@ describe("Rappels d'argent dépensé au-delà du budget", () => {
     ]);
   });
 
-  it("devrait ne retenir pour le prévisionnel que les dépassements marqués permanents", () => {
+  it("devrait exclure des rappels un dépassement déjà tranché, quelle que soit la décision", () => {
     const txns = [
-      tx({ id: "1", date: "2026-06-10", amount: -350, label: "CARREFOUR", groupId: 1 }), // juin : 50
-      tx({ id: "2", date: "2026-07-10", amount: -380, label: "CARREFOUR", groupId: 1 }), // juillet : 80
+      tx({ id: "1", date: "2026-06-10", amount: -350, label: "CARREFOUR", groupId: 1 }), // juin (terminé) : 50
+      tx({ id: "2", date: "2026-07-10", amount: -380, label: "CARREFOUR", groupId: 1 }), // juillet (courant) : 80
     ];
-    // Juillet permanent : c'est lui qu'on reporte (80), et il quitte les rappels.
-    const perm = computeOverspends([courses], txns, "2026-07", [{ groupId: 1, month: "2026-07", decision: "permanent" }]);
-    expect(perm.retained.byGroup[1]).toBe(80);
-    expect(perm.pendingClosed).toEqual([{ groupId: 1, name: "Courses", month: "2026-06", amount: 50 }]);
-    // Juillet exceptionnel : rien de retenu, il quitte quand même les rappels.
-    const exc = computeOverspends([courses], txns, "2026-07", [{ groupId: 1, month: "2026-07", decision: "exceptional" }]);
-    expect(exc.retained.byGroup[1] ?? 0).toBe(0);
-    expect(exc.pendingClosed).toEqual([{ groupId: 1, name: "Courses", month: "2026-06", amount: 50 }]);
-    // Juin permanent, juillet non tranché : on reporte juin (50).
+    // Rien tranché : les deux dépassements attendent une décision.
+    const none = computeOverspends([courses], txns, "2026-07", []);
+    expect(none.pendingClosed).toEqual([{ groupId: 1, name: "Courses", month: "2026-06", amount: 50 }]);
+    expect(none.pending).toEqual([{ groupId: 1, name: "Courses", month: "2026-07", amount: 80 }]);
+    // Juin tranché (permanent ou exceptionnel, peu importe la décision) : il quitte le
+    // bandeau des mois terminés, sans effet sur le prévisionnel (plus de report).
     const permJuin = computeOverspends([courses], txns, "2026-07", [{ groupId: 1, month: "2026-06", decision: "permanent" }]);
-    expect(permJuin.retained.byGroup[1]).toBe(50);
+    expect(permJuin.pendingClosed).toEqual([]);
+    const excJuin = computeOverspends([courses], txns, "2026-07", [{ groupId: 1, month: "2026-06", decision: "exceptional" }]);
+    expect(excJuin.pendingClosed).toEqual([]);
+    // Juillet tranché : quitte les pastilles (pending), qui retombent alors sur le
+    // dépassement non tranché suivant (juin, toujours dans les rappels).
+    const permJuillet = computeOverspends([courses], txns, "2026-07", [{ groupId: 1, month: "2026-07", decision: "permanent" }]);
+    expect(permJuillet.pending).toEqual([{ groupId: 1, name: "Courses", month: "2026-06", amount: 50 }]);
+    expect(permJuillet.pendingClosed).toEqual([{ groupId: 1, name: "Courses", month: "2026-06", amount: 50 }]);
   });
 
-  it("devrait, de bout en bout, ne reporter le dépassement sur le prévisionnel des mois à venir que si on le marque permanent", () => {
+  it("devrait, de bout en bout, ne plus reporter aucun dépassement sur le prévisionnel des mois à venir, même marqué permanent", () => {
     const txns = [tx({ id: "1", date: "2026-07-10", amount: -380, label: "CARREFOUR", groupId: 1 })]; // budget 300 -> dépassement 80
     const months = ["2026-07", "2026-08"];
     const sections = computeHistory([courses], txns, months, "2026-07");
     const solde = computeSolde(sections, months, "2026-07", 1000);
-    const open = solde.openings[0];
-    const estimate = open - 380; // estimé de fin du mois courant, comme le fait la page Historique
-    // Non tranché : rien de retenu, donc les deux chaînes futures repartent du même
-    // estimé et avancent du même pas -> le « si dépassement » rejoint le « prévu ».
-    const undecided = computeOverspends([courses], txns, "2026-07", []);
-    const pUndecided = computePlannedSoldes(sections, months, "2026-07", solde.openings, estimate, undecided.retained);
-    expect(pUndecided.depassClosings[1]).toBeCloseTo(pUndecided.prevuClosings[1]!, 2);
-    // Marqué permanent : les 80 sont reportés, et se retrouvent bien comme écart entre
-    // le prévisionnel optimiste et le prévisionnel « si dépassement » du mois futur.
-    const permanent = computeOverspends([courses], txns, "2026-07", [{ groupId: 1, month: "2026-07", decision: "permanent" }]);
-    const pPermanent = computePlannedSoldes(sections, months, "2026-07", solde.openings, estimate, permanent.retained);
-    expect(pPermanent.prevuClosings[1]! - pPermanent.depassClosings[1]!).toBeCloseTo(80, 2);
+    const estimate = solde.openings[0] - 380; // estimé de fin du mois courant, comme le fait la page Historique
+    // Marquer le dépassement de juillet « permanent » ne change plus rien au
+    // prévisionnel : computePlannedSoldes ne prend plus aucune information issue des
+    // décisions (le paramètre `retained` a disparu, remplacé par `dated`, réservé à
+    // la provision des non catégorisés).
+    computeOverspends([courses], txns, "2026-07", [{ groupId: 1, month: "2026-07", decision: "permanent" }]);
+    const p = computePlannedSoldes(sections, months, "2026-07", solde.openings, estimate);
+    // Le mois courant reste factuel : le dépassement réel de 80 est retiré.
+    expect(p.prevuClosings[0]! - p.depassClosings[0]!).toBeCloseTo(80, 2);
+    // Le mois futur ne reporte plus rien : le « si dépassement » rejoint le « prévu ».
+    expect(p.depassClosings[1]).toBeCloseTo(p.prevuClosings[1]!, 2);
   });
 });
 
@@ -714,7 +730,8 @@ describe("Durée de vie d'un groupe", () => {
     // dépense en juillet, un mois où le groupe n'est plus actif : elle est non catégorisée, pas un dépassement de groupe
     const txn: Txn = { id: "t1", date: "2026-07-10", amount: -500, label: "x", accountId: "a1", groupId: 60 };
     const r = computeOverspends([ponctuel], [txn], "2026-07", []);
-    expect(r.retained.byGroup[60]).toBeUndefined();
+    expect(r.pending.some((p) => p.groupId === 60)).toBe(false);
+    expect(r.pendingClosed.some((p) => p.groupId === 60)).toBe(false);
   });
 
   it("devrait retirer la provision du dépassement non catégorisé", () => {

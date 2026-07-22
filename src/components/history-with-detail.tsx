@@ -1,6 +1,6 @@
 "use client";
 import type { AccountForecast } from "@/lib/forecast";
-import type { MonthCell, HistorySection, SoldeColumn, PlannedSoldes, RetainedOverspends, PendingOverspend } from "@/lib/history";
+import type { MonthCell, HistorySection, SoldeColumn, PlannedSoldes, PendingOverspend } from "@/lib/history";
 import { CenterScroll } from "@/components/center-scroll";
 import { HistoryGrid } from "@/components/history-grid";
 import { OverspendBanner } from "@/components/overspend-banner";
@@ -28,7 +28,6 @@ export function HistoryWithDetail(props: {
   groups: SelectGroup[];
   solde: SoldeColumn;
   planned: PlannedSoldes;
-  retained?: RetainedOverspends;
   // Compte affiché et décisions déjà prises sur des dépassements : nécessaires au
   // bloc de décision du side panel (Task 6).
   accountId: string;

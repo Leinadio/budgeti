@@ -305,8 +305,14 @@ export function computeHistory(
       const monthTxns = mine.filter((t) => t.date.slice(0, 7) === m);
       const depense = monthTxns.filter((t) => t.amount < 0).reduce((s, t) => s + Math.abs(t.amount), 0);
       const recu = monthTxns.filter((t) => t.amount > 0).reduce((s, t) => s + t.amount, 0);
-      // Aucun budget sur les non catégorisés : pas de « reste » (0), et surtout
-      // l'argent reçu n'est pas soustrait.
+      // Les dépenses non catégorisées reçoivent la provision (budget daté du groupe 0)
+      // comme budget : la Balance devient provision − dépensé net, comme une enveloppe.
+      // Les reçus non catégorisés, eux, n'ont toujours pas de budget (0, reste à 0) :
+      // l'argent reçu sans groupe n'est jamais soustrait d'un « reste ».
+      if (direction === "out") {
+        const budgeted = provisionInForce(dated, m);
+        return { budgeted, depense, recu, balance: budgeted - (depense - recu) };
+      }
       return { budgeted: 0, depense, recu, balance: 0 };
     });
     return { kind: "uncategorized", rows: [], totals, txns: mine.map(toHistoryTxn), uncatDirection: direction };
@@ -543,8 +549,13 @@ export function computeTableEstimate(
 }
 
 // Débordement net des non catégorisés pour un mois : dépensé (section « out »)
-// au-delà des reçus (section « in »). C'est la part rouge de leur Balance.
-export function uncatOverspend(sections: HistorySection[], i: number): number {
+// au-delà des reçus (section « in ») et de la provision en vigueur. C'est la part
+// rouge de leur Balance. `dated` est accepté pour cohérence d'API avec
+// `computePlannedSoldes` ; en pratique `outT.budgeted` porte déjà la provision
+// (posée par `computeHistory` avec ce même `dated`), donc `outT?.budgeted ?? 0`
+// vaut exactement `provisionInForce(dated, mois)` — pas besoin de la recalculer ici.
+export function uncatOverspend(sections: HistorySection[], i: number, dated?: DatedBudgets): number {
+  void dated;
   const outT = sections.find((s) => s.kind === "uncategorized" && (s.uncatDirection ?? "out") === "out")?.totals[i];
   const inT = sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in")?.totals[i];
   return Math.max(0, (outT?.depense ?? 0) - (inT?.recu ?? 0) - (outT?.budgeted ?? 0));
@@ -555,12 +566,9 @@ export function uncatOverspend(sections: HistorySection[], i: number): number {
 // pending : le dépassement non tranché le plus récent par groupe (et non catégorisés),
 //   mois courant inclus — un par élément à trancher, pour les pastilles.
 // pendingByMonth : les mêmes dépassements non tranchés, groupés par mois (bandeaux par mois).
-// retained : pour chaque groupe (et les non catégorisés via `uncat`), le montant du
-//   dépassement marqué PERMANENT le plus récent — c'est lui que la chaîne « Solde si
-//   dépassement » reconduit sur les mois futurs. Un dépassement exceptionnel (ou non
-//   tranché) n'est jamais reporté.
+// Un dépassement tranché (exceptionnel ou permanent) n'alimente plus rien ici : il n'y a
+// plus de report sur le prévisionnel des mois futurs (cf. `computePlannedSoldes`).
 export type PendingOverspend = { groupId: number; name: string; month: string; amount: number };
-export type RetainedOverspends = { byGroup: Record<number, number>; uncat: number };
 
 export function computeOverspends(
   groups: Group[],
@@ -568,7 +576,7 @@ export function computeOverspends(
   currentMonth: string,
   decided: { groupId: number; month: string; decision?: "exceptional" | "permanent" }[],
   dated?: DatedBudgets,
-): { pendingClosed: PendingOverspend[]; pending: PendingOverspend[]; retained: RetainedOverspends; pendingByMonth: Record<string, PendingOverspend[]> } {
+): { pendingClosed: PendingOverspend[]; pending: PendingOverspend[]; pendingByMonth: Record<string, PendingOverspend[]> } {
   const ownable = groups.map(toOwnable);
   const owned = txns.map((t) => {
     const o: OwnedTxn = { id: t.id, date: t.date, amount: t.amount, label: t.label, accountId: t.accountId, groupId: t.groupId, excluded: t.excluded };
@@ -583,21 +591,18 @@ export function computeOverspends(
 
   const pendingClosed: PendingOverspend[] = [];
   const pendingByMonth: Record<string, PendingOverspend[]> = {};
-  const retained: RetainedOverspends = { byGroup: {}, uncat: 0 };
   // Le dépassement NON tranché le plus récent, par groupe (0 = non catégorisés) : pastilles.
   const mostRecent = new Map<number, PendingOverspend>();
-  // Classe un dépassement selon sa décision : non tranché -> rappels ; permanent -> retenu.
+  // Classe un dépassement selon sa décision : seul un dépassement NON tranché alimente
+  // les rappels (bandeaux, pastilles) ; un dépassement tranché (exceptionnel ou
+  // permanent) n'a plus aucun effet ici, quelle que soit la décision.
   const classify = (item: PendingOverspend, key: string) => {
     const dec = decidedBy.get(key);
     if (dec === undefined) {
       (pendingByMonth[item.month] ??= []).push(item);
       if (item.month < currentMonth) pendingClosed.push(item);
       mostRecent.set(item.groupId, item);
-    } else if (dec === "permanent") {
-      if (item.groupId === 0) retained.uncat = item.amount; // mois croissants : le dernier = le plus récent
-      else retained.byGroup[item.groupId] = item.amount;
     }
-    // exceptionnel : n'alimente ni les rappels ni le report.
   };
   for (const m of months) {
     for (const g of groups) {
@@ -620,20 +625,22 @@ export function computeOverspends(
   pendingClosed.sort(byMonthThenName);
   for (const m of Object.keys(pendingByMonth)) pendingByMonth[m].sort(byMonthThenName);
   const pending = [...mostRecent.values()].sort(byMonthThenName);
-  return { pendingClosed, pending, retained, pendingByMonth };
+  return { pendingClosed, pending, pendingByMonth };
 }
 
 // Chaînes de solde « plan » : prévu (revenus − budget) et « si dépassement »
 // (prévu − dépassement). Mois passés et courant : ancrés à l'argent de départ réel
 // du mois, dépassement du mois lui-même. Mois futurs : le premier part de l'estimé
 // de fin du mois courant (currentEstimate, sinon la clôture du plan), les suivants
-// enchaînent ; dépassement du mois courant maintenu. Les non catégorisés n'entrent
-// pas dans le prévu (aucun budget), mais leur débordement net est retiré de la
-// chaîne « si dépassement » (à leur étape « dépenses », après les enveloppes) :
-// la colonne se lit ainsi en continu jusqu'au « Solde actuel ».
+// enchaînent ; aucun dépassement n'y est plus supposé (plus de report), le « si
+// dépassement » y rejoint donc le « prévu ». Les non catégorisés entrent dans le
+// prévu via leur provision (une dépense planifiée, comme un budget d'enveloppe), et
+// leur débordement net au-delà de la provision est retiré de la chaîne « si
+// dépassement » (à leur étape « dépenses », après les enveloppes) : la colonne se
+// lit ainsi en continu jusqu'au « Solde actuel ».
 export function computePlannedSoldes(
   sections: HistorySection[], months: string[], currentMonth: string, openingsReal: number[],
-  currentEstimate?: number | null, retained?: RetainedOverspends,
+  currentEstimate?: number | null, dated?: DatedBudgets,
 ): PlannedSoldes {
   const n = months.length;
   let ci = months.indexOf(currentMonth);
@@ -672,19 +679,24 @@ export function computePlannedSoldes(
       // l'affichent tel quel pour rester égaux au « Solde actuel ».
       let secOs = 0;
       if (sec.kind === "uncategorized") {
-        // Rien de planifié : le prévu traverse. À l'étape « dépenses », le « si
-        // dépassement » retire le débordement net des non catégorisés (maintenu) et
-        // affiche le cumul global runD (les non catégorisés récapitulent tout).
+        // À l'étape « dépenses », la provision est une dépense planifiée, retirée du
+        // prévu comme un budget d'enveloppe. Le « si dépassement » retire en plus,
+        // sur un mois ancré (passé / courant), le débordement net au-delà de la
+        // provision ; sur un mois futur, plus aucun report : il rejoint le prévu.
         const dir = sec.uncatDirection ?? "out";
-        if (dir === "out")
-          runD -= anchored ? uncatOverspend(sections, osMonth) : retained ? retained.uncat : uncatOverspend(sections, osMonth);
+        if (dir === "out") {
+          runP -= provisionInForce(dated, months[i]);
+          if (anchored) runD -= uncatOverspend(sections, osMonth, dated);
+          else runD = runP;
+        }
         (uncatPrevuRunning[dir] ??= new Array<number | null>(n).fill(null))[i] = runP;
         (uncatDepassRunning[dir] ??= new Array<number | null>(n).fill(null))[i] = runD;
       } else {
         for (const r of sec.rows) {
           const net = rowRevenus(r, i, isCurrent) - rowBudget(r, i);
           runP += net;
-          const os = anchored ? rowOverspend(r, osMonth) : retained ? retained.byGroup[r.id] ?? 0 : rowOverspend(r, osMonth);
+          // Ancré (passé / courant) : dépassement réel du mois. Futur : aucun report.
+          const os = anchored ? rowOverspend(r, osMonth) : 0;
           runD += net - os;
           secOs += os;
           prevuRowRunning[r.id][i] = runP;
