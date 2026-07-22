@@ -47,7 +47,7 @@ export function HistoryWithDetail(props: {
   return (
     <div className="flex flex-col gap-3">
       {props.pendingClosed && props.pendingClosed.length > 0 && (
-        <OverspendBanner items={props.pendingClosed} accountId={props.accountId} months={props.months} budgets={props.currentBudgets ?? {}} />
+        <OverspendBanner items={props.pendingClosed} accountId={props.accountId} months={props.months} />
       )}
       <CenterScroll>
         <HistoryGrid {...props} onSelect={setDetail} selected={selected} anchor={anchor} />

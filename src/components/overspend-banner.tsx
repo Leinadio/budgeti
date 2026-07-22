@@ -15,7 +15,6 @@ export function overspendDecisionDetail(
   accountId: string,
   monthIdx: number | null,
   decision: "exceptional" | "permanent" | null,
-  currentBudget: number | null,
 ): CellDetail {
   return {
     title: "Dépassement",
@@ -33,18 +32,16 @@ export function overspendDecisionDetail(
       month: item.month,
       amount: item.amount,
       decision,
-      currentBudget,
     },
   };
 }
 
 // Bandeau « dépassements à traiter » : listé par mois terminé, chaque élément
 // ouvre le side panel de décision du bon groupe et du bon mois.
-export function OverspendBanner({ items, accountId, months, budgets }: {
+export function OverspendBanner({ items, accountId, months }: {
   items: PendingOverspend[];
   accountId: string;
   months: string[]; // mois affichés, pour retrouver l'index de la colonne
-  budgets: Record<number, number>; // budget courant par groupe (pré-remplissage)
 }) {
   const { setDetail } = useDetailSidebar();
   if (items.length === 0) return null;
@@ -57,7 +54,7 @@ export function OverspendBanner({ items, accountId, months, budgets }: {
           key={`${it.groupId}-${it.month}`}
           type="button"
           onClick={() =>
-            setDetail(overspendDecisionDetail(it, accountId, months.indexOf(it.month) === -1 ? null : months.indexOf(it.month), null, it.groupId === 0 ? null : budgets[it.groupId] ?? null))
+            setDetail(overspendDecisionDetail(it, accountId, months.indexOf(it.month) === -1 ? null : months.indexOf(it.month), null))
           }
           className="cursor-pointer underline decoration-dotted underline-offset-2 hover:no-underline"
         >

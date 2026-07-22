@@ -55,8 +55,6 @@ export type GroupManageInfo = {
 
 // Info nécessaire au bloc de décision d'un dépassement de budget : quel groupe (0 =
 // non catégorisés), quel mois, de combien, et la décision déjà prise le cas échéant.
-// currentBudget = null pour les non catégorisés (pas de budget, donc pas d'option
-// « permanent »).
 export type OverspendActionInfo = {
   accountId: string;
   groupId: number; // 0 = non catégorisés
@@ -64,7 +62,6 @@ export type OverspendActionInfo = {
   month: string; // YYYY-MM
   amount: number; // dépassement, positif
   decision: "exceptional" | "permanent" | null; // null = non tranché
-  currentBudget: number | null; // null = pas d'option « permanent » (non catégorisés)
 };
 
 export function sumOf(nodes: DetailNode[]): number {

@@ -440,7 +440,7 @@ function soldeActuelDetail(
 // detailRow : ligne de groupe (transactions/postes) permettant de construire le
 // détail cliquable des cellules. Absente pour les sous-lignes (postes d'un
 // récurrent) : ces cellules restent non cliquables (hors périmètre, cf. ci-dessous).
-function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, subtitleOf, detailRow, months, currentMonth, rowKey, selCellKey, prevRowKey, incomeKind, depassCumulRows, accountId, decisionByKey, currentGroupBudget }: {
+function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, subtitleOf, detailRow, months, currentMonth, rowKey, selCellKey, prevRowKey, incomeKind, depassCumulRows, accountId, decisionByKey }: {
   cells: MonthCell[];
   mode: "out" | "in" | "total";
   solde?: (number | null)[];
@@ -471,9 +471,6 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
   // pour les sous-lignes (pas d'action sur un poste).
   accountId?: string;
   decisionByKey?: Map<string, "exceptional" | "permanent">;
-  // Budget en vigueur du groupe au mois courant : base de pré-remplissage du budget
-  // « permanent » (la hausse prend effet au mois courant, pas au mois cliqué).
-  currentGroupBudget?: number;
 }) {
   return (
     <>
@@ -528,9 +525,6 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
             month,
             amount: -c.balance,
             decision: decisionByKey?.get(`${r.id}::${month}`) ?? null,
-            // Budget courant (celui que la hausse « permanent » relèvera), pas celui
-            // du mois cliqué — repli sur le mois cliqué s'il n'est pas fourni.
-            currentBudget: currentGroupBudget ?? c.budgeted,
           };
         }
 
@@ -780,7 +774,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
         );
         // Bloc de décision : uniquement la section Non catégorisés « out », en
         // dépassement, sur un mois passé ou courant. Pas d'option « permanent »
-        // (currentBudget: null — les non catégorisés n'ont pas de budget).
+        // pour ce groupe (les non catégorisés n'ont pas de budget).
         if (isUncat && !uncatIn && resteVal < -0.005 && month <= currentMonth && accountId) {
           resteDetail.overspendAction = {
             accountId,
@@ -789,7 +783,6 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
             month,
             amount: -resteVal,
             decision: decisionByKey?.get(`0::${month}`) ?? null,
-            currentBudget: null,
           };
         }
 
@@ -1590,7 +1583,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                   e.stopPropagation();
                   const p = pendingByGroup.get(r.id)!;
                   const idx = months.indexOf(p.month);
-                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null, currentBudgets?.[r.id] ?? null));
+                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null));
                 }}
                 className="ml-1 inline-block size-2 shrink-0 rounded-full bg-amber-500"
               />
@@ -1626,7 +1619,6 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
             depassCumulRows={depassCumulByRow.get(r.id)}
             accountId={accountId}
             decisionByKey={decisionByKey}
-            currentGroupBudget={currentBudgets?.[r.id]}
           />
         </TableRow>
         {gOpen && (
@@ -1754,7 +1746,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                   e.stopPropagation();
                   const p = pendingByGroup.get(0)!;
                   const idx = months.indexOf(p.month);
-                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null, null));
+                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null));
                 }}
                 className="ml-1 inline-block size-2 shrink-0 rounded-full bg-amber-500"
               />
@@ -1829,7 +1821,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                       <button
                         key={`${it.groupId}-${it.month}`}
                         type="button"
-                        onClick={() => onSelect(overspendDecisionDetail(it, accountId, months.indexOf(it.month) === -1 ? null : months.indexOf(it.month), null, null))}
+                        onClick={() => onSelect(overspendDecisionDetail(it, accountId, months.indexOf(it.month) === -1 ? null : months.indexOf(it.month), null))}
                         className="rounded border border-amber-300 bg-amber-50 px-1 text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
                       >
                         {it.name} ({NUM.format(it.amount)} €)
