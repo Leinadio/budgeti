@@ -149,10 +149,10 @@ const COL_INFO: Record<ColKey, string[]> = {
     "Par exemple : tu démarres à −120 €, tu attends 650 €, tu prévois 555 € de dépenses. Il te resterait −25 € en fin de mois.",
   ],
   soldeDepass: [
-    "C'est l'hypothèse défavorable : où tu atterris si les dépassements que tu n'as pas encore tranchés se répètent chaque mois.",
-    "Chaque ligne part du « Solde si dépassement » de la ligne juste au-dessus et retire son propre dépassement. La chaîne repart de zéro à chaque section : le dépassement d'un récurrent ne vient donc pas plomber une enveloppe, et inversement.",
-    "Quand un budget déborde, l'app te demande de décider : exceptionnel (un accident, on arrête de le compter) ou permanent (ton budget monte, et c'est le Solde prévu qui l'absorbe). Tant que tu n'as pas décidé, le dépassement est reconduit ici, par prudence.",
-    "Tout en bas, le « Solde actuel » cumule les dépassements de toutes les sections : c'est le pire cas d'ensemble. Sur les mois passés et le mois en cours, pas d'hypothèse : ce sont tes dépassements réels qui sont retirés.",
+    "C'est ton plan mis à l'épreuve : le Solde prévu, duquel on retire les dépassements qui risquent de continuer.",
+    "Sur les mois passés et le mois en cours, ce sont tes dépassements réels qui sont retirés. Sur les mois à venir, uniquement ceux que tu as marqués « Permanent » : par défaut un dépassement est vu comme un accident ponctuel, on ne le reconduit pas tout seul.",
+    "Quand un budget déborde, l'app te demande de décider : exceptionnel (un accident, on l'oublie) ou permanent (ça va revenir). « Permanent » ne touche ni à ton budget ni à ton Solde prévu : il reporte simplement le dépassement ici, sur les mois futurs.",
+    "Tant que rien n'est marqué permanent, cette colonne rejoint le Solde prévu sur les mois à venir. L'écart entre les deux mesure ce que tes dépassements récurrents coûtent vraiment à ta projection.",
   ],
 };
 
@@ -602,8 +602,8 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
         // section, sans traîner les dépassements des sections du dessus.
         const ownOs = depassCumulRows?.[i]?.find((g) => g.id === r?.id)?.amount ?? 0;
         // Mois source du dépassement : sur un mois de projection, il vient du dépassement
-        // retenu (non tranché) du mois courant, pas du mois affiché (dont la Balance est
-        // à 0). On renvoie donc vers la case Balance de ce mois source.
+        // retenu (marqué permanent) du mois courant, pas du mois affiché (dont la Balance
+        // est à 0). On renvoie donc vers la case Balance de ce mois source.
         const ciIdx = months.indexOf(currentMonth);
         const osSrcI = month > currentMonth && ciIdx !== -1 ? ciIdx : i;
         const soldeDepassDetail: CellDetail | null =
@@ -698,7 +698,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
   selCellKey?: ReadonlySet<string>;
   // Ligne dont le solde est le « Solde précédent » de cette section (prédécesseur).
   prevRowKey?: string;
-  // Dépassement non catégorisés retenu (non tranché) : reconduit sur les mois
+  // Dépassement non catégorisés retenu (marqué permanent) : reconduit sur les mois
   // futurs à la place du dépassement du mois courant (cf. Task 4).
   retained?: RetainedOverspends;
   // Compte courant et décisions déjà prises : pour attacher le bloc de décision sur
@@ -802,7 +802,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
 
         // Dépassement des non catégorisés = la part rouge de leur Balance (dépensé
         // au-delà des reçus non catégorisés). Sert au calcul du solde si dépassement.
-        // Mois futur : le dépassement retenu (non tranché) si fourni, sinon repli sur
+        // Mois futur : le dépassement retenu (marqué permanent) si fourni, sinon repli sur
         // celui du mois courant, maintenu.
         const ciIdx = months.indexOf(currentMonth);
         const isFuture = month > currentMonth;
@@ -838,7 +838,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
                   // global (runD). Le détail chaîne donc sur la valeur du dessus
                   // (soldeDepassVal + depassVal = le cumul avant leur propre débordement).
                   { label: "Solde si dépassement précédent", amount: soldeDepassVal + depassVal, ref: prevRowKey ? cellKey(prevRowKey, "soldeDepass", i) : undefined },
-                  // Débordement retenu (non tranché) sur les mois futurs, sinon celui du
+                  // Débordement retenu (marqué permanent) sur les mois futurs, sinon celui du
                   // mois courant. Renvoi vers la Balance du mois SOURCE (srcI) : sur un
                   // mois de projection, le débordement vient du mois courant, pas du mois
                   // affiché (dont la Balance est à 0).
@@ -994,8 +994,8 @@ function GrandTotalsCells({ sections, grand, solde, planned, months, currentMont
   currentEstimate?: number;
   onSelect?: (d: CellDetail) => void;
   selCellKey?: ReadonlySet<string>;
-  // Dépassements retenus (non tranchés) : reconduits sur les mois futurs à la place
-  // des dépassements réels du mois courant (cf. Task 4).
+  // Dépassements retenus (marqués permanents) : reconduits sur les mois futurs à la
+  // place des dépassements réels du mois courant (cf. Task 4).
   retained?: RetainedOverspends;
 }) {
   return (
@@ -1094,7 +1094,7 @@ function GrandTotalsCells({ sections, grand, solde, planned, months, currentMont
             : null;
         // Dépassement cumulé du grand total = dépassement total maintenu, décomposé
         // par groupe. Mois passés/courant : montants réels du mois affiché. Mois
-        // futurs : dépassements retenus (non tranchés) si fournis, sinon repli sur
+        // futurs : dépassements retenus (marqués permanents) si fournis, sinon repli sur
         // ceux du mois courant (cf. cs). Les renvois pointent toujours vers les cases
         // Balance du mois affiché : la surbrillance reste dans la colonne du mois cliqué.
         const isFuture = month > currentMonth;
@@ -1323,7 +1323,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
   groups: SelectGroup[];
   solde: SoldeColumn;
   planned: PlannedSoldes;
-  // Dépassements retenus (non tranchés) par groupe et pour les non catégorisés :
+  // Dépassements retenus (marqués permanents) par groupe et pour les non catégorisés :
   // ce que les mois futurs de la chaîne « si dépassement » reconduisent (cf. Task 4).
   retained?: RetainedOverspends;
   // Clic sur un montant : remonté au parent, qui l'affiche dans la sidebar.

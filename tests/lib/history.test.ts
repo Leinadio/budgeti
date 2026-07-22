@@ -629,6 +629,25 @@ describe("Rappels d'argent dépensé au-delà du budget", () => {
     const permJuin = computeOverspends([courses], txns, "2026-07", [{ groupId: 1, month: "2026-06", decision: "permanent" }]);
     expect(permJuin.retained.byGroup[1]).toBe(50);
   });
+
+  it("devrait, de bout en bout, ne reporter le dépassement sur le prévisionnel des mois à venir que si on le marque permanent", () => {
+    const txns = [tx({ id: "1", date: "2026-07-10", amount: -380, label: "CARREFOUR", groupId: 1 })]; // budget 300 -> dépassement 80
+    const months = ["2026-07", "2026-08"];
+    const sections = computeHistory([courses], txns, months, "2026-07");
+    const solde = computeSolde(sections, months, "2026-07", 1000);
+    const open = solde.openings[0];
+    const estimate = open - 380; // estimé de fin du mois courant, comme le fait la page Historique
+    // Non tranché : rien de retenu, donc les deux chaînes futures repartent du même
+    // estimé et avancent du même pas -> le « si dépassement » rejoint le « prévu ».
+    const undecided = computeOverspends([courses], txns, "2026-07", []);
+    const pUndecided = computePlannedSoldes(sections, months, "2026-07", solde.openings, estimate, undecided.retained);
+    expect(pUndecided.depassClosings[1]).toBeCloseTo(pUndecided.prevuClosings[1]!, 2);
+    // Marqué permanent : les 80 sont reportés, et se retrouvent bien comme écart entre
+    // le prévisionnel optimiste et le prévisionnel « si dépassement » du mois futur.
+    const permanent = computeOverspends([courses], txns, "2026-07", [{ groupId: 1, month: "2026-07", decision: "permanent" }]);
+    const pPermanent = computePlannedSoldes(sections, months, "2026-07", solde.openings, estimate, permanent.retained);
+    expect(pPermanent.prevuClosings[1]! - pPermanent.depassClosings[1]!).toBeCloseTo(80, 2);
+  });
 });
 
 describe("Durée de vie d'un groupe", () => {

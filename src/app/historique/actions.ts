@@ -34,8 +34,9 @@ export async function decideOverspend(
   revalidatePath("/");
 }
 
-// Annule une décision de dépassement : le dépassement redevient « à trancher » (il
-// est de nouveau reconduit par prudence dans le Solde si dépassement). Ne touche à
+// Annule une décision de dépassement : le dépassement redevient « à trancher »
+// (undecided), ce qui n'est PAS reporté sur le Solde si dépassement des mois à
+// venir (seuls les dépassements marqués « permanent » le sont). Ne touche à
 // aucun budget : « permanent » n'en modifiait déjà plus.
 export async function undoOverspendDecision(
   accountId: string,
