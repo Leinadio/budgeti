@@ -32,10 +32,8 @@ export function HistoryWithDetail(props: {
   // bloc de décision du side panel (Task 6).
   accountId: string;
   decisions?: { groupId: number; month: string; decision: "exceptional" | "permanent" }[];
-  // Dépassements de mois terminés sans décision (bandeau) ; tous les dépassements
-  // non tranchés, un par groupe (pastilles) ; budgets courants par groupe,
-  // pour pré-remplir l'édition de budget d'un groupe (gestion de groupe).
-  pendingClosed?: PendingOverspend[];
+  // Tous les dépassements non tranchés, un par groupe (pastilles) ; budgets courants
+  // par groupe, pour pré-remplir l'édition de budget d'un groupe (gestion de groupe).
   pending?: PendingOverspend[];
   // Dépassements non tranchés groupés par mois : pastilles sous chaque en-tête de
   // mois dans la grille (Task 4).
@@ -46,11 +44,18 @@ export function HistoryWithDetail(props: {
   currentUncatProvision?: number | null;
 }) {
   const { setDetail, selected, anchor } = useDetailSidebar();
+  // Bandeau : les dépassements à trancher de TOUS les mois affichés (mois courant
+  // inclus), dans l'ordre de la fenêtre. On les prend dans pendingByMonth (groupés
+  // par mois, déjà triés par nom) restreint aux mois affichés : un mois hors fenêtre
+  // n'apparaît donc pas dans le bandeau.
+  const bannerItems = props.pendingByMonth
+    ? props.months.flatMap((m) => props.pendingByMonth![m] ?? [])
+    : [];
   return (
     <div className="flex flex-col gap-3">
-      {props.pendingClosed && props.pendingClosed.length > 0 && (
+      {bannerItems.length > 0 && (
         <OverspendBanner
-          items={props.pendingClosed}
+          items={bannerItems}
           accountId={props.accountId}
           months={props.months}
           currentBudgets={props.currentBudgets}
