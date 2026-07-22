@@ -38,6 +38,9 @@ export function HistoryWithDetail(props: {
   // (pré-remplissage de la décision).
   pendingClosed?: PendingOverspend[];
   pending?: PendingOverspend[];
+  // Dépassements non tranchés groupés par mois : pastilles sous chaque en-tête de
+  // mois dans la grille (Task 4).
+  pendingByMonth?: Record<string, PendingOverspend[]>;
   currentBudgets?: Record<number, number>;
 }) {
   const { setDetail, selected, anchor } = useDetailSidebar();

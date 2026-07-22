@@ -1317,7 +1317,7 @@ function scrollableAncestor(el: HTMLElement, axis: "x" | "y"): HTMLElement | nul
   return null;
 }
 
-export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections, overspend, grand, groups, solde, planned, retained, onSelect, selected, anchor, accountId, decisions, pending, currentBudgets }: {
+export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections, overspend, grand, groups, solde, planned, retained, onSelect, selected, anchor, accountId, decisions, pending, pendingByMonth, currentBudgets }: {
   months: string[];
   currentMonth: string;
   // Borne haute de la frise : plage sélectionnable du mois de départ dans le
@@ -1350,6 +1350,9 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
   // budgets courants par groupe (pré-remplissage de la décision).
   pendingClosed?: PendingOverspend[];
   pending?: PendingOverspend[];
+  // Les mêmes dépassements non tranchés, groupés par mois : pastilles cliquables
+  // sous l'en-tête de chaque mois (cf. Task 4).
+  pendingByMonth?: Record<string, PendingOverspend[]>;
   currentBudgets?: Record<number, number>;
 }) {
   // Décision déjà prise, indexée par « groupId::mois » : sert à attacher
@@ -1811,13 +1814,29 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                 colSpan={cols.length}
                 data-current-month={m === currentMonth ? "" : undefined}
                 className={cn(
-                  "border-l text-center whitespace-nowrap",
+                  "border-l text-center whitespace-nowrap align-top",
                   m === currentMonth && "text-foreground font-semibold",
                   m > currentMonth && "text-muted-foreground italic",
                 )}
               >
-                {monthLabel(m)}
-                {m > currentMonth ? " · projection" : ""}
+                <div>
+                  {monthLabel(m)}
+                  {m > currentMonth ? " · projection" : ""}
+                </div>
+                {accountId && (pendingByMonth?.[m]?.length ?? 0) > 0 && (
+                  <div className="mt-1 flex flex-wrap justify-center gap-1 text-xs font-normal not-italic">
+                    {pendingByMonth![m].map((it) => (
+                      <button
+                        key={`${it.groupId}-${it.month}`}
+                        type="button"
+                        onClick={() => onSelect(overspendDecisionDetail(it, accountId, months.indexOf(it.month) === -1 ? null : months.indexOf(it.month), null, null))}
+                        className="rounded border border-amber-300 bg-amber-50 px-1 text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
+                      >
+                        {it.name} ({NUM.format(it.amount)} €)
+                      </button>
+                    ))}
+                  </div>
+                )}
               </TableHead>
             );
           })}
