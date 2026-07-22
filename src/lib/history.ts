@@ -110,6 +110,13 @@ export function budgetInForce(g: Group, month: string, dated?: DatedBudgets): nu
   return amount ?? budgetOf(g);
 }
 
+// Provision (budget daté du groupe 0 = non catégorisés) en vigueur à `month`, 0 par défaut.
+export function provisionInForce(dated: DatedBudgets | undefined, month: string): number {
+  let amount = 0;
+  for (const b of dated?.[0] ?? []) if (b.effectiveMonth <= month) amount = b.amount;
+  return amount;
+}
+
 // Écritures datées d'un changement de budget « ce mois seulement » (once).
 // À partir des entrées datées existantes du groupe, du budget de base (sans entrée
 // datée), du mois visé et du nouveau montant, renvoie la ou les écritures à poser :
@@ -604,7 +611,7 @@ export function computeOverspends(
     const uncat = owned.filter((o) => o.ownerId === null && o.month === m);
     const dep = uncat.filter((o) => o.t.amount < 0).reduce((s, o) => s + Math.abs(o.t.amount), 0);
     const rec = uncat.filter((o) => o.t.amount > 0).reduce((s, o) => s + o.t.amount, 0);
-    const os = Math.max(0, dep - rec);
+    const os = Math.max(0, dep - rec - provisionInForce(dated, m));
     if (os > 0.005) classify({ groupId: 0, name: "Non catégorisés", month: m, amount: os }, `0::${m}`);
   }
   // Tri : par mois puis nom, pour un bandeau et des pastilles stables.

@@ -716,4 +716,18 @@ describe("Durée de vie d'un groupe", () => {
     const r = computeOverspends([ponctuel], [txn], "2026-07", []);
     expect(r.retained.byGroup[60]).toBeUndefined();
   });
+
+  it("devrait retirer la provision du dépassement non catégorisé", () => {
+    const txns = [
+      tx({ id: "a", date: "2026-06-05", amount: -300, label: "SANS GROUPE" }), // dépensé 300 sans groupe
+      tx({ id: "b", date: "2026-06-06", amount: 40, label: "REMB" }), // reçu 40 -> net 260
+    ];
+    // Sans provision : dépassement = 260.
+    const sans = computeOverspends([], txns, "2026-07", []);
+    expect(sans.pendingClosed).toEqual([{ groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 260 }]);
+    // Provision de 100 en vigueur en juin (budget daté du groupe 0) : dépassement = 160.
+    const dated = { 0: [{ effectiveMonth: "2026-06", amount: 100 }] };
+    const avec = computeOverspends([], txns, "2026-07", [], dated);
+    expect(avec.pendingClosed).toEqual([{ groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 160 }]);
+  });
 });
