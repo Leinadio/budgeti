@@ -1,7 +1,7 @@
 "use server";
 import { db } from "../../db/index";
-import { setOverspendDecision } from "../../db/repositories/overspend-decisions";
-import { setBudgetAmount, listBudgetAmounts } from "../../db/repositories/budget-amounts";
+import { setOverspendDecision, getOverspendDecision, deleteOverspendDecision } from "../../db/repositories/overspend-decisions";
+import { setBudgetAmount, deleteBudgetAmount, listBudgetAmounts } from "../../db/repositories/budget-amounts";
 import {
   insertEnvelopeGroup,
   insertRecurringGroup,
@@ -37,6 +37,32 @@ export async function decideOverspend(
     const currentMonth = monthKey(new Date().toISOString().slice(0, 10));
     setBudgetAmount(database, groupId, addMonthsKey(currentMonth, 1), newBudget);
   }
+  revalidatePath("/historique");
+  revalidatePath("/previsionnel");
+  revalidatePath("/");
+}
+
+// Annule une décision de dépassement : le dépassement redevient « à trancher » (il
+// est de nouveau reconduit par prudence dans le Solde si dépassement). Si le choix
+// était « permanent », on annule aussi la hausse de budget qu'il avait appliquée au
+// mois suivant le mois courant — retour à l'état d'avant le choix. Best-effort : on
+// supprime l'entrée de budget datée que « permanent » avait écrite (group, mois+1) ;
+// s'il existait un budget daté antérieur à ce même mois, il n'est pas restauré (cas
+// rare, non mémorisé).
+export async function undoOverspendDecision(
+  accountId: string,
+  groupId: number,
+  month: string,
+): Promise<void> {
+  if (!/^\d{4}-\d{2}$/.test(month)) return;
+  const database = db();
+  const existing = getOverspendDecision(database, accountId, groupId, month);
+  if (!existing) return;
+  if (existing.decision === "permanent" && groupId !== 0) {
+    const currentMonth = monthKey(new Date().toISOString().slice(0, 10));
+    deleteBudgetAmount(database, groupId, addMonthsKey(currentMonth, 1));
+  }
+  deleteOverspendDecision(database, accountId, groupId, month);
   revalidatePath("/historique");
   revalidatePath("/previsionnel");
   revalidatePath("/");

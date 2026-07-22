@@ -26,3 +26,24 @@ export function setOverspendDecision(db: Database.Database, d: OverspendDecision
      ON CONFLICT(account_id, group_id, month) DO UPDATE SET decision = excluded.decision, decided_at = excluded.decided_at`,
   ).run(d.accountId, d.groupId, d.month, d.decision, d.decidedAt);
 }
+
+// Décision enregistrée pour un dépassement précis (null si aucune).
+export function getOverspendDecision(
+  db: Database.Database, accountId: string, groupId: number, month: string,
+): OverspendDecision | null {
+  return (
+    (db
+      .prepare(
+        `SELECT account_id AS accountId, group_id AS groupId, month, decision, decided_at AS decidedAt
+         FROM overspend_decisions WHERE account_id = ? AND group_id = ? AND month = ?`,
+      )
+      .get(accountId, groupId, month) as OverspendDecision | undefined) ?? null
+  );
+}
+
+// Annule une décision : la ligne disparaît, le dépassement redevient « à trancher ».
+export function deleteOverspendDecision(
+  db: Database.Database, accountId: string, groupId: number, month: string,
+): void {
+  db.prepare(`DELETE FROM overspend_decisions WHERE account_id = ? AND group_id = ? AND month = ?`).run(accountId, groupId, month);
+}

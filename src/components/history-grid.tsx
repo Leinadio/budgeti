@@ -150,9 +150,9 @@ const COL_INFO: Record<ColKey, string[]> = {
   ],
   soldeDepass: [
     "C'est l'hypothèse défavorable : où tu atterris si les dépassements que tu n'as pas encore tranchés se répètent chaque mois.",
+    "Chaque ligne part du « Solde si dépassement » de la ligne juste au-dessus et retire son propre dépassement. La chaîne repart de zéro à chaque section : le dépassement d'un récurrent ne vient donc pas plomber une enveloppe, et inversement.",
     "Quand un budget déborde, l'app te demande de décider : exceptionnel (un accident, on arrête de le compter) ou permanent (ton budget monte, et c'est le Solde prévu qui l'absorbe). Tant que tu n'as pas décidé, le dépassement est reconduit ici, par prudence.",
-    "L'écart entre « Solde prévu » et cette colonne mesure donc exactement ce qu'il te reste à trancher. Chaque décision le referme un peu ; quand tout est réglé, les deux colonnes disent la même chose.",
-    "Sur les mois passés et le mois en cours, pas d'hypothèse : ce sont tes dépassements réels qui sont retirés.",
+    "Tout en bas, le « Solde actuel » cumule les dépassements de toutes les sections : c'est le pire cas d'ensemble. Sur les mois passés et le mois en cours, pas d'hypothèse : ce sont tes dépassements réels qui sont retirés.",
   ],
 };
 
@@ -353,13 +353,6 @@ function rowProjRevenu(r: HistoryRow, i: number, isCurrent: boolean): number {
   if (r.direction !== "in") return 0;
   if (r.incomeKind === "supplementary") return isCurrent ? r.cells[i].budgeted : 0;
   return r.cells[i].budgeted;
-}
-
-// Décompose un « Dépassement cumulé » : un nœud négatif par groupe qui dépasse,
-// pointant vers la case Balance de ce groupe (le montant rouge d'où vient le
-// dépassement). Le total (négatif) est ce qui se soustrait du solde prévu.
-function overspendChildren(rows: { id: number; name: string; amount: number }[], i: number): DetailNode[] {
-  return rows.map((g) => ({ label: g.name, amount: -g.amount, ref: cellKey(groupRow(g.id), "reste", i) }));
 }
 
 // Clé de ligne d'une section pour les data-cellkey. Les deux sections « non
@@ -607,26 +600,30 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
               )
             : null;
         const sd = soldeDepass?.[i];
-        // Les montants du « Dépassement cumulé » viennent des dépassements retenus
-        // (non tranchés) sur les mois futurs, ou des dépassements réels du mois courant
-        // et passés ; les renvois pointent vers les cases Balance du mois affiché :
-        // la surbrillance reste dans la colonne du mois cliqué.
+        // Solde si dépassement : même décomposition en chaîne que « Solde prévu »
+        // (valeur de la ligne du dessus + mouvement prévu du mois), puis on retire le
+        // seul dépassement de CETTE ligne. La chaîne « si dépassement » repart de zéro
+        // à chaque section (cf. computePlannedSoldes) : le « précédent » d'une ligne
+        // est donc bien le « Solde si dépassement » de la ligne juste au-dessus dans sa
+        // section, sans traîner les dépassements des sections du dessus.
+        const ownOs = depassCumulRows?.[i]?.find((g) => g.id === r?.id)?.amount ?? 0;
+        // Mois source du dépassement : sur un mois de projection, il vient du dépassement
+        // retenu (non tranché) du mois courant, pas du mois affiché (dont la Balance est
+        // à 0). On renvoie donc vers la case Balance de ce mois source.
+        const ciIdx = months.indexOf(currentMonth);
+        const osSrcI = month > currentMonth && ciIdx !== -1 ? ciIdx : i;
         const soldeDepassDetail: CellDetail | null =
           sd != null && sp != null && r
             ? makeDetail(
                 "Solde si dépassement",
                 [
-                  { label: "Solde prévu", amount: sp, ref: ck("soldePrevu") },
-                  // Dépassement cumulé = somme des dépassements de budget maintenus,
-                  // décomposé par groupe (jusqu'à cette ligne incluse). La somme
-                  // n'existe pas telle quelle dans le tableau : on surligne ensemble
-                  // les cases Balance qui la composent (refs).
-                  {
-                    label: "Dépassement cumulé",
-                    amount: -(sp - sd),
-                    refs: (depassCumulRows?.[i] ?? []).map((g) => cellKey(groupRow(g.id), "reste", i)),
-                    children: overspendChildren(depassCumulRows?.[i] ?? [], i),
-                  },
+                  { label: "Solde si dépassement précédent", amount: sd - mouvementPrevu + ownOs, ref: prevRowKey ? cellKey(prevRowKey, "soldeDepass", i) : undefined },
+                  { label: "Mouvement prévu du mois", amount: mouvementPrevu, ref: mode === "out" ? ck("budget") : mode === "in" ? ck("revenus") : undefined, children: mouvementChildren.length ? mouvementChildren : undefined },
+                  // Le dépassement propre à la ligne (sa Balance rouge), renvoi vers sa case
+                  // du mois source.
+                  ...(ownOs > 0.005
+                    ? [{ label: "Dépassement", amount: -ownOs, ref: cellKey(rowKey, "reste", osSrcI) }]
+                    : []),
                 ],
                 { subtitle, result: sd },
               )
@@ -844,9 +841,17 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
             ? makeDetail(
                 "Solde si dépassement",
                 [
+                  // Les non catégorisés récapitulent tout : ils affichent le cumul
+                  // global (runD). Le détail chaîne donc sur la valeur du dessus
+                  // (soldeDepassVal + depassVal = le cumul avant leur propre débordement).
                   { label: "Solde si dépassement précédent", amount: soldeDepassVal + depassVal, ref: prevRowKey ? cellKey(prevRowKey, "soldeDepass", i) : undefined },
-                  // Dépassement retenu (non tranché) sur les mois futurs, sinon celui du mois courant, renvoi vers la Balance du mois affiché.
-                  { label: "Dépassement", amount: -depassVal, ref: cellKey(rowKey, "reste", i) },
+                  // Débordement retenu (non tranché) sur les mois futurs, sinon celui du
+                  // mois courant. Renvoi vers la Balance du mois SOURCE (srcI) : sur un
+                  // mois de projection, le débordement vient du mois courant, pas du mois
+                  // affiché (dont la Balance est à 0).
+                  ...(depassVal > 0.005
+                    ? [{ label: "Dépassement", amount: -depassVal, ref: cellKey(rowKey, "reste", srcI) }]
+                    : []),
                 ],
                 { subtitle, result: soldeDepassVal },
               )
@@ -984,12 +989,11 @@ function IncomeTotalCells({ sec, months, currentMonth, onSelect, selCellKey }: {
 // Reste : cliquable seulement si l'invariant budget − dépensé == balance tient
 // (souvent faux au global : la section Rémunérations a un budget mais pas de
 // dépense, donc généralement non cliquable — ce qui est acceptable, cf. brief).
-function GrandTotalsCells({ sections, grand, solde, planned, overspend, months, currentMonth, currentEstimate, onSelect, selCellKey, retained }: {
+function GrandTotalsCells({ sections, grand, solde, planned, months, currentMonth, currentEstimate, onSelect, selCellKey, retained }: {
   sections: HistorySection[];
   grand: MonthCell[];
   solde: SoldeColumn;
   planned: PlannedSoldes;
-  overspend: number[];
   months: string[];
   currentMonth: string;
   // Estimé de fin du mois courant : point de départ des chaînes de plan du premier
@@ -1458,9 +1462,11 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
     for (let i = 0; i < months.length; i++) {
       const isFuture = months[i] > currentMonth;
       const osMonth = isFuture ? ciSafe : i;
-      const acc: { id: number; name: string; amount: number }[] = [];
       for (const sec of sections) {
         if (sec.kind === "uncategorized") continue;
+        // Cumul remis à zéro à chaque section : la ligne n'hérite pas des
+        // dépassements des sections du dessus (cf. computePlannedSoldes).
+        const acc: { id: number; name: string; amount: number }[] = [];
         for (const r of sec.rows) {
           const os = isFuture && retained ? retained.byGroup[r.id] ?? 0 : realOs(r, osMonth);
           if (os > 0.005) acc.push({ id: r.id, name: r.name, amount: os });
@@ -2075,7 +2081,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
           <TableCell className="sticky left-0 z-10 bg-[color-mix(in_oklab,var(--muted)_60%,var(--background))] p-0">
             <FirstColBox>Solde actuel</FirstColBox>
           </TableCell>
-          <GrandTotalsCells sections={sections} grand={grand} solde={solde} planned={planned} overspend={overspend} months={months} currentMonth={currentMonth} currentEstimate={estimateValue} onSelect={onSelect} selCellKey={selCellKey} retained={retained} />
+          <GrandTotalsCells sections={sections} grand={grand} solde={solde} planned={planned} months={months} currentMonth={currentMonth} currentEstimate={estimateValue} onSelect={onSelect} selCellKey={selCellKey} retained={retained} />
         </TableRow>
         {/* Estimé fin de mois : mois courant = Solde actuel + rémunérations restant
             à recevoir − Balances vertes (le budget restant, supposé dépensé d'ici la

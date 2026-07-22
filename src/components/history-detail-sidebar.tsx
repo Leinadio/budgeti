@@ -7,6 +7,7 @@ import type { CellDetail, DetailNode, OverspendActionInfo, GroupManageInfo } fro
 import { monthLabel } from "@/lib/transactions-view";
 import {
   decideOverspend,
+  undoOverspendDecision,
   renameGroupAction,
   deleteGroupAction,
   setGroupAmount,
@@ -125,6 +126,15 @@ function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
     setDecided(decision);
     router.refresh();
   };
+  // Annule le choix en base : le dépassement redevient « à trancher » et, si c'était
+  // « permanent », la hausse de budget est retirée (cf. undoOverspendDecision).
+  const undo = async () => {
+    setBusy(true);
+    await undoOverspendDecision(action.accountId, action.groupId, action.month);
+    setBusy(false);
+    setDecided(null);
+    router.refresh();
+  };
   // Une fois tranché : on masque la question et les boutons, on montre le choix, avec
   // la possibilité de le modifier.
   if (decided) {
@@ -134,9 +144,14 @@ function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
           Décidé : {decided === "exceptional" ? "exceptionnel" : "permanent"} pour le dépassement de{" "}
           {fmtAbs(action.amount)} en {monthLabel(action.month)}.
         </p>
-        <button type="button" onClick={() => setDecided(null)} className="text-muted-foreground mt-2 underline decoration-dotted underline-offset-2 hover:no-underline">
-          Modifier
-        </button>
+        <div className="mt-2 flex gap-3">
+          <button type="button" onClick={() => setDecided(null)} className="text-muted-foreground underline decoration-dotted underline-offset-2 hover:no-underline">
+            Modifier
+          </button>
+          <button type="button" disabled={busy} onClick={undo} className="text-muted-foreground underline decoration-dotted underline-offset-2 hover:no-underline">
+            Annuler
+          </button>
+        </div>
       </div>
     );
   }
