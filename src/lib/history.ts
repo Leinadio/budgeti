@@ -550,12 +550,9 @@ export function computeTableEstimate(
 
 // Débordement net des non catégorisés pour un mois : dépensé (section « out »)
 // au-delà des reçus (section « in ») et de la provision en vigueur. C'est la part
-// rouge de leur Balance. `dated` est accepté pour cohérence d'API avec
-// `computePlannedSoldes` ; en pratique `outT.budgeted` porte déjà la provision
-// (posée par `computeHistory` avec ce même `dated`), donc `outT?.budgeted ?? 0`
-// vaut exactement `provisionInForce(dated, mois)` — pas besoin de la recalculer ici.
-export function uncatOverspend(sections: HistorySection[], i: number, dated?: DatedBudgets): number {
-  void dated;
+// rouge de leur Balance. `outT.budgeted` porte déjà la provision (posée par
+// `computeHistory`), donc ce calcul retourne exactement l'excès au-delà d'elle.
+export function uncatOverspend(sections: HistorySection[], i: number): number {
   const outT = sections.find((s) => s.kind === "uncategorized" && (s.uncatDirection ?? "out") === "out")?.totals[i];
   const inT = sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in")?.totals[i];
   return Math.max(0, (outT?.depense ?? 0) - (inT?.recu ?? 0) - (outT?.budgeted ?? 0));
@@ -685,8 +682,9 @@ export function computePlannedSoldes(
         // provision ; sur un mois futur, plus aucun report : il rejoint le prévu.
         const dir = sec.uncatDirection ?? "out";
         if (dir === "out") {
-          runP -= provisionInForce(dated, months[i]);
-          if (anchored) runD -= uncatOverspend(sections, osMonth, dated);
+          const prov = provisionInForce(dated, months[i]);
+          runP -= prov;
+          if (anchored) runD -= prov + uncatOverspend(sections, osMonth);
           else runD = runP;
         }
         (uncatPrevuRunning[dir] ??= new Array<number | null>(n).fill(null))[i] = runP;

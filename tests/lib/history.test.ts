@@ -461,6 +461,37 @@ describe("Les soldes prévisionnels", () => {
     expect(p.depassClosings[1]).toBeCloseTo(p.prevuClosings[1]!, 2);
   });
 
+  it("devrait égaler le « si dépassement » au « prévu » quand la provision des non catégorisés couvre la dépense (sous-dépensé)", () => {
+    // Provision de 200, seulement 50 dépensés sans groupe : la provision couvre large,
+    // aucun débordement. Le « si dépassement » ne doit PAS rester au-dessus du prévu
+    // (bug : l'ancien code ne retirait la provision que du prévu, pas du dépassement).
+    const dated = { 0: [{ effectiveMonth: "2026-07", amount: 200 }] };
+    const txns = [tx({ id: "a", date: "2026-07-05", amount: -50, label: "SANS GROUPE" })];
+    const months = ["2026-07"];
+    const sections = computeHistory([], txns, months, "2026-07", dated);
+    const solde = computeSolde(sections, months, "2026-07", 1000);
+    const p = computePlannedSoldes(sections, months, "2026-07", solde.openings, undefined, dated);
+    const open = solde.openings[0];
+    expect(p.prevuClosings[0]).toBeCloseTo(open - 200, 2);
+    expect(p.depassClosings[0]).toBeCloseTo(p.prevuClosings[0]!, 2);
+  });
+
+  it("devrait retirer la provision ET l'excès du « si dépassement » quand la dépense sans groupe dépasse la provision (sur-dépensé)", () => {
+    // Provision de 200, 500 dépensés sans groupe : excès de 300 au-delà de la provision.
+    // Le « si dépassement » doit retirer la dépense réelle en entier (200 + 300 = 500),
+    // pas seulement l'excès (ce qu'aurait laissé passer le bug).
+    const dated = { 0: [{ effectiveMonth: "2026-07", amount: 200 }] };
+    const txns = [tx({ id: "a", date: "2026-07-05", amount: -500, label: "SANS GROUPE" })];
+    const months = ["2026-07"];
+    const sections = computeHistory([], txns, months, "2026-07", dated);
+    const solde = computeSolde(sections, months, "2026-07", 1000);
+    const p = computePlannedSoldes(sections, months, "2026-07", solde.openings, undefined, dated);
+    const open = solde.openings[0];
+    expect(p.prevuClosings[0]).toBeCloseTo(open - 200, 2);
+    expect(p.depassClosings[0]).toBeCloseTo(open - 500, 2);
+    expect(p.prevuClosings[0]! - p.depassClosings[0]!).toBeCloseTo(300, 2);
+  });
+
   it("devrait compter la rémunération supplémentaire dans le mois en cours, mais ne jamais la projeter dans le futur", () => {
     const supp: Group = { id: 3, accountId: "a1", name: "Rémunération supplémentaire", direction: "in", kind: "envelope", monthlyAmount: 500, lines: [], incomeKind: "supplementary" };
     const months = ["2026-07", "2026-08"];
