@@ -193,3 +193,51 @@ test("migrateRemunerationPrincipal est un no-op si déjà en enveloppe", () => {
   expect(g.kind).toBe("envelope");
   expect(g.m).toBe(2000);
 });
+
+import { migrateBudgetAmountsDropGroupFk } from "../../src/db/migrations";
+
+test("migrateBudgetAmountsDropGroupFk retire la FK d'une table à l'ancienne forme et préserve les données", () => {
+  const db = new Database(":memory:");
+  db.pragma("foreign_keys = ON");
+  db.exec(`
+    CREATE TABLE groups (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL);
+    CREATE TABLE budget_amounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+      effective_month TEXT NOT NULL,
+      amount REAL NOT NULL,
+      UNIQUE(group_id, effective_month)
+    );
+    INSERT INTO groups (id, name) VALUES (1, 'Courses'), (2, 'Transport');
+    INSERT INTO budget_amounts (group_id, effective_month, amount) VALUES
+      (1, '2026-07', 300), (2, '2026-07', 100);
+  `);
+  // avant migration : la FK bloque la provision « non catégorisés » (group_id = 0)
+  expect(() =>
+    db.prepare("INSERT INTO budget_amounts (group_id, effective_month, amount) VALUES (0, '2026-07', 50)").run()
+  ).toThrow();
+
+  migrateBudgetAmountsDropGroupFk(db);
+
+  // FK disparue
+  const fks = db.prepare("PRAGMA foreign_key_list(budget_amounts)").all();
+  expect(fks).toEqual([]);
+  // group_id = 0 maintenant accepté
+  expect(() =>
+    db.prepare("INSERT INTO budget_amounts (group_id, effective_month, amount) VALUES (0, '2026-07', 50)").run()
+  ).not.toThrow();
+  // données préexistantes préservées (id compris)
+  const rows = db.prepare("SELECT id, group_id, effective_month, amount FROM budget_amounts WHERE group_id IN (1, 2) ORDER BY group_id").all();
+  expect(rows).toEqual([
+    { id: 1, group_id: 1, effective_month: "2026-07", amount: 300 },
+    { id: 2, group_id: 2, effective_month: "2026-07", amount: 100 },
+  ]);
+  // UNIQUE(group_id, effective_month) toujours en vigueur
+  expect(() =>
+    db.prepare("INSERT INTO budget_amounts (group_id, effective_month, amount) VALUES (1, '2026-07', 999)").run()
+  ).toThrow();
+
+  // idempotent : deuxième passage sans erreur, données inchangées
+  migrateBudgetAmountsDropGroupFk(db);
+  expect(db.prepare("SELECT COUNT(*) AS n FROM budget_amounts").get()).toEqual({ n: 3 });
+});
