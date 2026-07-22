@@ -16,8 +16,3 @@ export function setBudgetAmount(db: Database.Database, groupId: number, effectiv
      ON CONFLICT(group_id, effective_month) DO UPDATE SET amount = excluded.amount`,
   ).run(groupId, effectiveMonth, amount);
 }
-
-// Retire un montant daté (retour au budget en vigueur avant cette entrée).
-export function deleteBudgetAmount(db: Database.Database, groupId: number, effectiveMonth: string): void {
-  db.prepare(`DELETE FROM budget_amounts WHERE group_id = ? AND effective_month = ?`).run(groupId, effectiveMonth);
-}

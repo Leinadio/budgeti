@@ -1,7 +1,7 @@
 "use server";
 import { db } from "../../db/index";
-import { setOverspendDecision, getOverspendDecision, deleteOverspendDecision } from "../../db/repositories/overspend-decisions";
-import { setBudgetAmount, deleteBudgetAmount, listBudgetAmounts } from "../../db/repositories/budget-amounts";
+import { setOverspendDecision, deleteOverspendDecision } from "../../db/repositories/overspend-decisions";
+import { setBudgetAmount, listBudgetAmounts } from "../../db/repositories/budget-amounts";
 import {
   insertEnvelopeGroup,
   insertRecurringGroup,
@@ -13,56 +13,39 @@ import {
   listGroups,
   hasIncomeGroup,
 } from "../../db/repositories/groups";
-import { monthKey } from "../../lib/money";
-import { addMonthsKey, toDatedBudgets, budgetInForce, onceBudgetWrites } from "../../lib/history";
+import { toDatedBudgets, budgetInForce, onceBudgetWrites } from "../../lib/history";
 import type { Group } from "../../lib/forecast";
 import { revalidatePath } from "next/cache";
 
 // Enregistre la décision de l'utilisateur sur un dépassement (groupId 0 = non
-// catégorisés). « permanent » relève aussi le budget du groupe, effectif au mois
-// SUIVANT le mois courant : le mois courant et les mois passés gardent leur budget
-// (et donc leur dépassement réel visible dans l'historique) ; seule la projection
-// des mois à venir intègre le nouveau budget.
+// catégorisés). « permanent » ne relève plus le budget du groupe : la projection
+// des mois à venir tient compte du dépassement via la logique de report (Tâche 1),
+// sans modifier de budget daté.
 export async function decideOverspend(
   accountId: string,
   groupId: number,
   month: string,
   decision: "exceptional" | "permanent",
-  newBudget?: number,
+  newBudget?: number, // conservé pour compat appelant ; sans effet (Task 3 le retire)
 ): Promise<void> {
+  void newBudget;
   if (!/^\d{4}-\d{2}$/.test(month)) return;
-  const database = db();
-  setOverspendDecision(database, { accountId, groupId, month, decision, decidedAt: new Date().toISOString() });
-  if (decision === "permanent" && groupId !== 0 && newBudget != null && Number.isFinite(newBudget) && newBudget > 0) {
-    const currentMonth = monthKey(new Date().toISOString().slice(0, 10));
-    setBudgetAmount(database, groupId, addMonthsKey(currentMonth, 1), newBudget);
-  }
+  setOverspendDecision(db(), { accountId, groupId, month, decision, decidedAt: new Date().toISOString() });
   revalidatePath("/historique");
   revalidatePath("/previsionnel");
   revalidatePath("/");
 }
 
 // Annule une décision de dépassement : le dépassement redevient « à trancher » (il
-// est de nouveau reconduit par prudence dans le Solde si dépassement). Si le choix
-// était « permanent », on annule aussi la hausse de budget qu'il avait appliquée au
-// mois suivant le mois courant — retour à l'état d'avant le choix. Best-effort : on
-// supprime l'entrée de budget datée que « permanent » avait écrite (group, mois+1) ;
-// s'il existait un budget daté antérieur à ce même mois, il n'est pas restauré (cas
-// rare, non mémorisé).
+// est de nouveau reconduit par prudence dans le Solde si dépassement). Ne touche à
+// aucun budget : « permanent » n'en modifiait déjà plus.
 export async function undoOverspendDecision(
   accountId: string,
   groupId: number,
   month: string,
 ): Promise<void> {
   if (!/^\d{4}-\d{2}$/.test(month)) return;
-  const database = db();
-  const existing = getOverspendDecision(database, accountId, groupId, month);
-  if (!existing) return;
-  if (existing.decision === "permanent" && groupId !== 0) {
-    const currentMonth = monthKey(new Date().toISOString().slice(0, 10));
-    deleteBudgetAmount(database, groupId, addMonthsKey(currentMonth, 1));
-  }
-  deleteOverspendDecision(database, accountId, groupId, month);
+  deleteOverspendDecision(db(), accountId, groupId, month);
   revalidatePath("/historique");
   revalidatePath("/previsionnel");
   revalidatePath("/");
