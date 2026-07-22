@@ -1340,7 +1340,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
   decisions?: OverspendDecisionInfo[];
   // Dépassements de mois terminés sans décision (bandeau, hérité via les props),
   // tous les dépassements non tranchés — un par groupe — pour les pastilles, et les
-  // budgets courants par groupe (pré-remplissage de la décision).
+  // budgets courants par groupe, pour pré-remplir l'édition de budget d'un groupe (gestion de groupe).
   pendingClosed?: PendingOverspend[];
   pending?: PendingOverspend[];
   // Les mêmes dépassements non tranchés, groupés par mois : pastilles cliquables

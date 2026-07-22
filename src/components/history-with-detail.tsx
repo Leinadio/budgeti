@@ -34,8 +34,8 @@ export function HistoryWithDetail(props: {
   accountId: string;
   decisions?: { groupId: number; month: string; decision: "exceptional" | "permanent" }[];
   // Dépassements de mois terminés sans décision (bandeau) ; tous les dépassements
-  // non tranchés, un par groupe (pastilles) ; budgets courants par groupe
-  // (pré-remplissage de la décision).
+  // non tranchés, un par groupe (pastilles) ; budgets courants par groupe,
+  // pour pré-remplir l'édition de budget d'un groupe (gestion de groupe).
   pendingClosed?: PendingOverspend[];
   pending?: PendingOverspend[];
   // Dépassements non tranchés groupés par mois : pastilles sous chaque en-tête de
