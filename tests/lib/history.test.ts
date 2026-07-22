@@ -457,7 +457,7 @@ describe("Les soldes prévisionnels", () => {
     expect(p.prevuClosings[1]).toBeCloseTo(open + 500, 2); // futur : +0 (pas de projection)
   });
 
-  it("devrait reporter un dépassement non tranché sur les mois suivants, et l'oublier une fois tranché", () => {
+  it("devrait reporter sur les mois suivants un dépassement retenu (permanent), et ne rien reporter quand il n'y en a pas", () => {
     const principal: Group = { id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", kind: "envelope", monthlyAmount: 2000, lines: [], incomeKind: "principal" };
     const courses2: Group = { id: 2, accountId: "a1", name: "Courses", direction: "out", kind: "envelope", monthlyAmount: 300, lines: [], incomeKind: null };
     const txns = [
@@ -468,10 +468,10 @@ describe("Les soldes prévisionnels", () => {
     const sections = computeHistory([principal, courses2], txns, months, "2026-07");
     const solde = computeSolde(sections, months, "2026-07", 5000);
     const open = solde.openings[0];
-    // Non tranché : 50 est retenu -> août le soustrait (comme avant).
+    // Retenu (permanent) : 50 est reporté -> août le soustrait.
     const pending = computePlannedSoldes(sections, months, "2026-07", solde.openings, null, { byGroup: { 2: 50 }, uncat: 0 });
     expect(pending.depassClosings[1]).toBeCloseTo((open + 2000 - 300 - 50) + (2000 - 300 - 50), 2);
-    // Tranché (exceptionnel) : plus rien de retenu -> août ne soustrait plus rien.
+    // Rien de retenu -> août ne soustrait plus rien.
     const decided = computePlannedSoldes(sections, months, "2026-07", solde.openings, null, { byGroup: {}, uncat: 0 });
     expect(decided.depassClosings[1]).toBeCloseTo((open + 2000 - 300 - 50) + (2000 - 300), 2);
     // Le mois courant reste factuel dans les deux cas (dépassement réel de 50).
@@ -581,7 +581,7 @@ describe("Changer un budget pour un seul mois", () => {
 });
 
 describe("Rappels d'argent dépensé au-delà du budget", () => {
-  it("devrait lister les dépassements non tranchés des mois terminés et retenir le plus récent pour le prévisionnel", () => {
+  it("devrait lister les dépassements non tranchés des mois terminés, sans rien retenir par défaut", () => {
     const txns = [
       tx({ id: "1", date: "2026-06-10", amount: -350, label: "CARREFOUR", groupId: 1 }), // juin : dépassement 50
       tx({ id: "2", date: "2026-07-10", amount: -380, label: "CARREFOUR", groupId: 1 }), // juillet (courant) : dépassement 80
@@ -594,33 +594,40 @@ describe("Rappels d'argent dépensé au-delà du budget", () => {
       { groupId: 1, name: "Courses", month: "2026-06", amount: 50 },
       { groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 80 },
     ]);
-    // Retenu pour le prévisionnel : le plus récent non tranché de Courses = juillet (80).
-    expect(r.retained.byGroup[1]).toBe(80);
-    expect(r.retained.uncat).toBe(80); // juin, seul mois uncat non tranché
-    // Pastilles : un dépassement non tranché par élément (le plus récent), mois courant
-    // inclus — Courses pointe sur juillet (80, le mois courant), les non catégorisés sur juin.
+    // Rien tranché => rien de retenu : exceptionnel par défaut, aucun report.
+    expect(r.retained.byGroup[1] ?? 0).toBe(0);
+    expect(r.retained.uncat).toBe(0);
+    // Pastilles : un dépassement non tranché par élément (le plus récent), mois courant inclus.
     expect(r.pending).toEqual([
       { groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 80 },
       { groupId: 1, name: "Courses", month: "2026-07", amount: 80 },
     ]);
+    // Groupés par mois pour les bandeaux par mois (mois courant inclus).
+    expect(r.pendingByMonth["2026-06"]).toEqual([
+      { groupId: 1, name: "Courses", month: "2026-06", amount: 50 },
+      { groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 80 },
+    ]);
+    expect(r.pendingByMonth["2026-07"]).toEqual([
+      { groupId: 1, name: "Courses", month: "2026-07", amount: 80 },
+    ]);
   });
 
-  it("devrait retirer un dépassement des rappels et du prévisionnel une fois qu'il est tranché", () => {
+  it("devrait ne retenir pour le prévisionnel que les dépassements marqués permanents", () => {
     const txns = [
-      tx({ id: "1", date: "2026-06-10", amount: -350, label: "CARREFOUR", groupId: 1 }),
-      tx({ id: "2", date: "2026-07-10", amount: -380, label: "CARREFOUR", groupId: 1 }),
+      tx({ id: "1", date: "2026-06-10", amount: -350, label: "CARREFOUR", groupId: 1 }), // juin : 50
+      tx({ id: "2", date: "2026-07-10", amount: -380, label: "CARREFOUR", groupId: 1 }), // juillet : 80
     ];
-    // Juillet tranché : il ne reste que juin, à la fois en attente (mois terminé) et retenu.
-    const r = computeOverspends([courses], txns, "2026-07", [{ groupId: 1, month: "2026-07" }]);
-    expect(r.pendingClosed).toEqual([{ groupId: 1, name: "Courses", month: "2026-06", amount: 50 }]);
-    expect(r.retained.byGroup[1]).toBe(50);
-    // Tout tranché : plus rien nulle part.
-    const r2 = computeOverspends([courses], txns, "2026-07", [
-      { groupId: 1, month: "2026-06" },
-      { groupId: 1, month: "2026-07" },
-    ]);
-    expect(r2.pendingClosed).toEqual([]);
-    expect(r2.retained.byGroup[1] ?? 0).toBe(0);
+    // Juillet permanent : c'est lui qu'on reporte (80), et il quitte les rappels.
+    const perm = computeOverspends([courses], txns, "2026-07", [{ groupId: 1, month: "2026-07", decision: "permanent" }]);
+    expect(perm.retained.byGroup[1]).toBe(80);
+    expect(perm.pendingClosed).toEqual([{ groupId: 1, name: "Courses", month: "2026-06", amount: 50 }]);
+    // Juillet exceptionnel : rien de retenu, il quitte quand même les rappels.
+    const exc = computeOverspends([courses], txns, "2026-07", [{ groupId: 1, month: "2026-07", decision: "exceptional" }]);
+    expect(exc.retained.byGroup[1] ?? 0).toBe(0);
+    expect(exc.pendingClosed).toEqual([{ groupId: 1, name: "Courses", month: "2026-06", amount: 50 }]);
+    // Juin permanent, juillet non tranché : on reporte juin (50).
+    const permJuin = computeOverspends([courses], txns, "2026-07", [{ groupId: 1, month: "2026-06", decision: "permanent" }]);
+    expect(permJuin.retained.byGroup[1]).toBe(50);
   });
 });
 

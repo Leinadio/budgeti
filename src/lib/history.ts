@@ -547,9 +547,11 @@ export function uncatOverspend(sections: HistorySection[], i: number): number {
 // pendingClosed : dépassements de mois TERMINÉS sans décision (bandeau).
 // pending : le dépassement non tranché le plus récent par groupe (et non catégorisés),
 //   mois courant inclus — un par élément à trancher, pour les pastilles.
+// pendingByMonth : les mêmes dépassements non tranchés, groupés par mois (bandeaux par mois).
 // retained : pour chaque groupe (et les non catégorisés via `uncat`), le montant du
-//   dépassement non tranché le plus récent — c'est lui que la chaîne « Solde si
-//   dépassement » reconduit sur les mois futurs.
+//   dépassement marqué PERMANENT le plus récent — c'est lui que la chaîne « Solde si
+//   dépassement » reconduit sur les mois futurs. Un dépassement exceptionnel (ou non
+//   tranché) n'est jamais reporté.
 export type PendingOverspend = { groupId: number; name: string; month: string; amount: number };
 export type RetainedOverspends = { byGroup: Record<number, number>; uncat: number };
 
@@ -557,9 +559,9 @@ export function computeOverspends(
   groups: Group[],
   txns: Txn[],
   currentMonth: string,
-  decided: { groupId: number; month: string }[],
+  decided: { groupId: number; month: string; decision?: "exceptional" | "permanent" }[],
   dated?: DatedBudgets,
-): { pendingClosed: PendingOverspend[]; pending: PendingOverspend[]; retained: RetainedOverspends } {
+): { pendingClosed: PendingOverspend[]; pending: PendingOverspend[]; retained: RetainedOverspends; pendingByMonth: Record<string, PendingOverspend[]> } {
   const ownable = groups.map(toOwnable);
   const owned = txns.map((t) => {
     const o: OwnedTxn = { id: t.id, date: t.date, amount: t.amount, label: t.label, accountId: t.accountId, groupId: t.groupId, excluded: t.excluded };
@@ -568,43 +570,50 @@ export function computeOverspends(
     const g = res.status === "manual" ? groups.find((x) => x.id === res.groupId) : undefined;
     return { t, ownerId: g && isGroupAlive(g, month) ? g.id : null, month };
   });
-  const isDecided = new Set(decided.map((d) => `${d.groupId}::${d.month}`));
+  // Décision prise par (groupe, mois) : undefined = non tranché.
+  const decidedBy = new Map(decided.map((d) => [`${d.groupId}::${d.month}`, d.decision]));
   const months = monthsWithData(txns).filter((m) => m <= currentMonth);
 
   const pendingClosed: PendingOverspend[] = [];
+  const pendingByMonth: Record<string, PendingOverspend[]> = {};
   const retained: RetainedOverspends = { byGroup: {}, uncat: 0 };
-  // Le dépassement non tranché le plus récent, par groupe (0 = non catégorisés) :
-  // un seul par élément, pour la pastille.
+  // Le dépassement NON tranché le plus récent, par groupe (0 = non catégorisés) : pastilles.
   const mostRecent = new Map<number, PendingOverspend>();
+  // Classe un dépassement selon sa décision : non tranché -> rappels ; permanent -> retenu.
+  const classify = (item: PendingOverspend, key: string) => {
+    const dec = decidedBy.get(key);
+    if (dec === undefined) {
+      (pendingByMonth[item.month] ??= []).push(item);
+      if (item.month < currentMonth) pendingClosed.push(item);
+      mostRecent.set(item.groupId, item);
+    } else if (dec === "permanent") {
+      if (item.groupId === 0) retained.uncat = item.amount; // mois croissants : le dernier = le plus récent
+      else retained.byGroup[item.groupId] = item.amount;
+    }
+    // exceptionnel : n'alimente ni les rappels ni le report.
+  };
   for (const m of months) {
-    // Groupes de dépense : dépensé au-delà du budget en vigueur ce mois-là.
     for (const g of groups) {
       if (g.direction !== "out") continue;
       if (!isGroupAlive(g, m)) continue;
       const spent = owned.filter((o) => o.ownerId === g.id && o.month === m).reduce((s, o) => s + Math.abs(o.t.amount), 0);
       const os = Math.max(0, spent - budgetInForce(g, m, dated));
-      if (os <= 0.005 || isDecided.has(`${g.id}::${m}`)) continue;
-      if (m < currentMonth) pendingClosed.push({ groupId: g.id, name: g.name, month: m, amount: os });
-      retained.byGroup[g.id] = os; // les mois sont croissants : le dernier écrase = le plus récent
-      mostRecent.set(g.id, { groupId: g.id, name: g.name, month: m, amount: os });
+      if (os <= 0.005) continue;
+      classify({ groupId: g.id, name: g.name, month: m, amount: os }, `${g.id}::${m}`);
     }
-    // Non catégorisés : dépensé au-delà des reçus, sans groupe.
     const uncat = owned.filter((o) => o.ownerId === null && o.month === m);
     const dep = uncat.filter((o) => o.t.amount < 0).reduce((s, o) => s + Math.abs(o.t.amount), 0);
     const rec = uncat.filter((o) => o.t.amount > 0).reduce((s, o) => s + o.t.amount, 0);
     const os = Math.max(0, dep - rec);
-    if (os > 0.005 && !isDecided.has(`0::${m}`)) {
-      if (m < currentMonth) pendingClosed.push({ groupId: 0, name: "Non catégorisés", month: m, amount: os });
-      retained.uncat = os;
-      mostRecent.set(0, { groupId: 0, name: "Non catégorisés", month: m, amount: os });
-    }
+    if (os > 0.005) classify({ groupId: 0, name: "Non catégorisés", month: m, amount: os }, `0::${m}`);
   }
   // Tri : par mois puis nom, pour un bandeau et des pastilles stables.
   const byMonthThenName = (a: PendingOverspend, b: PendingOverspend) =>
     a.month < b.month ? -1 : a.month > b.month ? 1 : a.name.localeCompare(b.name);
   pendingClosed.sort(byMonthThenName);
+  for (const m of Object.keys(pendingByMonth)) pendingByMonth[m].sort(byMonthThenName);
   const pending = [...mostRecent.values()].sort(byMonthThenName);
-  return { pendingClosed, pending, retained };
+  return { pendingClosed, pending, retained, pendingByMonth };
 }
 
 // Chaînes de solde « plan » : prévu (revenus − budget) et « si dépassement »
