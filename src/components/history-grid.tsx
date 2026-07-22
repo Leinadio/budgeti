@@ -192,19 +192,20 @@ function monthTint(m: string, mi: number, months: string[], currentMonth: string
 }
 
 // Rend les cellules d'un mois (une par colonne) et ajoute la bordure de séparation
-// sur la première colonne de solde. La teinte de fond des colonnes de solde est
-// posée par le <colgroup> du tableau (elle passe sous le fond des lignes de total,
-// donc la bande s'interrompt proprement sur les lignes grises).
-function renderCols(cols: ColKey[], slots: Record<ColKey, (b: boolean) => React.ReactNode>): React.ReactNode[] {
+// sur la première colonne de solde. `tint` est la teinte de fond selon la nature du
+// mois (passé / courant / premier mois futur) : on la pose en BASE de CHAQUE cellule
+// pour qu'elle couvre tout le bloc du mois, y compris sous les lignes de total grises
+// (le fond d'une cellule recouvre celui de sa ligne). La colonne Balance garde
+// toujours son jaune par-dessus, et les mois sans teinte (undefined) restent neutres.
+function renderCols(cols: ColKey[], slots: Record<ColKey, (b: boolean) => React.ReactNode>, tint?: string): React.ReactNode[] {
   const firstSolde = cols.find((c) => SOLDE_COLS_SET.has(c));
   return cols.map((col, idx) => {
     const cell = slots[col](idx === 0);
     if (!isValidElement(cell)) return cell;
-    // La colonne Balance est toujours teintée en jaune, même sous un fond de ligne
-    // (totaux gris, teinte entrant/sortant) : on pose la teinte en BASE de la
-    // cellule, avant sa className propre, pour que la surbrillance de sélection
-    // (CELL_HL) reste au-dessus. SOLDE_SEP (bordure) s'ajoute après, sans conflit.
-    const base = col === "reste" ? BALANCE_TINT : undefined;
+    // Base de cellule, posée AVANT sa className propre pour que la surbrillance de
+    // sélection (CELL_HL) reste au-dessus. La Balance est toujours jaune ; les autres
+    // colonnes prennent la teinte du mois. SOLDE_SEP (bordure) s'ajoute après.
+    const base = col === "reste" ? BALANCE_TINT : tint;
     const sep = col === firstSolde ? SOLDE_SEP : undefined;
     if (!base && !sep) return cell;
     const el = cell as React.ReactElement<{ className?: string }>;
@@ -681,7 +682,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
           soldeDepass: (b) => plannedSoldeCell("soldeDepass", soldeDepass?.[i] ?? null, b, soldeDepassDetail, onSelect, ck("soldeDepass"), selCellKey),
         };
 
-        return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
+        return <Fragment key={i}>{renderCols(cols, slots, monthTint(months[i], i, months, currentMonth))}</Fragment>;
       })}
     </>
   );
@@ -925,7 +926,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
               : plannedSoldeCol("soldeDepass", null, b),
         };
 
-        return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
+        return <Fragment key={i}>{renderCols(cols, slots, monthTint(months[i], i, months, currentMonth))}</Fragment>;
       })}
     </>
   );
@@ -986,7 +987,7 @@ function IncomeTotalCells({ sec, months, currentMonth, onSelect, selCellKey }: {
           soldeDepass: (b) => blankCol("soldeDepass", b),
         };
 
-        return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
+        return <Fragment key={i}>{renderCols(cols, slots, monthTint(months[i], i, months, currentMonth))}</Fragment>;
       })}
     </>
   );
@@ -1181,7 +1182,7 @@ function GrandTotalsCells({ sections, grand, solde, planned, months, currentMont
           soldeDepass: (b) => plannedSoldeCell("soldeDepass", planned.depassClosings[i], b, soldeDepassDetail, onSelect, ck("soldeDepass"), selCellKey),
         };
 
-        return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
+        return <Fragment key={i}>{renderCols(cols, slots, monthTint(months[i], i, months, currentMonth))}</Fragment>;
       })}
     </>
   );
@@ -1233,7 +1234,7 @@ function TxnCells({ txn, months, currentMonth, onSelect, selCellKey }: { txn: Hi
           soldePrevu: (b) => blankCol("soldePrevu", b),
           soldeDepass: (b) => blankCol("soldeDepass", b),
         };
-        return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
+        return <Fragment key={i}>{renderCols(cols, slots, monthTint(months[i], i, months, currentMonth))}</Fragment>;
       })}
     </>
   );
@@ -1729,7 +1730,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
           );
           const slots = blankSlots();
           slots.reste = resteCell;
-          return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
+          return <Fragment key={i}>{renderCols(cols, slots, monthTint(months[i], i, months, currentMonth))}</Fragment>;
         })}
       </TableRow>
     );
@@ -1971,7 +1972,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
             slots.soldeReel = openingCell;
             slots.soldePrevu = (b) => plannedSoldeCell("soldePrevu", prevuOpen, b, prevuOpenDetail, onSelect, cellKey(openingRow, "soldePrevu", i), selCellKey);
             slots.soldeDepass = (b) => plannedSoldeCell("soldeDepass", depassOpen, b, depassOpenDetail, onSelect, cellKey(openingRow, "soldeDepass", i), selCellKey);
-            return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
+            return <Fragment key={i}>{renderCols(cols, slots, monthTint(months[i], i, months, currentMonth))}</Fragment>;
           })}
         </TableRow>
         {sections.map((sec, si) => {
@@ -2154,7 +2155,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
             );
             const slots = blankSlots();
             slots.soldeReel = estCell;
-            return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
+            return <Fragment key={i}>{renderCols(cols, slots, monthTint(months[i], i, months, currentMonth))}</Fragment>;
           })}
         </TableRow>
         {/* Dépassement final du mois : somme des montants rouges de la colonne
@@ -2189,7 +2190,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
             );
             const slots = blankSlots();
             slots.reste = depCell;
-            return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
+            return <Fragment key={i}>{renderCols(cols, slots, monthTint(months[i], i, months, currentMonth))}</Fragment>;
           })}
         </TableRow>
       </TableBody>
