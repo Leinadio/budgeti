@@ -1863,7 +1863,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
             return (
               <Fragment key={m}>
                 {cols.map((col, idx) => (
-                  <TableHead key={col} className={cn(idx === 0 && "border-l", col === firstSolde && SOLDE_SEP, "text-right")}>
+                  <TableHead key={col} className={cn(col === "reste" && BALANCE_TINT, idx === 0 && "border-l", col === firstSolde && SOLDE_SEP, "text-right")}>
                     {/* Cliquer l'en-tête ouvre l'explication de la colonne dans le panneau. */}
                     <button
                       type="button"
