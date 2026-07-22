@@ -181,7 +181,7 @@ const OUT_TINT = "bg-[color-mix(in_oklab,var(--muted)_12%,var(--background))]";
 // les cellules de données et l'en-tête du mois. Gris = mois passés, bleu doux =
 // mois courant, vert doux = premier mois futur (le « pont » qui repart de l'estimé
 // de fin du mois courant). Les mois futurs suivants (N+2, …) restent neutres.
-const MONTH_TINT_PAST = "bg-[color-mix(in_oklab,var(--muted)_30%,var(--background))]";
+const MONTH_TINT_PAST = "bg-[color-mix(in_oklab,oklch(0.6_0.03_255)_22%,var(--background))]";
 const MONTH_TINT_CURRENT = "bg-[color-mix(in_oklab,oklch(0.72_0.13_240)_14%,var(--background))]";
 const MONTH_TINT_NEXT = "bg-[color-mix(in_oklab,oklch(0.75_0.14_155)_15%,var(--background))]";
 function monthTint(m: string, mi: number, months: string[], currentMonth: string): string | undefined {
