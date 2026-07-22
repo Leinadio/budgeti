@@ -64,6 +64,16 @@ function resteColor(v: number): string {
   return v < -0.005 ? "text-red-600" : "text-green-600";
 }
 
+// Pastille de décision sur une Balance en dépassement : ambre tant que rien n'est
+// tranché, gris pour un dépassement « exceptionnel », bleu pour un dépassement
+// « permanent » (budget relevé). Même style que le point ambre existant sur le nom
+// des non catégorisés (dépassement à traiter).
+function OverspendDot({ decision }: { decision: "exceptional" | "permanent" | null | undefined }) {
+  const color =
+    decision === "permanent" ? "bg-blue-500" : decision === "exceptional" ? "bg-muted-foreground/60" : "bg-amber-500";
+  return <span className={cn("ml-1 inline-block size-2 shrink-0 rounded-full", color)} />;
+}
+
 // Largeur fixe de la première colonne. Un conteneur interne à largeur px fixe
 // (et non un max-width sur la cellule, ignoré en table-auto) garantit que la
 // colonne ne bouge pas quand on déroule des transactions à long libellé.
@@ -535,7 +545,8 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
             : null;
         // Bloc de décision : uniquement sur une Balance en dépassement d'un mois
         // passé ou courant (les mois futurs n'ont rien de réel à trancher).
-        if (resteDetail && mode === "out" && month <= currentMonth && c.balance < -0.005 && r && accountId) {
+        const isOverspendDecision = mode === "out" && month <= currentMonth && c.balance < -0.005 && !!r && !!accountId;
+        if (resteDetail && isOverspendDecision && r && accountId) {
           resteDetail.overspendAction = {
             accountId,
             groupId: r.id,
@@ -672,7 +683,12 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
           reste: (b) =>
             dead ? blankCol("reste", b) : (
               <CellAmount key="reste" className={cn(b && "border-l", "text-right tabular-nums", mode !== "in" && resteColor(c.balance))} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
-                {mode === "in" ? "" : fmt(c.balance)}
+                {mode === "in" ? "" : (
+                  <>
+                    {fmt(c.balance)}
+                    {isOverspendDecision && <OverspendDot decision={decisionByKey?.get(`${r!.id}::${month}`)} />}
+                  </>
+                )}
               </CellAmount>
             ),
           soldeReel: (b) => (
@@ -804,7 +820,8 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
         // Bloc de décision : uniquement la section Non catégorisés « out », en
         // dépassement, sur un mois passé ou courant. Pas d'option « permanent »
         // pour ce groupe (les non catégorisés n'ont pas de budget).
-        if (isUncat && !uncatIn && resteVal < -0.005 && month <= currentMonth && accountId) {
+        const isOverspendDecision = isUncat && !uncatIn && resteVal < -0.005 && month <= currentMonth && !!accountId;
+        if (isOverspendDecision && accountId) {
           resteDetail.overspendAction = {
             accountId,
             groupId: 0,
@@ -920,6 +937,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
             isUncat && !uncatIn ? (
               <CellAmount key="reste" className={cn(b && "border-l", "text-right tabular-nums", resteColor(resteVal))} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
                 {fmt(resteVal)}
+                {isOverspendDecision && <OverspendDot decision={decisionByKey?.get(`0::${month}`)} />}
               </CellAmount>
             ) : (
               blankCol("reste", b)
