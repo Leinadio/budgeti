@@ -455,7 +455,7 @@ function soldeActuelDetail(
 // detailRow : ligne de groupe (transactions/postes) permettant de construire le
 // détail cliquable des cellules. Absente pour les sous-lignes (postes d'un
 // récurrent) : ces cellules restent non cliquables (hors périmètre, cf. ci-dessous).
-function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, subtitleOf, detailRow, months, currentMonth, rowKey, selCellKey, prevRowKey, incomeKind, depassCumulRows, accountId, decisionByKey }: {
+function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, subtitleOf, detailRow, months, currentMonth, rowKey, selCellKey, prevRowKey, incomeKind, depassCumulRows, accountId, decisionByKey, currentBudgets }: {
   cells: MonthCell[];
   mode: "out" | "in" | "total";
   solde?: (number | null)[];
@@ -486,6 +486,9 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
   // pour les sous-lignes (pas d'action sur un poste).
   accountId?: string;
   decisionByKey?: Map<string, "exceptional" | "permanent">;
+  // Budgets courants par groupe (mois courant), pour pré-remplir le champ
+  // « Nouveau budget » du bloc de décision. Absent pour les sous-lignes.
+  currentBudgets?: Record<number, number>;
 }) {
   return (
     <>
@@ -540,6 +543,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
             month,
             amount: -c.balance,
             decision: decisionByKey?.get(`${r.id}::${month}`) ?? null,
+            currentBudget: currentBudgets?.[r.id] ?? null,
           };
         }
 
@@ -695,7 +699,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
 // donc leur somme aussi) : toujours cliquable. Pour les non catégorisés, budget et
 // balance sont toujours à 0 : l'invariant ne tient que si dépensé == 0, donc en
 // pratique non cliquable (comme documenté au Task 3 pour ce cas).
-function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPrevu, planDepass, uncatInSec, selCellKey, prevRowKey, accountId, decisionByKey }: {
+function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPrevu, planDepass, uncatInSec, selCellKey, prevRowKey, accountId, decisionByKey, currentUncatProvision }: {
   sec: HistorySection;
   months: string[];
   currentMonth: string;
@@ -717,6 +721,9 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
   // la Balance non catégorisés en dépassement (section « out » uniquement).
   accountId?: string;
   decisionByKey?: Map<string, "exceptional" | "permanent">;
+  // Provision non catégorisés en vigueur au mois courant, pour pré-remplir le champ
+  // « Nouvelle provision » du bloc de décision (section non catégorisés uniquement).
+  currentUncatProvision?: number | null;
 }) {
   const isUncat = sec.kind === "uncategorized";
   // Section « non catégorisés » côté reçus (affichée sous les rémunérations).
@@ -795,6 +802,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
             month,
             amount: -resteVal,
             decision: decisionByKey?.get(`0::${month}`) ?? null,
+            currentBudget: currentUncatProvision ?? null,
           };
         }
 
@@ -1313,7 +1321,7 @@ function scrollableAncestor(el: HTMLElement, axis: "x" | "y"): HTMLElement | nul
   return null;
 }
 
-export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections, overspend, grand, groups, solde, planned, onSelect, selected, anchor, accountId, decisions, pending, pendingByMonth, currentBudgets }: {
+export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections, overspend, grand, groups, solde, planned, onSelect, selected, anchor, accountId, decisions, pending, pendingByMonth, currentBudgets, currentUncatProvision }: {
   months: string[];
   currentMonth: string;
   // Borne haute de la frise : plage sélectionnable du mois de départ dans le
@@ -1347,6 +1355,9 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
   // sous l'en-tête de chaque mois (cf. Task 4).
   pendingByMonth?: Record<string, PendingOverspend[]>;
   currentBudgets?: Record<number, number>;
+  // Provision non catégorisés en vigueur au mois courant, pour pré-remplir le champ
+  // « Nouvelle provision » du bloc de décision (groupe 0).
+  currentUncatProvision?: number | null;
 }) {
   // Décision déjà prise, indexée par « groupId::mois » : sert à attacher
   // overspendAction sur les Balances rouges (cf. AmountCells / SectionTotalsCells).
@@ -1583,7 +1594,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                   e.stopPropagation();
                   const p = pendingByGroup.get(r.id)!;
                   const idx = months.indexOf(p.month);
-                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null));
+                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null, currentBudgets?.[r.id] ?? null));
                 }}
                 className="ml-1 inline-block size-2 shrink-0 rounded-full bg-amber-500"
               />
@@ -1619,6 +1630,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
             depassCumulRows={depassCumulByRow.get(r.id)}
             accountId={accountId}
             decisionByKey={decisionByKey}
+            currentBudgets={currentBudgets}
           />
         </TableRow>
         {gOpen && (
@@ -1746,7 +1758,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                   e.stopPropagation();
                   const p = pendingByGroup.get(0)!;
                   const idx = months.indexOf(p.month);
-                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null));
+                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null, currentUncatProvision ?? null));
                 }}
                 className="ml-1 inline-block size-2 shrink-0 rounded-full bg-amber-500"
               />
@@ -1765,6 +1777,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
             prevRowKey={prevSoldeRowKey.get(rowKey)}
             accountId={accountId}
             decisionByKey={decisionByKey}
+            currentUncatProvision={currentUncatProvision}
           />
         </TableRow>
         {uOpen && sec.txns?.map((t) => (

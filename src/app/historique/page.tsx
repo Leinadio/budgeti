@@ -8,7 +8,7 @@ import {
   computeHistory, grandTotals, monthlyOverspend, monthsWithData, computeSolde,
   computePlannedSoldes, addMonthsKey, monthRange, isMonthKey, clampMonth,
   sliceHistorySections, sliceSoldeColumn, slicePlannedSoldes, computeTableEstimate,
-  toDatedBudgets, computeOverspends, budgetInForce,
+  toDatedBudgets, computeOverspends, budgetInForce, provisionInForce,
 } from "../../lib/history";
 import { computeForecast, type Group, type Txn } from "../../lib/forecast";
 import { monthRemuneration } from "../../lib/remuneration";
@@ -106,6 +106,9 @@ export default async function HistoriquePage({
           const decisions = listOverspendDecisions(database, a.id);
           const overspends = computeOverspends(groups, txns, currentMonth, decisions, datedBudgets);
           const currentBudgets = Object.fromEntries(groups.map((g) => [g.id, budgetInForce(g, currentMonth, datedBudgets)]));
+          // Provision non catégorisés en vigueur au mois courant, pour pré-remplir le
+          // champ « Nouvelle provision » du bloc de décision d'un dépassement (groupe 0).
+          const currentUncatProvision = provisionInForce(datedBudgets, currentMonth);
           const plannedFull = computePlannedSoldes(sectionsFull, calcMonths, currentMonth, soldeFull.openings, estimateValue, datedBudgets);
           const sections = sliceHistorySections(sectionsFull, calcMonths, k);
           const solde = sliceSoldeColumn(soldeFull, k);
@@ -147,6 +150,7 @@ export default async function HistoriquePage({
                   pending={overspends.pending}
                   pendingByMonth={overspends.pendingByMonth}
                   currentBudgets={currentBudgets}
+                  currentUncatProvision={currentUncatProvision}
                 />
               )}
             </TabsContent>

@@ -10,11 +10,14 @@ const NUM = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFr
 // Détail minimal ouvert par le bandeau ou la pastille : le montant du
 // dépassement et le bloc de décision. cellRef surligne la Balance du bon mois
 // quand il est affiché (monthIdx), sinon le panneau s'ouvre sans surbrillance.
+// currentBudget : budget/provision du groupe en vigueur au mois courant, pour
+// pré-remplir le champ « Permanent » ; null si inconnu.
 export function overspendDecisionDetail(
   item: PendingOverspend,
   accountId: string,
   monthIdx: number | null,
   decision: "exceptional" | "permanent" | null,
+  currentBudget: number | null = null,
 ): CellDetail {
   return {
     title: "Dépassement",
@@ -32,19 +35,26 @@ export function overspendDecisionDetail(
       month: item.month,
       amount: item.amount,
       decision,
+      currentBudget,
     },
   };
 }
 
 // Bandeau « dépassements à traiter » : listé par mois terminé, chaque élément
 // ouvre le side panel de décision du bon groupe et du bon mois.
-export function OverspendBanner({ items, accountId, months }: {
+export function OverspendBanner({ items, accountId, months, currentBudgets, currentUncatProvision }: {
   items: PendingOverspend[];
   accountId: string;
   months: string[]; // mois affichés, pour retrouver l'index de la colonne
+  // Budgets courants par groupe et provision non catégorisés en vigueur (groupe 0),
+  // pour pré-remplir le champ « Permanent » du bloc de décision.
+  currentBudgets?: Record<number, number>;
+  currentUncatProvision?: number | null;
 }) {
   const { setDetail } = useDetailSidebar();
   if (items.length === 0) return null;
+  const currentBudgetOf = (groupId: number): number | null =>
+    groupId === 0 ? (currentUncatProvision ?? null) : (currentBudgets?.[groupId] ?? null);
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm dark:border-amber-700 dark:bg-amber-950">
       <TriangleAlert className="size-4 shrink-0 text-amber-600" />
@@ -54,7 +64,15 @@ export function OverspendBanner({ items, accountId, months }: {
           key={`${it.groupId}-${it.month}`}
           type="button"
           onClick={() =>
-            setDetail(overspendDecisionDetail(it, accountId, months.indexOf(it.month) === -1 ? null : months.indexOf(it.month), null))
+            setDetail(
+              overspendDecisionDetail(
+                it,
+                accountId,
+                months.indexOf(it.month) === -1 ? null : months.indexOf(it.month),
+                null,
+                currentBudgetOf(it.groupId),
+              ),
+            )
           }
           className="cursor-pointer underline decoration-dotted underline-offset-2 hover:no-underline"
         >

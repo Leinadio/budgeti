@@ -41,12 +41,21 @@ export function HistoryWithDetail(props: {
   // mois dans la grille (Task 4).
   pendingByMonth?: Record<string, PendingOverspend[]>;
   currentBudgets?: Record<number, number>;
+  // Provision non catégorisés en vigueur au mois courant, pour pré-remplir le champ
+  // « Nouvelle provision » du bloc de décision (Task 5).
+  currentUncatProvision?: number | null;
 }) {
   const { setDetail, selected, anchor } = useDetailSidebar();
   return (
     <div className="flex flex-col gap-3">
       {props.pendingClosed && props.pendingClosed.length > 0 && (
-        <OverspendBanner items={props.pendingClosed} accountId={props.accountId} months={props.months} />
+        <OverspendBanner
+          items={props.pendingClosed}
+          accountId={props.accountId}
+          months={props.months}
+          currentBudgets={props.currentBudgets}
+          currentUncatProvision={props.currentUncatProvision}
+        />
       )}
       <CenterScroll>
         <HistoryGrid {...props} onSelect={setDetail} selected={selected} anchor={anchor} />

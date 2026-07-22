@@ -62,6 +62,7 @@ export type OverspendActionInfo = {
   month: string; // YYYY-MM
   amount: number; // dépassement, positif
   decision: "exceptional" | "permanent" | null; // null = non tranché
+  currentBudget: number | null; // budget/provision actuel, pour pré-remplir « permanent »
 };
 
 export function sumOf(nodes: DetailNode[]): number {
