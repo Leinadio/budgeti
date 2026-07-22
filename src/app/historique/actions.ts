@@ -26,9 +26,7 @@ export async function decideOverspend(
   groupId: number,
   month: string,
   decision: "exceptional" | "permanent",
-  newBudget?: number, // conservé pour compat appelant ; sans effet (Task 3 le retire)
 ): Promise<void> {
-  void newBudget;
   if (!/^\d{4}-\d{2}$/.test(month)) return;
   setOverspendDecision(db(), { accountId, groupId, month, decision, decidedAt: new Date().toISOString() });
   revalidatePath("/historique");

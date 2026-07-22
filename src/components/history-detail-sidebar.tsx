@@ -107,27 +107,19 @@ function DetailRow({ row, selected, onToggle, onSelect }: {
 }
 
 // Bloc de décision d'un dépassement : affiché sous le détail quand la case
-// cliquée est une Balance en dépassement. « Exceptionnel » enregistre en un
-// clic ; « Permanent » déplie un mini-formulaire avec le nouveau budget
-// pré-rempli (budget + dépassement), ajustable avant validation.
+// cliquée est une Balance en dépassement. Deux boutons — « Exceptionnel » ou
+// « Permanent » — enregistrent la décision en un clic, sans formulaire de budget.
 function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
   const router = useRouter();
-  const [openForm, setOpenForm] = useState(false);
-  const [value, setValue] = useState(() => String(Math.round(((action.currentBudget ?? 0) + action.amount) * 100) / 100));
   const [busy, setBusy] = useState(false);
-  // Décision affichée : celle déjà en base à l'ouverture, mise à jour tout de suite
-  // après un choix pour que la question disparaisse sans attendre un nouveau clic.
   const [decided, setDecided] = useState<"exceptional" | "permanent" | null>(action.decision);
-  const decide = async (decision: "exceptional" | "permanent", newBudget?: number) => {
+  const decide = async (decision: "exceptional" | "permanent") => {
     setBusy(true);
-    await decideOverspend(action.accountId, action.groupId, action.month, decision, newBudget);
+    await decideOverspend(action.accountId, action.groupId, action.month, decision);
     setBusy(false);
-    setOpenForm(false);
     setDecided(decision);
     router.refresh();
   };
-  // Annule le choix en base : le dépassement redevient « à trancher » et, si c'était
-  // « permanent », la hausse de budget est retirée (cf. undoOverspendDecision).
   const undo = async () => {
     setBusy(true);
     await undoOverspendDecision(action.accountId, action.groupId, action.month);
@@ -135,8 +127,6 @@ function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
     setDecided(null);
     router.refresh();
   };
-  // Une fois tranché : on masque la question et les boutons, on montre le choix, avec
-  // la possibilité de le modifier.
   if (decided) {
     return (
       <div className="mt-4 rounded-md border p-3 text-sm">
@@ -145,7 +135,7 @@ function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
           {fmtAbs(action.amount)} en {monthLabel(action.month)}.
         </p>
         <div className="mt-2 flex gap-3">
-          <button type="button" onClick={() => setDecided(null)} className="text-muted-foreground underline decoration-dotted underline-offset-2 hover:no-underline">
+          <button type="button" disabled={busy} onClick={() => setDecided(null)} className="text-muted-foreground underline decoration-dotted underline-offset-2 hover:no-underline">
             Modifier
           </button>
           <button type="button" disabled={busy} onClick={undo} className="text-muted-foreground underline decoration-dotted underline-offset-2 hover:no-underline">
@@ -158,40 +148,16 @@ function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
   return (
     <div className="mt-4 rounded-md border p-3 text-sm">
       <p>
-        Dépassement de {fmtAbs(action.amount)} en {monthLabel(action.month)} — que veux-tu en faire ?
+        Dépassement de {fmtAbs(action.amount)} en {monthLabel(action.month)} — va-t-il revenir ?
       </p>
       <div className="mt-2 flex gap-2">
         <button type="button" disabled={busy} onClick={() => decide("exceptional")} className="rounded-md border px-2 py-1 hover:bg-muted">
           Exceptionnel
         </button>
-        {action.currentBudget != null && (
-          <button type="button" disabled={busy} onClick={() => setOpenForm((v) => !v)} className="rounded-md border px-2 py-1 hover:bg-muted">
-            Permanent
-          </button>
-        )}
+        <button type="button" disabled={busy} onClick={() => decide("permanent")} className="rounded-md border px-2 py-1 hover:bg-muted">
+          Permanent
+        </button>
       </div>
-      {openForm && action.currentBudget != null && (
-        <div className="mt-2 flex items-center gap-2">
-          <label className="text-muted-foreground" htmlFor="new-budget">Nouveau budget</label>
-          <input
-            id="new-budget"
-            type="number"
-            step="0.01"
-            min="0"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
-            className="w-24 rounded-md border px-2 py-1 text-right tabular-nums"
-          />
-          <button
-            type="button"
-            disabled={busy || !(parseFloat(value) > 0)}
-            onClick={() => decide("permanent", parseFloat(value))}
-            className="bg-primary text-primary-foreground rounded-md px-2 py-1"
-          >
-            Valider
-          </button>
-        </div>
-      )}
     </div>
   );
 }
