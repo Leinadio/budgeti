@@ -743,6 +743,16 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
         const budgetDetail: CellDetail =
           makeDetail("Budget", sec.rows.map((r) => groupNode(r, i, month, "budget")), { subtitle, result: c.budgeted });
 
+        // Provision des non catégorisés (côté dépenses uniquement) : la case Budget
+        // dép. porte le montant daté du groupe 0 en vigueur ce mois-là, éditable
+        // comme le montant d'une enveloppe (voir UncatProvisionBlock).
+        const provisionDetail: CellDetail = {
+          title: "Non catégorisés",
+          nodes: [],
+          result: 0,
+          uncatProvision: { month, currentAmount: c.budgeted },
+        };
+
         const depNodes = isUncat
           ? sectionTxnChildren(sec.txns, month, true, i)
           : sec.rows.map((r) => groupNode(r, i, month, "depense")).filter((n) => n.amount !== 0);
@@ -874,12 +884,14 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
           budgetRem: (b) => (
             <TableCell key="budgetRem" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>—</TableCell>
           ),
-          // Les non catégorisés n'ont pas de budget : « — » (les deux lignes).
+          // Les non catégorisés côté reçus n'ont pas de budget : « — ». Côté dépenses,
+          // la case porte la provision (montant daté du groupe 0), éditable comme le
+          // budget d'une enveloppe.
           budgetDep: (b) =>
-            isUncat ? (
+            uncatIn ? (
               <TableCell key="budgetDep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}>—</TableCell>
             ) : (
-              <CellAmount key="budgetDep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} detail={budgetDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
+              <CellAmount key="budgetDep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} detail={isUncat ? provisionDetail : budgetDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
                 {fmt(c.budgeted)}
               </CellAmount>
             ),

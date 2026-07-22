@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { X, ChevronRight, ChevronDown, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { CellDetail, DetailNode, OverspendActionInfo, GroupManageInfo } from "@/lib/history-explain";
+import type { CellDetail, DetailNode, OverspendActionInfo, GroupManageInfo, UncatProvisionInfo } from "@/lib/history-explain";
 import { monthLabel } from "@/lib/transactions-view";
 import {
   decideOverspend,
@@ -11,6 +11,7 @@ import {
   renameGroupAction,
   deleteGroupAction,
   setGroupAmount,
+  setUncatProvision,
   addGroupLine,
   editGroupLine,
   removeGroupLine,
@@ -432,6 +433,71 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
   );
 }
 
+// Vue d'édition de la provision des non catégorisés (ouverte depuis la case Budget
+// dép. de la section non catégorisés) : fixe le montant daté du groupe 0, avec la
+// même sémantique once/ongoing que le montant d'une enveloppe (voir
+// GroupManageBlock ci-dessus). Pas de renommage, de lignes ni de suppression : le
+// groupe 0 est un pseudo-groupe, pas une ligne de `groups`.
+function UncatProvisionBlock({ info, onClose }: { info: UncatProvisionInfo; onClose: () => void }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [amount, setAmount] = useState(() => String(info.currentAmount));
+  const [scope, setScope] = useState<"ongoing" | "once">("ongoing");
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    await fn();
+    setBusy(false);
+    router.refresh();
+  };
+  return (
+    <>
+      <SidebarHeader className="gap-0 border-b p-4">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-muted-foreground text-sm">Non catégorisés</p>
+            <h2 className="font-semibold">Provision pour {monthLabel(info.month)}</h2>
+          </div>
+          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground shrink-0 rounded p-1" aria-label="Fermer">
+            <X className="size-4" />
+          </button>
+        </div>
+      </SidebarHeader>
+      <SidebarContent className="space-y-6 p-4">
+        <div className="flex flex-col gap-2">
+          <Label className="font-normal">Provision pour {monthLabel(info.month)}</Label>
+          <div className="flex flex-wrap items-end gap-2">
+            <Input
+              type="number"
+              step="0.01"
+              min="0"
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className="h-9 w-28 text-right tabular-nums"
+            />
+            <select
+              value={scope}
+              onChange={(e) => setScope(e.target.value as "ongoing" | "once")}
+              className="h-9 rounded-md border bg-transparent px-2 text-sm"
+            >
+              <option value="ongoing">À partir de ce mois</option>
+              <option value="once">Ce mois seulement</option>
+            </select>
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={busy || !(parseFloat(amount) >= 0)}
+              onClick={() => run(() => setUncatProvision(info.month, parseFloat(amount), scope))}
+            >
+              Appliquer
+            </Button>
+          </div>
+        </div>
+      </SidebarContent>
+    </>
+  );
+}
+
 // Corps du détail : monté sous une clé liée au détail (voir plus bas), de sorte que
 // l'état de dépliage (open) repart de zéro à chaque nouveau montant cliqué.
 // Identité de la ligne « Total » du panneau (distincte des chemins de nœuds « 0.1 »).
@@ -459,6 +525,11 @@ function DetailBody({ detail, onClose, selectedPanel, onSelectRow }: {
   // lieu d'un calcul.
   if (detail.groupManage) {
     return <GroupManageBlock info={detail.groupManage} onClose={onClose} />;
+  }
+  // Édition de la provision des non catégorisés : formulaire (montant daté) au lieu
+  // d'un calcul.
+  if (detail.uncatProvision) {
+    return <UncatProvisionBlock info={detail.uncatProvision} onClose={onClose} />;
   }
   // Explication de colonne : titre + paragraphes de texte, sans chiffre ni calcul.
   if (detail.description) {
@@ -565,7 +636,7 @@ export function HistoryDetailSidebar({ detail, onClose, selectedPanel, onSelectR
     <Sidebar side="right" variant="inset" collapsible="offcanvas">
       {detail && (
         <DetailBody
-          key={`${detail.groupManage ? `manage:${detail.groupManage.groupId}:${detail.groupManage.month}` : ""}${detail.title}·${detail.subtitle ?? ""}·${detail.result}`}
+          key={`${detail.groupManage ? `manage:${detail.groupManage.groupId}:${detail.groupManage.month}` : detail.uncatProvision ? `uncatProvision:${detail.uncatProvision.month}` : ""}${detail.title}·${detail.subtitle ?? ""}·${detail.result}`}
           detail={detail}
           onClose={onClose}
           selectedPanel={selectedPanel}

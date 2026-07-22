@@ -160,6 +160,30 @@ export async function setGroupAmount(
   await revalidate();
 }
 
+// Fixe la provision des non catégorisés (budget daté du groupe 0, qui n'a pas de
+// ligne dans `groups` : setGroupAmount échouerait car listGroups().find(0) ne
+// renvoie rien) pour un mois, avec la même sémantique once/ongoing que
+// setGroupAmount. Le budget de base (sans entrée datée) est toujours 0 pour les
+// non catégorisés (cf. provisionInForce).
+export async function setUncatProvision(
+  month: string,
+  amount: number,
+  scope: "once" | "ongoing",
+): Promise<void> {
+  if (!/^\d{4}-\d{2}$/.test(month) || !Number.isFinite(amount) || amount < 0) return;
+  const database = db();
+  if (scope === "once") {
+    const datedForGroup = toDatedBudgets(listBudgetAmounts(database))[0] ?? [];
+    const { writes } = onceBudgetWrites(datedForGroup, 0, month, amount);
+    for (const w of writes) setBudgetAmount(database, 0, w.effectiveMonth, w.amount);
+  } else {
+    setBudgetAmount(database, 0, month, amount);
+  }
+  revalidatePath("/historique");
+  revalidatePath("/previsionnel");
+  revalidatePath("/");
+}
+
 export async function addGroupLine(groupId: number, name: string, amount: number, day: number): Promise<number> {
   const trimmed = name.trim();
   if (!trimmed) return -1;

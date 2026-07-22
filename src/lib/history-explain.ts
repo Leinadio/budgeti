@@ -38,7 +38,10 @@ export type DetailNode = { label: string; amount: number; children?: DetailNode[
 // groupManage : présent quand le détail vient du menu de gestion d'une ligne de
 // groupe (icône au survol). Pilote la vue de gestion du side panel (renommer,
 // montant daté, lignes, suppression) au lieu d'un calcul (voir GroupManageBlock).
-export type CellDetail = { title: string; subtitle?: string; nodes: DetailNode[]; result: number; note?: string; cellRef?: string; description?: string[]; overspendAction?: OverspendActionInfo; groupManage?: GroupManageInfo };
+// uncatProvision : présent quand le détail vient de la case « Budget dép. » des non
+// catégorisés. Pilote le bloc d'édition de la provision (montant daté du groupe 0,
+// voir UncatProvisionBlock) au lieu d'un calcul.
+export type CellDetail = { title: string; subtitle?: string; nodes: DetailNode[]; result: number; note?: string; cellRef?: string; description?: string[]; overspendAction?: OverspendActionInfo; groupManage?: GroupManageInfo; uncatProvision?: UncatProvisionInfo };
 
 // Info nécessaire à la vue de gestion d'un groupe dans le side panel : quel groupe,
 // son nom, sa nature (enveloppe = un montant unique / récurrent = des lignes), le
@@ -51,6 +54,14 @@ export type GroupManageInfo = {
   month: string;          // mois affiché sélectionné (pour le montant daté)
   currentAmount: number;  // budget en vigueur ce mois (pré-remplissage)
   lines: { id: number; name: string; amount: number; day: number }[];
+};
+
+// Info nécessaire au bloc d'édition de la provision des non catégorisés (case
+// « Budget dép. » de la section non catégorisés) : le mois de la case cliquée et la
+// provision en vigueur ce mois-là (pré-remplissage).
+export type UncatProvisionInfo = {
+  month: string;          // mois de la case cliquée (pour le montant daté)
+  currentAmount: number;  // provision en vigueur ce mois (pré-remplissage)
 };
 
 // Info nécessaire au bloc de décision d'un dépassement de budget : quel groupe (0 =
