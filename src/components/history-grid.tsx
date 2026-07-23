@@ -294,8 +294,18 @@ function CellAmount({ children, className, detail, onSelect, cellKey: ck, selCel
 }
 
 // Cellule de solde « plan » (prévu / si dépassement) cliquable : comme
+// Signe d'opération devant un solde : « + » si la ligne a fait monter le solde par
+// rapport à la ligne du dessus, « − » si elle l'a fait baisser (rien si ~0). Fait
+// lire la colonne comme un calcul qui s'enchaîne de haut en bas. Toujours en teinte
+// discrète (opérateur), même quand la valeur du solde est rouge (négative).
+function soldeSign(delta: number | null | undefined): React.ReactNode {
+  if (delta == null || Math.abs(delta) < 0.005) return null;
+  return <span className="text-muted-foreground">{delta > 0 ? "+" : "−"} </span>;
+}
+
 // plannedSoldeCol mais avec un détail (sidebar) et une clé de case. Non cliquable
-// si la valeur est absente (cellule vide).
+// si la valeur est absente (cellule vide). `delta` = mouvement de la ligne, pour le
+// signe d'opération (cf. soldeSign) ; absent = pas de signe (ligne de départ/total).
 function plannedSoldeCell(
   key: string,
   val: number | null | undefined,
@@ -304,6 +314,7 @@ function plannedSoldeCell(
   onSelect: ((d: CellDetail) => void) | undefined,
   ck: string,
   selCellKey?: ReadonlySet<string>,
+  delta?: number | null,
 ): React.ReactNode {
   return (
     <CellAmount
@@ -314,7 +325,7 @@ function plannedSoldeCell(
       cellKey={ck}
       selCellKey={selCellKey}
     >
-      {val != null ? fmt(val) : ""}
+      {val != null ? <>{soldeSign(delta)}{fmt(val)}</> : ""}
     </CellAmount>
   );
 }
@@ -693,11 +704,11 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
             ),
           soldeReel: (b) => (
             <CellAmount key="soldeReel" className={cn(b && "border-l", "text-right tabular-nums", s != null && s < -0.005 && "text-red-600")} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
-              {s != null ? fmt(s) : ""}
+              {s != null ? <>{soldeSign(net)}{fmt(s)}</> : ""}
             </CellAmount>
           ),
-          soldePrevu: (b) => plannedSoldeCell("soldePrevu", soldePrevu?.[i] ?? null, b, soldePrevuDetail, onSelect, ck("soldePrevu"), selCellKey),
-          soldeDepass: (b) => plannedSoldeCell("soldeDepass", soldeDepass?.[i] ?? null, b, soldeDepassDetail, onSelect, ck("soldeDepass"), selCellKey),
+          soldePrevu: (b) => plannedSoldeCell("soldePrevu", soldePrevu?.[i] ?? null, b, soldePrevuDetail, onSelect, ck("soldePrevu"), selCellKey, mouvementPrevu),
+          soldeDepass: (b) => plannedSoldeCell("soldeDepass", soldeDepass?.[i] ?? null, b, soldeDepassDetail, onSelect, ck("soldeDepass"), selCellKey, mouvementPrevu - ownOs),
         };
 
         return <Fragment key={i}>{renderCols(cols, slots, monthTint(months[i], i, months, currentMonth))}</Fragment>;
@@ -944,18 +955,20 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
             ),
           soldeReel: (b) => (
             <CellAmount key="soldeReel" className={cn(b && "border-l", "text-right tabular-nums", s != null && s < -0.005 && "text-red-600")} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
-              {s != null ? fmt(s) : ""}
+              {s != null ? <>{soldeSign(net)}{fmt(s)}</> : ""}
             </CellAmount>
           ),
           // Non catégorisés : on affiche le solde du plan (identique aux clôtures
-          // prévues du mois) ; les autres sections de dépense restent vides.
+          // prévues du mois) ; les autres sections de dépense restent vides. Mouvement
+          // de la ligne : −budget (provision) pour le prévu, −débordement pour le si
+          // dépassement (cf. les nœuds « précédent » des détails ci-dessus).
           soldePrevu: (b) =>
             isUncat
-              ? plannedSoldeCell("soldePrevu", soldePrevuVal, b, soldePrevuDetail, onSelect, ck("soldePrevu"), selCellKey)
+              ? plannedSoldeCell("soldePrevu", soldePrevuVal, b, soldePrevuDetail, onSelect, ck("soldePrevu"), selCellKey, -c.budgeted)
               : plannedSoldeCol("soldePrevu", null, b),
           soldeDepass: (b) =>
             isUncat
-              ? plannedSoldeCell("soldeDepass", soldeDepassVal, b, soldeDepassDetail, onSelect, ck("soldeDepass"), selCellKey)
+              ? plannedSoldeCell("soldeDepass", soldeDepassVal, b, soldeDepassDetail, onSelect, ck("soldeDepass"), selCellKey, -depassVal)
               : plannedSoldeCol("soldeDepass", null, b),
         };
 
