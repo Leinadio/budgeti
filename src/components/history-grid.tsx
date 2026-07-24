@@ -488,7 +488,7 @@ function soldeActuelDetail(
 // detailRow : ligne de groupe (transactions/postes) permettant de construire le
 // détail cliquable des cellules. Absente pour les sous-lignes (postes d'un
 // récurrent) : ces cellules restent non cliquables (hors périmètre, cf. ci-dessous).
-function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, subtitleOf, detailRow, months, currentMonth, rowKey, selCellKey, prevRowKey, incomeKind, depassCumulRows, accountId, decisionByKey, currentBudgets }: {
+function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, subtitleOf, detailRow, months, currentMonth, rowKey, selCellKey, prevDisp, incomeKind, depassCumulRows, accountId, decisionByKey, currentBudgets }: {
   cells: MonthCell[];
   mode: "out" | "in" | "total";
   solde?: (number | null)[];
@@ -505,9 +505,10 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
   rowKey: string;
   // Case sélectionnée depuis le side panel (pour la surbrillance).
   selCellKey?: ReadonlySet<string>;
-  // Ligne dont le solde est le « Solde précédent » de celle-ci (prédécesseur dans
-  // l'accumulation) : pour surligner sa case Solde depuis le side panel.
-  prevRowKey?: string;
+  // Clé de la dernière ligne AFFICHÉE au-dessus, par colonne de solde et par mois
+  // (les cases vides à mouvement nul sont sautées) : pour surligner la bonne case
+  // « Solde précédent » depuis le side panel.
+  prevDisp?: { solde?: (string | undefined)[]; soldePrevu?: (string | undefined)[]; soldeDepass?: (string | undefined)[] };
   // Classe de revenu (pour les colonnes Budg./Revenus des rémunérations).
   incomeKind?: "principal" | "supplementary" | null;
   // Dépassements (par groupe) cumulés jusqu'à cette ligne incluse, un tableau par
@@ -589,7 +590,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
             ? makeDetail(
                 "Solde",
                 [
-                  { label: "Solde précédent", amount: s - net, ref: prevRowKey ? cellKey(prevRowKey, "solde", i) : undefined },
+                  { label: "Solde précédent", amount: s - net, ref: prevDisp?.solde?.[i] ? cellKey(prevDisp.solde[i]!, "solde", i) : undefined },
                   // Le mouvement d'une entrée vit dans la colonne Reçu, celui d'une
                   // dépense dans Dép. — même quand le montant est encore à 0 (netCol
                   // retomberait alors sur Dép., faux pour une rémunération).
@@ -640,7 +641,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
             ? makeDetail(
                 "Solde prévu",
                 [
-                  { label: "Solde précédent", amount: sp - mouvementPrevu, ref: prevRowKey ? cellKey(prevRowKey, "soldePrevu", i) : undefined },
+                  { label: "Solde précédent", amount: sp - mouvementPrevu, ref: prevDisp?.soldePrevu?.[i] ? cellKey(prevDisp.soldePrevu[i]!, "soldePrevu", i) : undefined },
                   { label: "Mouvement prévu du mois", amount: mouvementPrevu, ref: mode === "out" ? ck("budget") : mode === "in" ? ck("revenus") : undefined, children: mouvementChildren.length ? mouvementChildren : undefined },
                 ],
                 { subtitle, result: sp },
@@ -664,7 +665,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
             ? makeDetail(
                 "Solde si dépassement",
                 [
-                  { label: "Solde précédent", amount: sd - mouvementPrevu + ownOs, ref: prevRowKey ? cellKey(prevRowKey, "soldeDepass", i) : undefined },
+                  { label: "Solde précédent", amount: sd - mouvementPrevu + ownOs, ref: prevDisp?.soldeDepass?.[i] ? cellKey(prevDisp.soldeDepass[i]!, "soldeDepass", i) : undefined },
                   { label: "Mouvement prévu du mois", amount: mouvementPrevu, ref: mode === "out" ? ck("budget") : mode === "in" ? ck("revenus") : undefined, children: mouvementChildren.length ? mouvementChildren : undefined },
                   // Le dépassement propre à la ligne (sa Balance rouge), renvoi vers sa case
                   // du mois source.
@@ -738,7 +739,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
 // donc leur somme aussi) : toujours cliquable. Pour les non catégorisés, budget et
 // balance sont toujours à 0 : l'invariant ne tient que si dépensé == 0, donc en
 // pratique non cliquable (comme documenté au Task 3 pour ce cas).
-function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPrevu, planDepass, uncatInSec, selCellKey, prevRowKey, accountId, decisionByKey, currentUncatProvision }: {
+function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPrevu, planDepass, uncatInSec, selCellKey, prevDisp, accountId, decisionByKey, currentUncatProvision }: {
   sec: HistorySection;
   months: string[];
   currentMonth: string;
@@ -754,8 +755,9 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
   // pour calculer sa Balance (Reçu de la ligne du haut − Dépensé de celle-ci).
   uncatInSec?: HistorySection;
   selCellKey?: ReadonlySet<string>;
-  // Ligne dont le solde est le « Solde précédent » de cette section (prédécesseur).
-  prevRowKey?: string;
+  // Clé de la dernière ligne AFFICHÉE au-dessus, par colonne de solde et par mois
+  // (cases vides sautées) : pour surligner la bonne case « Solde précédent ».
+  prevDisp?: { solde?: (string | undefined)[]; soldePrevu?: (string | undefined)[]; soldeDepass?: (string | undefined)[] };
   // Compte courant et décisions déjà prises : pour attacher le bloc de décision sur
   // la Balance non catégorisés en dépassement (section « out » uniquement).
   accountId?: string;
@@ -863,7 +865,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
             ? makeDetail(
                 "Solde",
                 [
-                  { label: "Solde précédent", amount: s - net, ref: prevRowKey ? cellKey(prevRowKey, "solde", i) : undefined },
+                  { label: "Solde précédent", amount: s - net, ref: prevDisp?.solde?.[i] ? cellKey(prevDisp.solde[i]!, "solde", i) : undefined },
                   { label: "Mouvement du mois", amount: net, children: uncatTxnNodes(sec, month, i), ref: ck(netCol(c)) },
                 ],
                 { subtitle, result: s },
@@ -893,7 +895,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
             ? makeDetail(
                 "Solde prévu",
                 [
-                  { label: "Solde précédent", amount: soldePrevuVal + c.budgeted, ref: prevRowKey ? cellKey(prevRowKey, "soldePrevu", i) : undefined },
+                  { label: "Solde précédent", amount: soldePrevuVal + c.budgeted, ref: prevDisp?.soldePrevu?.[i] ? cellKey(prevDisp.soldePrevu[i]!, "soldePrevu", i) : undefined },
                   { label: "Budget dépense", amount: -c.budgeted, ref: ck("budget") },
                 ],
                 { subtitle, result: soldePrevuVal },
@@ -907,7 +909,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
                   // Les non catégorisés récapitulent tout : ils affichent le cumul
                   // global (runD). Le détail chaîne donc sur la valeur du dessus
                   // (soldeDepassVal + depassVal = le cumul avant leur propre débordement).
-                  { label: "Solde précédent", amount: soldeDepassVal + depassVal, ref: prevRowKey ? cellKey(prevRowKey, "soldeDepass", i) : undefined },
+                  { label: "Solde précédent", amount: soldeDepassVal + depassVal, ref: prevDisp?.soldeDepass?.[i] ? cellKey(prevDisp.soldeDepass[i]!, "soldeDepass", i) : undefined },
                   // Débordement retenu (marqué permanent) sur les mois futurs, sinon celui du
                   // mois courant. Renvoi vers la Balance du mois SOURCE (srcI) : sur un
                   // mois de projection, le débordement vient du mois courant, pas du mois
@@ -1482,21 +1484,71 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
     return m;
   }, [sections]);
 
-  // « Solde précédent » d'une ligne = solde de la ligne qui la précède dans
-  // l'accumulation (même ordre que computeSolde : ouverture, puis les lignes de
-  // chaque section, les non catégorisés comptant pour une seule étape). On mappe
-  // chaque étape porteuse de solde vers la clé de ligne de la précédente, pour
-  // surligner la bonne case Solde.
-  const prevSoldeRowKey = useMemo(() => {
-    const stops: string[] = [openingRow];
+  // « Solde précédent » d'une ligne, par COLONNE de solde et par mois : la clé de la
+  // dernière ligne AFFICHÉE (non vide) au-dessus, dans cette colonne. Les cases à
+  // mouvement nul sont vides (cf. soldeWithSign) ; on les saute pour pointer la
+  // dernière valeur réellement montrée, pas une case vide. Une case est « affichée »
+  // quand sa valeur diffère de celle de la ligne du dessus (= mouvement non nul, même
+  // règle que soldeWithSign). L'« Argent de départ » est toujours affiché : repli ultime.
+  const prevDisplayedByCol = useMemo(() => {
+    const n = months.length;
+    const nulls = new Array<number | null>(n).fill(null);
+    type Stop = { key: string; solde: (number | null)[]; prevu: (number | null)[]; depass: (number | null)[] };
+    const stops: Stop[] = [];
+    stops.push({
+      key: openingRow,
+      solde: solde.openings,
+      // Ouverture prévu / si dépassement : le plan s'ancre sur l'ouverture réelle sur
+      // passé/courant ; sur le futur, repli sur la clôture précédente (approximation
+      // suffisante — l'ouverture est de toute façon toujours affichée).
+      prevu: months.map((mo, i) => (mo <= currentMonth ? solde.openings[i] : planned.prevuClosings[i - 1] ?? solde.openings[i])),
+      depass: months.map((mo, i) => (mo <= currentMonth ? solde.openings[i] : planned.depassClosings[i - 1] ?? solde.openings[i])),
+    });
     for (const sec of sections) {
-      if (sec.kind === "uncategorized") stops.push(sectionRowKey(sec));
-      else for (const r of sec.rows) stops.push(groupRow(r.id));
+      if (sec.kind === "uncategorized") {
+        const dir = sec.uncatDirection ?? "out";
+        stops.push({
+          key: sectionRowKey(sec),
+          solde: solde.uncategorizedRunning?.[dir] ?? nulls,
+          prevu: planned.uncatPrevuRunning?.[dir] ?? nulls,
+          depass: planned.uncatDepassRunning?.[dir] ?? nulls,
+        });
+      } else {
+        for (const r of sec.rows) {
+          stops.push({
+            key: groupRow(r.id),
+            solde: solde.rowRunning[r.id] ?? nulls,
+            prevu: planned.prevuRowRunning[r.id] ?? nulls,
+            depass: planned.depassRowRunning[r.id] ?? nulls,
+          });
+        }
+      }
     }
-    const m = new Map<string, string>();
-    for (let k = 1; k < stops.length; k++) m.set(stops[k], stops[k - 1]);
-    return m;
-  }, [sections]);
+    const build = (pick: (s: Stop) => (number | null)[]) => {
+      const map = new Map<string, (string | undefined)[]>();
+      for (let k = 0; k < stops.length; k++) {
+        const arr = new Array<string | undefined>(n).fill(undefined);
+        for (let i = 0; i < n; i++) {
+          let j = k - 1;
+          while (j > 0) {
+            const vj = pick(stops[j])[i];
+            const vjm1 = pick(stops[j - 1])[i];
+            // Étape affichée si sa valeur diffère de celle du dessus (mouvement non nul).
+            if (vj == null || vjm1 == null || Math.abs(vj - vjm1) >= 0.005) break;
+            j--;
+          }
+          arr[i] = j >= 0 ? stops[j].key : undefined;
+        }
+        map.set(stops[k].key, arr);
+      }
+      return map;
+    };
+    return {
+      solde: build((s) => s.solde),
+      soldePrevu: build((s) => s.prevu),
+      soldeDepass: build((s) => s.depass),
+    };
+  }, [sections, months, currentMonth, solde, planned]);
 
   // Index du mois courant (même repli que computePlannedSoldes : borne la plus
   // proche si hors plage).
@@ -1678,7 +1730,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
             currentMonth={currentMonth}
             rowKey={selfKey}
             selCellKey={selCellKey}
-            prevRowKey={prevSoldeRowKey.get(selfKey)}
+            prevDisp={{ solde: prevDisplayedByCol.solde.get(selfKey), soldePrevu: prevDisplayedByCol.soldePrevu.get(selfKey), soldeDepass: prevDisplayedByCol.soldeDepass.get(selfKey) }}
             incomeKind={r.incomeKind}
             depassCumulRows={depassCumulByRow.get(r.id)}
             accountId={accountId}
@@ -1827,7 +1879,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
             planDepass={planDepass}
             uncatInSec={dir === "out" ? sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in") : undefined}
             selCellKey={selCellKey}
-            prevRowKey={prevSoldeRowKey.get(rowKey)}
+            prevDisp={{ solde: prevDisplayedByCol.solde.get(rowKey), soldePrevu: prevDisplayedByCol.soldePrevu.get(rowKey), soldeDepass: prevDisplayedByCol.soldeDepass.get(rowKey) }}
             accountId={accountId}
             decisionByKey={decisionByKey}
             currentUncatProvision={currentUncatProvision}
