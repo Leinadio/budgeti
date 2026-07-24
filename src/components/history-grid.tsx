@@ -640,7 +640,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
             ? makeDetail(
                 "Solde prévu",
                 [
-                  { label: "Solde prévu précédent", amount: sp - mouvementPrevu, ref: prevRowKey ? cellKey(prevRowKey, "soldePrevu", i) : undefined },
+                  { label: "Solde précédent", amount: sp - mouvementPrevu, ref: prevRowKey ? cellKey(prevRowKey, "soldePrevu", i) : undefined },
                   { label: "Mouvement prévu du mois", amount: mouvementPrevu, ref: mode === "out" ? ck("budget") : mode === "in" ? ck("revenus") : undefined, children: mouvementChildren.length ? mouvementChildren : undefined },
                 ],
                 { subtitle, result: sp },
@@ -664,7 +664,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
             ? makeDetail(
                 "Solde si dépassement",
                 [
-                  { label: "Solde si dépassement précédent", amount: sd - mouvementPrevu + ownOs, ref: prevRowKey ? cellKey(prevRowKey, "soldeDepass", i) : undefined },
+                  { label: "Solde précédent", amount: sd - mouvementPrevu + ownOs, ref: prevRowKey ? cellKey(prevRowKey, "soldeDepass", i) : undefined },
                   { label: "Mouvement prévu du mois", amount: mouvementPrevu, ref: mode === "out" ? ck("budget") : mode === "in" ? ck("revenus") : undefined, children: mouvementChildren.length ? mouvementChildren : undefined },
                   // Le dépassement propre à la ligne (sa Balance rouge), renvoi vers sa case
                   // du mois source.
@@ -893,7 +893,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
             ? makeDetail(
                 "Solde prévu",
                 [
-                  { label: "Solde prévu précédent", amount: soldePrevuVal + c.budgeted, ref: prevRowKey ? cellKey(prevRowKey, "soldePrevu", i) : undefined },
+                  { label: "Solde précédent", amount: soldePrevuVal + c.budgeted, ref: prevRowKey ? cellKey(prevRowKey, "soldePrevu", i) : undefined },
                   { label: "Budget dépense", amount: -c.budgeted, ref: ck("budget") },
                 ],
                 { subtitle, result: soldePrevuVal },
@@ -907,7 +907,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
                   // Les non catégorisés récapitulent tout : ils affichent le cumul
                   // global (runD). Le détail chaîne donc sur la valeur du dessus
                   // (soldeDepassVal + depassVal = le cumul avant leur propre débordement).
-                  { label: "Solde si dépassement précédent", amount: soldeDepassVal + depassVal, ref: prevRowKey ? cellKey(prevRowKey, "soldeDepass", i) : undefined },
+                  { label: "Solde précédent", amount: soldeDepassVal + depassVal, ref: prevRowKey ? cellKey(prevRowKey, "soldeDepass", i) : undefined },
                   // Débordement retenu (marqué permanent) sur les mois futurs, sinon celui du
                   // mois courant. Renvoi vers la Balance du mois SOURCE (srcI) : sur un
                   // mois de projection, le débordement vient du mois courant, pas du mois
@@ -1152,7 +1152,7 @@ function GrandTotalsCells({ sections, grand, solde, planned, months, currentMont
                 "Solde prévu",
                 [
                   {
-                    label: firstFuture ? "Estimé fin du mois précédent" : "Solde prévu précédent",
+                    label: firstFuture ? "Estimé fin du mois précédent" : "Solde précédent",
                     amount: prevuPrev,
                     ref:
                       month <= currentMonth ? cellKey(openingRow, "soldePrevu", i)
