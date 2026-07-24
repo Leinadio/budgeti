@@ -681,13 +681,11 @@ export function computePlannedSoldes(
     let runD = anchored ? openingsReal[i] : futureStart ?? depassClosings[i - 1]!;
     const osMonth = anchored ? i : ci;
     for (const sec of sections) {
-      // Dépassements PROPRES cumulés dans CETTE section (Récurrents / Enveloppes),
-      // remis à zéro à chaque section : le « si dépassement » affiché par ligne est le
-      // solde prévu de la ligne moins les dépassements enchaînés depuis le début de sa
-      // section, sans hériter de ceux des sections du dessus. runD, lui, reste le cumul
-      // global (pire cas total) et pilote les clôtures ; les non catégorisés, en bas,
-      // l'affichent tel quel pour rester égaux au « Solde actuel ».
-      let secOs = 0;
+      // « Si dépassement » = une seule chaîne continue de haut en bas : chaque ligne
+      // affiche le cumul global runD (solde prévu moins tous les dépassements enchaînés
+      // depuis le début du tableau, toutes sections confondues). Le « Solde précédent »
+      // d'une ligne est donc toujours le « si dépassement » de la ligne juste au-dessus,
+      // et runD pilote aussi les clôtures (pire cas total).
       if (sec.kind === "uncategorized") {
         // À l'étape « dépenses », la provision est une dépense planifiée, retirée du
         // prévu comme un budget d'enveloppe. Le « si dépassement » retire en plus,
@@ -709,9 +707,8 @@ export function computePlannedSoldes(
           // Ancré (passé / courant) : dépassement réel du mois. Futur : aucun report.
           const os = anchored ? rowOverspend(r, osMonth) : 0;
           runD += net - os;
-          secOs += os;
           prevuRowRunning[r.id][i] = runP;
-          depassRowRunning[r.id][i] = runP - secOs;
+          depassRowRunning[r.id][i] = runD;
         }
       }
     }

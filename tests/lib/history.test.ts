@@ -528,7 +528,7 @@ describe("Les soldes prévisionnels", () => {
     expect(p.depassClosings[2]).toBeCloseTo(p.prevuClosings[2]! - 50, 2);
   });
 
-  it("devrait remettre la chaîne « si dépassement » à zéro à chaque section : un dépassement de récurrent ne plombe pas une enveloppe", () => {
+  it("devrait cumuler le « si dépassement » d'un seul tenant : une enveloppe hérite des dépassements des sections du dessus", () => {
     const principal: Group = { id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", kind: "envelope", monthlyAmount: 2000, lines: [], incomeKind: "principal" };
     const loyer: Group = { id: 2, accountId: "a1", name: "Loyer", direction: "out", kind: "recurring", monthlyAmount: null, lines: [{ id: 21, name: "Loyer", amount: 100, day: 5 }], incomeKind: null };
     const courses2: Group = { id: 3, accountId: "a1", name: "Courses", direction: "out", kind: "envelope", monthlyAmount: 100, lines: [], incomeKind: null };
@@ -544,11 +544,10 @@ describe("Les soldes prévisionnels", () => {
     const p = computePlannedSoldes(sections, months, "2026-07", solde.openings);
     // Le récurrent qui dépasse : son solde si dépassement = son solde prévu − ses 50.
     expect(p.prevuRowRunning[2][0]! - p.depassRowRunning[2][0]!).toBeCloseTo(50, 2);
-    // L'enveloppe, section suivante : son solde si dépassement ne retire QUE ses propres
-    // 30 (elle n'hérite pas des 50 du récurrent au-dessus).
-    expect(p.prevuRowRunning[3][0]! - p.depassRowRunning[3][0]!).toBeCloseTo(30, 2);
-    // Les non catégorisés, eux, RÉCAPITULENT tout : leur ligne cumule 50 + 30 + 40 et
-    // reste égale à la clôture globale (le « Solde actuel » du bas).
+    // L'enveloppe, section suivante : la chaîne est continue, elle hérite donc des 50 du
+    // récurrent au-dessus + ses propres 30 = 80.
+    expect(p.prevuRowRunning[3][0]! - p.depassRowRunning[3][0]!).toBeCloseTo(80, 2);
+    // Les non catégorisés récapitulent tout : 50 + 30 + 40, égal à la clôture globale.
     expect(p.uncatDepassRunning.out?.[0]).toBeCloseTo(p.depassClosings[0]!, 2);
     expect(p.prevuClosings[0]! - p.depassClosings[0]!).toBeCloseTo(120, 2);
   });
