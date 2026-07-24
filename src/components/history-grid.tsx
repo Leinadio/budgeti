@@ -301,7 +301,12 @@ function CellAmount({ children, className, detail, onSelect, cellKey: ck, selCel
 // en bas. Si la ligne n'a rien changé (mouvement nul), la cellule reste vide : seules
 // les lignes qui « opèrent » sur le solde s'affichent.
 function soldeWithSign(v: number, delta: number | null | undefined): React.ReactNode {
-  if (delta == null || Math.abs(delta) < 0.005) return null;
+  // Aucun mouvement fourni (ligne de départ / total) : on affiche toujours le solde,
+  // signé, sans opérateur — ce ne sont pas des « opérations » mais des points de
+  // départ / résultats.
+  if (delta == null) return fmt(v);
+  // Mouvement fourni mais nul : la ligne n'a rien changé, cellule vide.
+  if (Math.abs(delta) < 0.005) return null;
   return (
     <>
       <span className="text-muted-foreground">{delta > 0 ? "+" : "−"} </span>
