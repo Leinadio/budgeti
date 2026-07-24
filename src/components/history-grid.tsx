@@ -294,18 +294,25 @@ function CellAmount({ children, className, detail, onSelect, cellKey: ck, selCel
 }
 
 // Cellule de solde « plan » (prévu / si dépassement) cliquable : comme
-// Signe d'opération devant un solde : « + » si la ligne a fait monter le solde par
-// rapport à la ligne du dessus, « − » si elle l'a fait baisser (rien si ~0). Fait
-// lire la colonne comme un calcul qui s'enchaîne de haut en bas. Toujours en teinte
-// discrète (opérateur), même quand la valeur du solde est rouge (négative).
-function soldeSign(delta: number | null | undefined): React.ReactNode {
+// Solde avec son signe d'opération : « + » si la ligne a fait monter le solde par
+// rapport à la ligne du dessus, « − » si elle l'a fait baisser, suivi du montant en
+// VALEUR ABSOLUE (le rouge de la cellule indique déjà le négatif — jamais de double
+// signe « − -39,73 »). Fait lire la colonne comme un calcul qui s'enchaîne de haut
+// en bas. Si la ligne n'a rien changé (mouvement nul), la cellule reste vide : seules
+// les lignes qui « opèrent » sur le solde s'affichent.
+function soldeWithSign(v: number, delta: number | null | undefined): React.ReactNode {
   if (delta == null || Math.abs(delta) < 0.005) return null;
-  return <span className="text-muted-foreground">{delta > 0 ? "+" : "−"} </span>;
+  return (
+    <>
+      <span className="text-muted-foreground">{delta > 0 ? "+" : "−"} </span>
+      {fmt(Math.abs(v))}
+    </>
+  );
 }
 
 // plannedSoldeCol mais avec un détail (sidebar) et une clé de case. Non cliquable
 // si la valeur est absente (cellule vide). `delta` = mouvement de la ligne, pour le
-// signe d'opération (cf. soldeSign) ; absent = pas de signe (ligne de départ/total).
+// signe d'opération (cf. soldeWithSign) ; absent = pas de signe (départ/total).
 function plannedSoldeCell(
   key: string,
   val: number | null | undefined,
@@ -325,7 +332,7 @@ function plannedSoldeCell(
       cellKey={ck}
       selCellKey={selCellKey}
     >
-      {val != null ? <>{soldeSign(delta)}{fmt(val)}</> : ""}
+      {val != null ? soldeWithSign(val, delta) : ""}
     </CellAmount>
   );
 }
@@ -704,7 +711,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
             ),
           soldeReel: (b) => (
             <CellAmount key="soldeReel" className={cn(b && "border-l", "text-right tabular-nums", s != null && s < -0.005 && "text-red-600")} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
-              {s != null ? <>{soldeSign(net)}{fmt(s)}</> : ""}
+              {s != null ? soldeWithSign(s, net) : ""}
             </CellAmount>
           ),
           soldePrevu: (b) => plannedSoldeCell("soldePrevu", soldePrevu?.[i] ?? null, b, soldePrevuDetail, onSelect, ck("soldePrevu"), selCellKey, mouvementPrevu),
@@ -955,7 +962,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
             ),
           soldeReel: (b) => (
             <CellAmount key="soldeReel" className={cn(b && "border-l", "text-right tabular-nums", s != null && s < -0.005 && "text-red-600")} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
-              {s != null ? <>{soldeSign(net)}{fmt(s)}</> : ""}
+              {s != null ? soldeWithSign(s, net) : ""}
             </CellAmount>
           ),
           // Non catégorisés : on affiche le solde du plan (identique aux clôtures
