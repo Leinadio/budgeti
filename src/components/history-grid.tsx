@@ -300,13 +300,14 @@ function CellAmount({ children, className, detail, onSelect, cellKey: ck, selCel
 // signe « − -39,73 »). Fait lire la colonne comme un calcul qui s'enchaîne de haut
 // en bas. Si la ligne n'a rien changé (mouvement nul), la cellule reste vide : seules
 // les lignes qui « opèrent » sur le solde s'affichent.
-function soldeWithSign(v: number, delta: number | null | undefined): React.ReactNode {
+function soldeWithSign(v: number, delta: number | null | undefined, alwaysShow = false): React.ReactNode {
   // Aucun mouvement fourni (ligne de départ / total) : on affiche toujours le solde,
   // signé, sans opérateur — ce ne sont pas des « opérations » mais des points de
   // départ / résultats.
   if (delta == null) return fmt(v);
-  // Mouvement fourni mais nul : la ligne n'a rien changé, cellule vide.
-  if (Math.abs(delta) < 0.005) return null;
+  // Mouvement fourni mais nul : la ligne n'a rien changé. Par défaut cellule vide, sauf
+  // `alwaysShow` (ligne « Non catégorisés » : toujours un montant, sans opérateur).
+  if (Math.abs(delta) < 0.005) return alwaysShow ? fmt(v) : null;
   return (
     <>
       <span className="text-muted-foreground">{delta > 0 ? "+" : "−"} </span>
@@ -327,6 +328,7 @@ function plannedSoldeCell(
   ck: string,
   selCellKey?: ReadonlySet<string>,
   delta?: number | null,
+  alwaysShow = false,
 ): React.ReactNode {
   return (
     <CellAmount
@@ -337,7 +339,7 @@ function plannedSoldeCell(
       cellKey={ck}
       selCellKey={selCellKey}
     >
-      {val != null ? soldeWithSign(val, delta) : ""}
+      {val != null ? soldeWithSign(val, delta, alwaysShow) : ""}
     </CellAmount>
   );
 }
@@ -967,9 +969,11 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
             ) : (
               blankCol("reste", b)
             ),
+          // Ligne « Non catégorisés » : toujours un montant dans les trois colonnes de
+          // solde, même quand le mouvement est nul (alwaysShow) — pas de case vide.
           soldeReel: (b) => (
             <CellAmount key="soldeReel" className={cn(b && "border-l", "text-right tabular-nums", s != null && s < -0.005 && "text-red-600")} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
-              {s != null ? soldeWithSign(s, net) : ""}
+              {s != null ? soldeWithSign(s, net, isUncat) : ""}
             </CellAmount>
           ),
           // Non catégorisés : on affiche le solde du plan (identique aux clôtures
@@ -978,11 +982,11 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
           // dépassement (cf. les nœuds « précédent » des détails ci-dessus).
           soldePrevu: (b) =>
             isUncat
-              ? plannedSoldeCell("soldePrevu", soldePrevuVal, b, soldePrevuDetail, onSelect, ck("soldePrevu"), selCellKey, -c.budgeted)
+              ? plannedSoldeCell("soldePrevu", soldePrevuVal, b, soldePrevuDetail, onSelect, ck("soldePrevu"), selCellKey, -c.budgeted, true)
               : plannedSoldeCol("soldePrevu", null, b),
           soldeDepass: (b) =>
             isUncat
-              ? plannedSoldeCell("soldeDepass", soldeDepassVal, b, soldeDepassDetail, onSelect, ck("soldeDepass"), selCellKey, -depassVal)
+              ? plannedSoldeCell("soldeDepass", soldeDepassVal, b, soldeDepassDetail, onSelect, ck("soldeDepass"), selCellKey, -depassVal, true)
               : plannedSoldeCol("soldeDepass", null, b),
         };
 
