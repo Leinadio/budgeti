@@ -78,9 +78,6 @@ function OverspendDot({ decision }: { decision: "exceptional" | "permanent" | nu
 // (et non un max-width sur la cellule, ignoré en table-auto) garantit que la
 // colonne ne bouge pas quand on déroule des transactions à long libellé.
 const COL1_W = 320;
-// Bornes de redimensionnement de la première colonne (Catégorie).
-const COL1_MIN = 180;
-const COL1_MAX = 640;
 
 // --- Modèle de colonnes par type de mois -----------------------------------
 // Les colonnes affichées dépendent de la position du mois par rapport au mois
@@ -261,7 +258,7 @@ function FirstColBox({ children, indent = 0 }: { children: React.ReactNode; inde
   return (
     <div
       className="flex items-center gap-1.5 overflow-hidden py-2 pr-2"
-      style={{ width: `var(--col1-w, ${COL1_W}px)`, paddingLeft: `${0.5 + indent * 1.25}rem` }}
+      style={{ width: COL1_W, paddingLeft: `${0.5 + indent * 1.25}rem` }}
     >
       {children}
     </div>
@@ -1334,7 +1331,7 @@ function TxnRow({ txn, months, currentMonth, groups, indent, onSelect, selCellKe
       <TableCell className="bg-background sticky left-0 z-10 p-0">
         <div
           className="flex flex-col gap-1 py-2 pr-2"
-          style={{ width: `var(--col1-w, ${COL1_W}px)`, paddingLeft: `${0.5 + indent * 1.25}rem` }}
+          style={{ width: COL1_W, paddingLeft: `${0.5 + indent * 1.25}rem` }}
         >
           <div className="flex items-center gap-1.5 overflow-hidden">
             <span className="shrink-0 tabular-nums">{txn.date}</span>
@@ -1445,39 +1442,6 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
   // Mois de départ par défaut proposé au formulaire : le premier mois affiché
   // dans la frise, sauf s'il est déjà dans le passé (jamais de création rétroactive).
   const defaultMonth = months.length > 0 && months[0] >= currentMonth ? months[0] : currentMonth;
-
-  // Largeur de la première colonne (Catégorie), ajustable à la poignée du bord droit
-  // de l'en-tête et mémorisée en localStorage. Pilotée par la variable CSS --col1-w
-  // posée sur le conteneur (pas d'état React) : le rendu serveur retombe sur COL1_W
-  // (aucun décalage d'hydratation), et le montage applique la largeur enregistrée.
-  const setCol1W = (w: number) => {
-    gridRef.current?.style.setProperty("--col1-w", `${Math.round(w)}px`);
-  };
-  useEffect(() => {
-    try {
-      const saved = Number(localStorage.getItem("hist-col1-w"));
-      if (saved >= COL1_MIN && saved <= COL1_MAX) setCol1W(saved);
-    } catch {}
-  }, []);
-  const startCol1Resize = (e: React.PointerEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startW = gridRef.current
-      ? parseFloat(getComputedStyle(gridRef.current).getPropertyValue("--col1-w")) || COL1_W
-      : COL1_W;
-    let w = startW;
-    const onMove = (ev: PointerEvent) => {
-      w = Math.min(COL1_MAX, Math.max(COL1_MIN, startW + (ev.clientX - startX)));
-      setCol1W(w);
-    };
-    const onUp = () => {
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      try { localStorage.setItem("hist-col1-w", String(Math.round(w))); } catch {}
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  };
 
   // Case active (B) choisie dans le panneau : sert au défilement et à la révélation.
   // S'il y en a plusieurs (somme), on défile vers la première.
@@ -1901,14 +1865,8 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
       </colgroup>
       <TableHeader>
         <TableRow>
-          <TableHead rowSpan={2} className="bg-background sticky left-0 z-10 p-0 align-bottom relative">
+          <TableHead rowSpan={2} className="bg-background sticky left-0 z-10 p-0 align-bottom">
             <FirstColBox>Catégorie</FirstColBox>
-            {/* Poignée de redimensionnement de la colonne : glisser le bord droit. */}
-            <div
-              onPointerDown={startCol1Resize}
-              title="Glisser pour redimensionner la colonne"
-              className="hover:bg-primary/40 active:bg-primary/60 absolute top-0 right-0 h-full w-1.5 cursor-col-resize touch-none select-none"
-            />
           </TableHead>
           {months.map((m) => {
             const cols = monthColumns(monthType(m, currentMonth));
