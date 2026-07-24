@@ -300,14 +300,13 @@ function CellAmount({ children, className, detail, onSelect, cellKey: ck, selCel
 // signe « − -39,73 »). Fait lire la colonne comme un calcul qui s'enchaîne de haut
 // en bas. Si la ligne n'a rien changé (mouvement nul), la cellule reste vide : seules
 // les lignes qui « opèrent » sur le solde s'affichent.
-function soldeWithSign(v: number, delta: number | null | undefined, alwaysShow = false): React.ReactNode {
+function soldeWithSign(v: number, delta: number | null | undefined): React.ReactNode {
   // Aucun mouvement fourni (ligne de départ / total) : on affiche toujours le solde,
   // signé, sans opérateur — ce ne sont pas des « opérations » mais des points de
   // départ / résultats.
   if (delta == null) return fmt(v);
-  // Mouvement fourni mais nul : la ligne n'a rien changé. Par défaut cellule vide, sauf
-  // `alwaysShow` (ligne « Non catégorisés » : toujours un montant, sans opérateur).
-  if (Math.abs(delta) < 0.005) return alwaysShow ? fmt(v) : null;
+  // Mouvement fourni mais nul : la ligne n'a rien changé, cellule vide.
+  if (Math.abs(delta) < 0.005) return null;
   return (
     <>
       <span className="text-muted-foreground">{delta > 0 ? "+" : "−"} </span>
@@ -328,7 +327,6 @@ function plannedSoldeCell(
   ck: string,
   selCellKey?: ReadonlySet<string>,
   delta?: number | null,
-  alwaysShow = false,
 ): React.ReactNode {
   return (
     <CellAmount
@@ -339,7 +337,7 @@ function plannedSoldeCell(
       cellKey={ck}
       selCellKey={selCellKey}
     >
-      {val != null ? soldeWithSign(val, delta, alwaysShow) : ""}
+      {val != null ? soldeWithSign(val, delta) : ""}
     </CellAmount>
   );
 }
@@ -969,11 +967,9 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
             ) : (
               blankCol("reste", b)
             ),
-          // Ligne « Non catégorisés » : toujours un montant dans les trois colonnes de
-          // solde, même quand le mouvement est nul (alwaysShow) — pas de case vide.
           soldeReel: (b) => (
             <CellAmount key="soldeReel" className={cn(b && "border-l", "text-right tabular-nums", s != null && s < -0.005 && "text-red-600")} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
-              {s != null ? soldeWithSign(s, net, isUncat) : ""}
+              {s != null ? soldeWithSign(s, net) : ""}
             </CellAmount>
           ),
           // Non catégorisés : on affiche le solde du plan (identique aux clôtures
@@ -982,11 +978,11 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
           // dépassement (cf. les nœuds « précédent » des détails ci-dessus).
           soldePrevu: (b) =>
             isUncat
-              ? plannedSoldeCell("soldePrevu", soldePrevuVal, b, soldePrevuDetail, onSelect, ck("soldePrevu"), selCellKey, -c.budgeted, true)
+              ? plannedSoldeCell("soldePrevu", soldePrevuVal, b, soldePrevuDetail, onSelect, ck("soldePrevu"), selCellKey, -c.budgeted)
               : plannedSoldeCol("soldePrevu", null, b),
           soldeDepass: (b) =>
             isUncat
-              ? plannedSoldeCell("soldeDepass", soldeDepassVal, b, soldeDepassDetail, onSelect, ck("soldeDepass"), selCellKey, -depassVal, true)
+              ? plannedSoldeCell("soldeDepass", soldeDepassVal, b, soldeDepassDetail, onSelect, ck("soldeDepass"), selCellKey, -depassVal)
               : plannedSoldeCol("soldeDepass", null, b),
         };
 
@@ -1111,9 +1107,12 @@ function GrandTotalsCells({ sections, grand, solde, planned, months, currentMont
 
         // --- Détails des colonnes de projection du grand total ------------------
         // Budget de projection : seules les sections de dépense (cohérent avec la
-        // valeur affichée expenseBudget, qui exclut les rémunérations).
+        // valeur affichée expenseBudget, qui exclut les rémunérations). On écarte les
+        // nœuds à zéro comme pour « Dépensé » / « Reçu » : sinon les deux sections
+        // « Non catégorisés » (reçus, sans budget, et dépenses sans provision)
+        // apparaissent en double à 0,00.
         const expenseBudgetDetail: CellDetail =
-          makeDetail("Budget", sections.filter((sec) => sec.kind !== "income").map((sec) => sectionNode(sec, i, month, "budget")), { subtitle, result: expenseBudget });
+          makeDetail("Budget", sections.filter((sec) => sec.kind !== "income").map((sec) => sectionNode(sec, i, month, "budget")).filter((n) => n.amount !== 0), { subtitle, result: expenseBudget });
         // Détail du budget rémunération : un nœud par rémunération affichée.
         const budgetRemNodes = allRows
           .filter((r) => r.direction === "in")
