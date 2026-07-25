@@ -1,6 +1,6 @@
 "use client";
 import type { AccountForecast } from "@/lib/forecast";
-import type { MonthCell, HistorySection, SoldeColumn, PlannedSoldes, PendingOverspend } from "@/lib/history";
+import type { MonthCell, HistorySection, SoldeColumn, PlannedSoldes, PendingOverspend, IgnoredBlock } from "@/lib/history";
 import { CenterScroll } from "@/components/center-scroll";
 import { HistoryGrid } from "@/components/history-grid";
 import { OverspendBanner } from "@/components/overspend-banner";
@@ -23,6 +23,9 @@ export function HistoryWithDetail(props: {
   stripMax: string;
   forecast: AccountForecast;
   sections: HistorySection[];
+  // Transactions mises hors calcul, affichées en bas du tableau. Hors de sections
+  // pour qu'aucun total ne puisse les récupérer.
+  ignoredBlocks?: IgnoredBlock[];
   overspend: number[];
   grand: MonthCell[];
   groups: SelectGroup[];

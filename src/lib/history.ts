@@ -336,6 +336,44 @@ export function computeHistory(
   );
 }
 
+// Un bloc « Non comptabilisées » : les transactions mises hors calcul par
+// l'utilisateur, pour un sens donné. Volontairement un type à part, et non une
+// HistorySection : ces montants ne doivent entrer dans aucun total du tableau
+// (grandTotals, monthlyOverspend, chaînes de solde). Le bloc n'existe que pour
+// être affiché en bas de la grille.
+export type IgnoredBlock = {
+  direction: "in" | "out";
+  totals: { depense: number; recu: number }[]; // alignés sur months
+  txns: HistoryTxn[]; // récentes d'abord
+};
+
+// Scinde les transactions non comptabilisées des mois affichés en deux blocs,
+// reçus puis dépenses. Un bloc sans transaction n'est pas produit.
+export function computeIgnoredBlocks(txns: Txn[], months: string[]): IgnoredBlock[] {
+  const blockFor = (direction: "in" | "out"): IgnoredBlock | null => {
+    const mine = txns
+      .filter((t) => months.includes(t.date.slice(0, 7)))
+      .filter((t) => (direction === "in" ? t.amount > 0 : t.amount < 0))
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    if (mine.length === 0) return null;
+    const totals = months.map((m) => {
+      const sum = mine
+        .filter((t) => t.date.slice(0, 7) === m)
+        .reduce((s, t) => s + Math.abs(t.amount), 0);
+      return { depense: direction === "out" ? sum : 0, recu: direction === "in" ? sum : 0 };
+    });
+    return {
+      direction,
+      totals,
+      txns: mine.map((t) => ({
+        id: t.id, date: t.date, label: t.label, amount: t.amount,
+        month: t.date.slice(0, 7), groupId: t.groupId, lineId: t.lineId ?? null,
+      })),
+    };
+  };
+  return [blockFor("in"), blockFor("out")].filter((b): b is IgnoredBlock => b !== null);
+}
+
 // Dépassement total par mois : somme des dépassements des groupes de sortie
 // (part dépensée au-delà du budget). Les entrées ne comptent pas.
 export function monthlyOverspend(sections: HistorySection[], monthCount: number): number[] {

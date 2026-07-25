@@ -21,6 +21,7 @@ import { TruncatedText } from "@/components/truncated-text";
 import { AddTransactionSheet } from "@/components/add-transaction-sheet";
 import { Badge } from "@/components/ui/badge";
 import { ManualTxnActions } from "@/components/manual-txn-actions";
+import { IgnoreTxnToggle } from "@/components/ignore-txn-toggle";
 
 type ClientGroup = OwnableGroup & { name: string; lines: { id: number; name: string }[] };
 
@@ -42,10 +43,16 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
       <span className="flex items-center gap-1.5">
         <TruncatedText text={t.label} className="max-w-[380px]" />
         {t.manual && <Badge variant="outline">manuel · en attente</Badge>}
+        {t.ignored && <Badge variant="outline">non comptabilisée</Badge>}
       </span>
       {t.note && <span className="text-muted-foreground text-xs">{t.note}</span>}
     </span>
   );
+
+  // Une transaction non comptabilisée reste lisible mais visiblement hors-jeu.
+  const rowClass = (t: TxnView) => (t.ignored ? "text-muted-foreground" : undefined);
+  const amountClass = (t: TxnView) =>
+    t.ignored ? "text-right font-medium whitespace-nowrap line-through" : "text-right font-medium whitespace-nowrap";
 
   const groupName = (id: number) => groups.find((g) => g.id === id)?.name ?? "?";
   const groupsOfAccount = (accountId: string) =>
@@ -88,7 +95,9 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
     return [...filtered].sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions, filters]);
-  const summary = useMemo(() => summarize(results), [results]);
+  // Les non comptabilisées restent listées (pour pouvoir les réactiver) mais ne
+  // pèsent pas dans le récapitulatif Sorties / Entrées / Net.
+  const summary = useMemo(() => summarize(results.filter((t) => !t.ignored)), [results]);
 
   const set = (patch: Partial<TxnFilters>) => setFilters((f) => ({ ...f, ...patch }));
   const numOrNull = (v: string) => (v.trim() === "" ? null : Number(v));
@@ -196,18 +205,19 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
                 </TableRow>
               ) : (
                 results.map((t) => (
-                  <TableRow key={t.id}>
+                  <TableRow key={t.id} className={rowClass(t)}>
                     <TableCell className="text-muted-foreground whitespace-nowrap">{t.date}</TableCell>
                     <TableCell className="text-muted-foreground whitespace-nowrap">{t.accountLabel}</TableCell>
                     <TableCell>{renderLabel(t)}</TableCell>
                     <TableCell>
-                      <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} />
+                      <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} disabled={t.ignored} />
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       <TruncatedText text={statusLabel(t)} className="max-w-[200px]" />
                     </TableCell>
-                    <TableCell className="text-right font-medium whitespace-nowrap">{formatEur(t.amount)}</TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className={amountClass(t)}>{formatEur(t.amount)}</TableCell>
+                    <TableCell className="text-right whitespace-nowrap">
+                      <IgnoreTxnToggle txnId={t.id} ignored={t.ignored} />
                       {t.manual && <ManualTxnActions txn={t} accounts={accounts} groups={formGroups} />}
                     </TableCell>
                   </TableRow>
@@ -254,17 +264,18 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
                         </TableCell>
                       </TableRow>
                       {!isCollapsed && m.items.map((t) => (
-                        <TableRow key={t.id}>
+                        <TableRow key={t.id} className={rowClass(t)}>
                           <TableCell className="text-muted-foreground">{t.date}</TableCell>
                           <TableCell>{renderLabel(t)}</TableCell>
                           <TableCell>
-                            <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} />
+                            <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} disabled={t.ignored} />
                           </TableCell>
                           <TableCell className="text-muted-foreground">
                             <TruncatedText text={statusLabel(t)} className="max-w-[200px]" />
                           </TableCell>
-                          <TableCell className="text-right font-medium">{formatEur(t.amount)}</TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className={amountClass(t)}>{formatEur(t.amount)}</TableCell>
+                          <TableCell className="text-right whitespace-nowrap">
+                            <IgnoreTxnToggle txnId={t.id} ignored={t.ignored} />
                             {t.manual && <ManualTxnActions txn={t} accounts={accounts} groups={formGroups} />}
                           </TableCell>
                         </TableRow>

@@ -1,6 +1,6 @@
 import { db } from "../../db/index";
 import { listAccounts } from "../../db/repositories/accounts";
-import { listTransactions } from "../../db/repositories/transactions";
+import { listTransactions, type TxnView } from "../../db/repositories/transactions";
 import { listGroups } from "../../db/repositories/groups";
 import { listBudgetAmounts } from "../../db/repositories/budget-amounts";
 import { listOverspendDecisions } from "../../db/repositories/overspend-decisions";
@@ -8,12 +8,10 @@ import {
   computeHistory, grandTotals, monthlyOverspend, monthsWithData, computeSolde,
   computePlannedSoldes, addMonthsKey, monthRange, isMonthKey, clampMonth,
   sliceHistorySections, sliceSoldeColumn, slicePlannedSoldes, computeTableEstimate,
-  toDatedBudgets, computeOverspends, budgetInForce, provisionInForce,
+  toDatedBudgets, computeOverspends, budgetInForce, provisionInForce, computeIgnoredBlocks,
 } from "../../lib/history";
 import { computeForecast, type Group, type Txn } from "../../lib/forecast";
-import { monthRemuneration } from "../../lib/remuneration";
 import { ForecastDetailSheet } from "@/components/forecast-detail-sheet";
-import { RemunerationSummary } from "@/components/remuneration-summary";
 import { monthKey } from "../../lib/money";
 import { accountLabel } from "../../lib/account";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -34,7 +32,7 @@ export default async function HistoriquePage({
   const accounts = listAccounts(database);
   const allGroups = listGroups(database);
   const datedBudgets = toDatedBudgets(listBudgetAmounts(database));
-  const allTxns: Txn[] = listTransactions(database).map((t) => ({
+  const toTxn = (t: TxnView): Txn => ({
     id: t.id,
     date: t.date,
     amount: t.amount,
@@ -44,7 +42,14 @@ export default async function HistoriquePage({
     lineId: t.lineId,
     excluded: t.excluded,
     incomeKind: t.incomeKind,
-  }));
+  });
+  // Les transactions des calculs : listTransactions écarte les non comptabilisées.
+  const allTxns: Txn[] = listTransactions(database).map(toTxn);
+  // Les non comptabilisées, à part : elles ne servent qu'à la section d'affichage
+  // en bas du tableau et n'entrent dans aucun calcul.
+  const allIgnored: Txn[] = listTransactions(database, { includeIgnored: true })
+    .filter((t) => t.ignored)
+    .map(toTxn);
 
   if (accounts.length === 0) {
     return (
@@ -113,9 +118,10 @@ export default async function HistoriquePage({
           const sections = sliceHistorySections(sectionsFull, calcMonths, k);
           const solde = sliceSoldeColumn(soldeFull, k);
           const planned = slicePlannedSoldes(plannedFull, k);
-          const remunMonths = months.map((m) => monthRemuneration(groups, txns, m));
           const overspend = monthlyOverspend(sections, months.length);
           const grand = grandTotals(sections, months.length);
+          // Calculé sur les mois affichés, à l'écart des sections : aucun total ne le voit.
+          const ignoredBlocks = computeIgnoredBlocks(allIgnored.filter((t) => t.accountId === a.id), months);
           const selectGroups = groups.map((g) => ({
             id: g.id,
             name: g.name,
@@ -126,7 +132,6 @@ export default async function HistoriquePage({
           return (
             <TabsContent key={a.id} value={a.id} className="flex flex-col gap-4">
               <MonthRangePicker min={stripMin} max={stripMax} from={from} to={to} current={currentMonth} />
-              <RemunerationSummary months={remunMonths} />
               <div className="flex justify-end">
                 <ForecastDetailSheet label={accountLabel(a)} forecast={forecast} />
               </div>
@@ -139,6 +144,7 @@ export default async function HistoriquePage({
                   stripMax={stripMax}
                   forecast={forecast}
                   sections={sections}
+                  ignoredBlocks={ignoredBlocks}
                   overspend={overspend}
                   grand={grand}
                   groups={selectGroups}

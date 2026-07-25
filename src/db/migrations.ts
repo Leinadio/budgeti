@@ -82,6 +82,16 @@ export function migrateTransactionExcluded(db: Database.Database): void {
   db.exec(`ALTER TABLE transactions ADD COLUMN excluded INTEGER NOT NULL DEFAULT 0`);
 }
 
+// Ajoute la colonne ignored : une transaction non comptabilisée est retirée de
+// tous les calculs (dépenses, budgets, soldes, prévisionnel). À ne pas confondre
+// avec excluded, qui la force en « non catégorisé » mais la garde comptée.
+// Idempotent.
+export function migrateTransactionIgnored(db: Database.Database): void {
+  const cols = db.prepare("PRAGMA table_info(transactions)").all() as { name: string }[];
+  if (cols.some((c) => c.name === "ignored")) return;
+  db.exec(`ALTER TABLE transactions ADD COLUMN ignored INTEGER NOT NULL DEFAULT 0`);
+}
+
 // Ajoute la colonne line_id : rattachement manuel d'une transaction à une ligne
 // précise d'un groupe récurrent (ex. « Direct Assurance voiture »). Idempotent.
 export function migrateTransactionLineId(db: Database.Database): void {

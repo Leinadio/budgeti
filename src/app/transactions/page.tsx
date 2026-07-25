@@ -10,7 +10,8 @@ export const dynamic = "force-dynamic";
 
 export default function TransactionsPage() {
   const database = db();
-  const transactions = listTransactions(database);
+  // Seul écran à voir les non comptabilisées : c'est ici qu'on les réactive.
+  const transactions = listTransactions(database, { includeIgnored: true });
   const accounts = listAccounts(database).map((a) => ({ id: a.id, label: accountLabel(a) }));
   const groups = listGroups(database).map((g) => ({
     id: g.id,

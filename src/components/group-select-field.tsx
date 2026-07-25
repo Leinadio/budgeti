@@ -2,6 +2,7 @@
 import { Fragment, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { setGroup } from "@/app/transactions/actions";
+import { cn } from "@/lib/utils";
 
 type LineOpt = { id: number; name: string };
 type GroupOpt = { id: number; name: string; lines: LineOpt[] };
@@ -21,12 +22,16 @@ function stateOf(groupId: number | null, lineId: number | null): string {
 }
 
 export function GroupSelectField({
-  txnId, groups, defaultGroupId, defaultLineId,
+  txnId, groups, defaultGroupId, defaultLineId, disabled = false, className,
 }: {
   txnId: string;
   groups: GroupOpt[];
   defaultGroupId: number | null;
   defaultLineId: number | null;
+  disabled?: boolean;
+  // Ajusté par l'appelant quand le menu partage sa place (colonne étroite du
+  // tableau de l'historique, où il doit pouvoir rétrécir).
+  className?: string;
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -50,8 +55,8 @@ export function GroupSelectField({
   return (
     <select
       value={value}
-      disabled={isPending}
-      className="border-input bg-background h-9 rounded-md border px-3 text-sm disabled:opacity-60"
+      disabled={disabled || isPending}
+      className={cn("border-input bg-background h-9 rounded-md border px-3 text-sm disabled:opacity-60", className)}
       onChange={(e) => {
         const v = e.currentTarget.value;
         setValue(v);

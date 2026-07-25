@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS transactions (
   group_id INTEGER REFERENCES groups(id) ON DELETE SET NULL,
   line_id INTEGER REFERENCES group_lines(id) ON DELETE SET NULL,
   excluded INTEGER NOT NULL DEFAULT 0,  -- 1 = forcé « non catégorisé »
+  ignored INTEGER NOT NULL DEFAULT 0,   -- 1 = non comptabilisée (invisible pour tout calcul)
   manual INTEGER NOT NULL DEFAULT 0,    -- 1 = saisie manuelle
   income_kind TEXT,                     -- 'principal' | 'supplementary' | NULL
   note TEXT                             -- commentaire ; libellé manuel après fusion

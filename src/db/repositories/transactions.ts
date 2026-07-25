@@ -20,6 +20,7 @@ export type TxnView = {
   groupId: number | null;
   lineId: number | null;
   excluded: boolean;
+  ignored: boolean;
   manual: boolean;
   incomeKind: "principal" | "supplementary" | null;
   note: string | null;
@@ -35,13 +36,17 @@ export function upsertTransaction(db: Database.Database, t: TxnRow): number {
   return result.changes;
 }
 
+// Les transactions non comptabilisées sont masquées par défaut : tous les écrans
+// de calcul (tableau de bord, prévisionnel, historique) les ignorent ainsi sans
+// rien avoir à filtrer. Seul l'écran Transactions passe includeIgnored pour
+// pouvoir les afficher et les réactiver.
 export function listTransactions(
   db: Database.Database,
-  filter?: { month?: string },
+  filter?: { month?: string; includeIgnored?: boolean },
 ): TxnView[] {
   let sql =
     `SELECT t.id, t.date, t.amount, t.label, t.group_id AS groupId, t.line_id AS lineId, t.excluded AS excluded,
-            t.manual AS manual, t.income_kind AS incomeKind, t.note AS note,
+            t.ignored AS ignored, t.manual AS manual, t.income_kind AS incomeKind, t.note AS note,
             t.account_id AS accountId,
             COALESCE(COALESCE(a.custom_name, a.name) || ' ' || a.iban_masked, COALESCE(a.custom_name, a.name)) AS accountLabel
      FROM transactions t
@@ -52,13 +57,16 @@ export function listTransactions(
     clauses.push("substr(t.date,1,7) = @month");
     params.month = filter.month;
   }
+  if (!filter?.includeIgnored) clauses.push("t.ignored = 0");
   if (clauses.length) sql += " WHERE " + clauses.join(" AND ");
   sql += " ORDER BY t.date DESC";
   const stmt = db.prepare(sql);
-  const rows = (clauses.length ? stmt.all(params) : stmt.all()) as (Omit<TxnView, "excluded" | "manual" | "incomeKind"> & { excluded: number; manual: number; incomeKind: string | null })[];
+  // better-sqlite3 refuse un objet de paramètres quand la requête n'en attend aucun.
+  const rows = (Object.keys(params).length ? stmt.all(params) : stmt.all()) as (Omit<TxnView, "excluded" | "ignored" | "manual" | "incomeKind"> & { excluded: number; ignored: number; manual: number; incomeKind: string | null })[];
   return rows.map((r) => ({
     ...r,
     excluded: r.excluded === 1,
+    ignored: r.ignored === 1,
     manual: r.manual === 1,
     incomeKind: r.incomeKind === "principal" || r.incomeKind === "supplementary" ? r.incomeKind : null,
   }));
@@ -81,6 +89,12 @@ export function setTransactionGroup(
     excluded ? 1 : 0,
     id,
   );
+}
+
+// Marque une transaction comme non comptabilisée (ou la remet dans les calculs).
+// Son rattachement de groupe est conservé : la réactiver la remet où elle était.
+export function setTransactionIgnored(db: Database.Database, id: string, ignored: boolean): void {
+  db.prepare("UPDATE transactions SET ignored = ? WHERE id = ?").run(ignored ? 1 : 0, id);
 }
 
 export type ManualTxnInput = {

@@ -2,6 +2,7 @@
 import { db } from "../../db/index";
 import {
   setTransactionGroup,
+  setTransactionIgnored,
   insertManualTransaction,
   updateManualTransaction,
   deleteManualTransaction,
@@ -26,6 +27,12 @@ export async function setGroup(
   const gid = groupId !== null && Number.isFinite(groupId) ? groupId : null;
   const lid = lineId !== null && Number.isFinite(lineId) ? lineId : null;
   setTransactionGroup(db(), txnId, gid, false, lid);
+  revalidateAll();
+}
+
+// Retire (ou remet) une transaction de tous les calculs.
+export async function setIgnored(txnId: string, ignored: boolean) {
+  setTransactionIgnored(db(), txnId, ignored);
   revalidateAll();
 }
 
