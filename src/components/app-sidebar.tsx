@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, ArrowLeftRight, TrendingUp, History, Settings } from "lucide-react";
+import { LayoutDashboard, ArrowLeftRight, History, Settings } from "lucide-react";
 import {
   Sidebar,
   SidebarHeader,
@@ -18,7 +18,6 @@ import {
 const NAV = [
   { href: "/", label: "Tableau de bord", icon: LayoutDashboard },
   { href: "/transactions", label: "Transactions", icon: ArrowLeftRight },
-  { href: "/previsionnel", label: "Prévisionnel", icon: TrendingUp },
   { href: "/historique", label: "Historique", icon: History },
 ];
 

@@ -18,7 +18,6 @@ export async function renameAccount(formData: FormData) {
   setAccountAlias(db(), id, aliasRaw === "" ? null : aliasRaw);
   revalidatePath("/settings");
   revalidatePath("/");
-  revalidatePath("/previsionnel");
   revalidatePath("/transactions");
 }
 
@@ -28,6 +27,5 @@ export async function deleteAccountAction(formData: FormData) {
   deleteAccount(db(), id);
   revalidatePath("/settings");
   revalidatePath("/");
-  revalidatePath("/previsionnel");
   revalidatePath("/transactions");
 }

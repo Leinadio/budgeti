@@ -14,7 +14,6 @@ import { revalidatePath } from "next/cache";
 
 function revalidateAll() {
   revalidatePath("/transactions");
-  revalidatePath("/previsionnel");
   revalidatePath("/historique");
   revalidatePath("/");
 }

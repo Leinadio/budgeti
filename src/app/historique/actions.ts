@@ -37,7 +37,6 @@ export async function decideOverspend(
     setBudgetAmount(database, groupId, addMonthsKey(currentMonth, 1), newBudget);
   }
   revalidatePath("/historique");
-  revalidatePath("/previsionnel");
   revalidatePath("/");
 }
 
@@ -59,7 +58,6 @@ export async function undoOverspendDecision(
   }
   deleteOverspendDecision(database, accountId, groupId, month);
   revalidatePath("/historique");
-  revalidatePath("/previsionnel");
   revalidatePath("/");
 }
 
@@ -87,7 +85,6 @@ export async function createGroup(input: {
     insertRecurringGroup(database, accountId, trimmed, "out", null, startMonth, endMonth);
   }
   revalidatePath("/historique");
-  revalidatePath("/previsionnel");
   revalidatePath("/");
 }
 
@@ -96,7 +93,6 @@ export async function createGroup(input: {
 // Tableau de bord.
 async function revalidate() {
   revalidatePath("/historique");
-  revalidatePath("/previsionnel");
   revalidatePath("/transactions");
   revalidatePath("/");
 }
@@ -180,7 +176,6 @@ export async function setUncatProvision(
     setBudgetAmount(database, 0, month, amount);
   }
   revalidatePath("/historique");
-  revalidatePath("/previsionnel");
   revalidatePath("/");
 }
 
