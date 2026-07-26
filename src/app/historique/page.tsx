@@ -1,6 +1,6 @@
 import { db } from "../../db/index";
 import { listAccounts } from "../../db/repositories/accounts";
-import { listTransactions, type TxnView } from "../../db/repositories/transactions";
+import { listTransactions, sumIgnoredByAccount, type TxnView } from "../../db/repositories/transactions";
 import { listGroups } from "../../db/repositories/groups";
 import { listBudgetAmounts } from "../../db/repositories/budget-amounts";
 import { listOverspendDecisions } from "../../db/repositories/overspend-decisions";
@@ -13,7 +13,7 @@ import {
 import { computeForecast, type Group, type Txn } from "../../lib/forecast";
 import { ForecastDetailSheet } from "@/components/forecast-detail-sheet";
 import { monthKey } from "../../lib/money";
-import { accountLabel } from "../../lib/account";
+import { accountLabel, effectiveBalance } from "../../lib/account";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { HistoryWithDetail } from "@/components/history-with-detail";
 import { MonthRangePicker } from "@/components/month-range-picker";
@@ -50,6 +50,10 @@ export default async function HistoriquePage({
   const allIgnored: Txn[] = listTransactions(database, { includeIgnored: true })
     .filter((t) => t.ignored)
     .map(toTxn);
+  // À retrancher du solde bancaire avant tout calcul : sans ça, la chaîne de soldes
+  // rembobine des mouvements d'où ces opérations sont absentes, en partant d'un solde
+  // qui les contient — et se retrouve décalée de leur montant.
+  const ignoredByAccount = sumIgnoredByAccount(database);
 
   if (accounts.length === 0) {
     return (
@@ -100,14 +104,17 @@ export default async function HistoriquePage({
           const calcFrom = from <= currentMonth ? from : currentMonth;
           const calcMonths = monthRange(calcFrom, to);
           const k = calcMonths.length - months.length;
-          const forecast = computeForecast(a.id, a.balance, groups, txns, currentMonth);
+          // Le solde de la banque privé de ce qui est hors calcul : c'est LUI qui
+          // ancre tout ce qui suit (prévision, estimé de fin de mois, chaîne de soldes).
+          const balance = effectiveBalance(a.balance, ignoredByAccount[a.id]);
+          const forecast = computeForecast(a.id, balance, groups, txns, currentMonth);
           const sectionsFull = computeHistory(groups, txns, calcMonths, currentMonth, datedBudgets);
           // Estimé de fin du mois courant aligné sur le tableau (Balances vertes +
           // rémunérations restant à recevoir) : c'est lui qui ancre les chaînes des
           // mois futurs.
           const estimateValue =
-            computeTableEstimate(sectionsFull, calcMonths, currentMonth, a.balance)?.value ?? forecast.currentEstimate;
-          const soldeFull = computeSolde(sectionsFull, calcMonths, currentMonth, a.balance, estimateValue);
+            computeTableEstimate(sectionsFull, calcMonths, currentMonth, balance)?.value ?? forecast.currentEstimate;
+          const soldeFull = computeSolde(sectionsFull, calcMonths, currentMonth, balance, estimateValue);
           const decisions = listOverspendDecisions(database, a.id);
           const overspends = computeOverspends(groups, txns, currentMonth, decisions, datedBudgets);
           const currentBudgets = Object.fromEntries(groups.map((g) => [g.id, budgetInForce(g, currentMonth, datedBudgets)]));

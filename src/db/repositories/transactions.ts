@@ -36,6 +36,21 @@ export function upsertTransaction(db: Database.Database, t: TxnRow): number {
   return result.changes;
 }
 
+// Somme des montants non comptabilisés, par compte. Le solde renvoyé par la banque
+// les contient forcément : ce sont de vraies opérations, elles ont bien été encaissées.
+// Il faut donc les retrancher AVANT d'ancrer le moindre calcul, sinon les soldes
+// reconstruits sont décalés d'autant — la chaîne rembobine des mouvements dont ces
+// opérations sont absentes, à partir d'un solde qui, lui, les contient.
+export function sumIgnoredByAccount(db: Database.Database): Record<string, number> {
+  const rows = db
+    .prepare(
+      `SELECT account_id AS accountId, COALESCE(SUM(amount), 0) AS total
+       FROM transactions WHERE ignored = 1 GROUP BY account_id`,
+    )
+    .all() as { accountId: string; total: number }[];
+  return Object.fromEntries(rows.map((r) => [r.accountId, r.total]));
+}
+
 // Les transactions non comptabilisées sont masquées par défaut : tous les écrans
 // de calcul (tableau de bord, prévisionnel, historique) les ignorent ainsi sans
 // rien avoir à filtrer. Seul l'écran Transactions passe includeIgnored pour

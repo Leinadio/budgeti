@@ -1,10 +1,10 @@
 import { db } from "../../db/index";
 import { listAccounts } from "../../db/repositories/accounts";
-import { listTransactions } from "../../db/repositories/transactions";
+import { listTransactions, sumIgnoredByAccount } from "../../db/repositories/transactions";
 import { listGroups } from "../../db/repositories/groups";
 import { computeForecast, type Group, type GroupView, type Txn } from "../../lib/forecast";
 import { formatEur, monthKey } from "../../lib/money";
-import { accountLabel } from "../../lib/account";
+import { accountLabel, effectiveBalance } from "../../lib/account";
 import { cn } from "@/lib/utils";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -80,6 +80,9 @@ export default function PrevisionnelPage() {
   const database = db();
   const month = monthKey(new Date().toISOString().slice(0, 10));
   const accounts = listAccounts(database);
+  // Le solde de la banque contient les opérations mises hors calcul : on les
+  // retranche avant d'ancrer la prévision (cf. effectiveBalance).
+  const ignoredByAccount = sumIgnoredByAccount(database);
   const allGroups = listGroups(database);
   const allTxns: Txn[] = listTransactions(database).map((t) => ({
     id: t.id,
@@ -112,7 +115,7 @@ export default function PrevisionnelPage() {
       {accounts.map((a) => {
         const groups = allGroups.filter((g) => g.accountId === a.id) as Group[];
         const txns = allTxns.filter((t) => t.accountId === a.id);
-        const f = computeForecast(a.id, a.balance, groups, txns, month);
+        const f = computeForecast(a.id, effectiveBalance(a.balance, ignoredByAccount[a.id]), groups, txns, month);
         return (
           <TabsContent key={a.id} value={a.id} className="flex flex-col gap-6">
             <ForecastSummary label={accountLabel(a)} forecast={f} />

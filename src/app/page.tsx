@@ -1,10 +1,10 @@
 import { db } from "../db/index";
-import { totalBalance, listAccounts } from "../db/repositories/accounts";
-import { listTransactions } from "../db/repositories/transactions";
+import { listAccounts } from "../db/repositories/accounts";
+import { listTransactions, sumIgnoredByAccount } from "../db/repositories/transactions";
 import { listGroups } from "../db/repositories/groups";
 import { resolveOwnership } from "../lib/ownership";
 import { formatEur, monthKey } from "../lib/money";
-import { accountLabel } from "../lib/account";
+import { accountLabel, effectiveBalance } from "../lib/account";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 
@@ -13,8 +13,15 @@ export const dynamic = "force-dynamic";
 export default function Dashboard() {
   const database = db();
   const month = monthKey(new Date().toISOString().slice(0, 10));
-  const balance = totalBalance(database);
   const accounts = listAccounts(database);
+  // Une transaction non comptabilisée doit se comporter comme si elle n'existait
+  // pas, y compris dans le solde affiché : le solde de la banque la contient, on la
+  // retranche donc partout, carte du compte comme total.
+  const ignoredByAccount = sumIgnoredByAccount(database);
+  const balance = accounts.reduce(
+    (s, a) => s + effectiveBalance(a.balance, ignoredByAccount[a.id]),
+    0,
+  );
   const allTxns = listTransactions(database);
   const groups = listGroups(database);
   const ownable = groups.map((g) => ({
@@ -53,7 +60,9 @@ export default function Dashboard() {
           <Card key={a.id}>
             <CardHeader className="flex-row items-baseline justify-between">
               <CardTitle>{accountLabel(a)}</CardTitle>
-              <span className="text-xl font-bold">{formatEur(a.balance)}</span>
+              <span className="text-xl font-bold">
+                {formatEur(effectiveBalance(a.balance, ignoredByAccount[a.id]))}
+              </span>
             </CardHeader>
             <CardContent>
               <Table>

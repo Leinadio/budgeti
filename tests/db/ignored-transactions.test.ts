@@ -7,6 +7,7 @@ import {
   listTransactions,
   setTransactionIgnored,
   setTransactionGroup,
+  sumIgnoredByAccount,
   upsertTransaction,
 } from "../../src/db/repositories/transactions";
 import { insertEnvelopeGroup } from "../../src/db/repositories/groups";
@@ -69,4 +70,23 @@ test("une transaction non comptabilisée garde son rattachement de groupe", () =
   setTransactionIgnored(db, "t2", true);
   setTransactionIgnored(db, "t2", false);
   expect(listTransactions(db).find((t) => t.id === "t2")!.groupId).toBe(gid);
+});
+
+test("sumIgnoredByAccount totalise les montants hors calcul par compte, et rien d'autre", () => {
+  const db = seed();
+  upsertAccount(db, { id: "a2", name: "CIC 2", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
+  upsertTransaction(db, { id: "t3", account_id: "a2", date: "2026-07-03", amount: 3800, label: "VIR DGFIP", category_id: null });
+  upsertTransaction(db, { id: "t4", account_id: "a2", date: "2026-07-04", amount: -25, label: "PEAGE", category_id: null });
+
+  // Aucune transaction hors calcul : aucun compte n'apparaît.
+  expect(sumIgnoredByAccount(db)).toEqual({});
+
+  // Un encaissement et une sortie hors calcul, sur deux comptes différents.
+  setTransactionIgnored(db, "t3", true);
+  setTransactionIgnored(db, "t1", true);
+  expect(sumIgnoredByAccount(db)).toEqual({ a1: -30, a2: 3800 });
+
+  // Remise dans les calculs : le compte disparaît du total.
+  setTransactionIgnored(db, "t1", false);
+  expect(sumIgnoredByAccount(db)).toEqual({ a2: 3800 });
 });
