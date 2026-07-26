@@ -56,6 +56,13 @@ function colOf(kind: "depense" | "recu" | "budget" | "net", c: MonthCell): Col {
   return kind === "depense" ? "depense" : kind === "recu" ? "recu" : kind === "budget" ? "budget" : netCol(c);
 }
 
+// « 2026-07 » → « Juillet ». L'année est affichée à part dans l'en-tête, en
+// chasse fixe et en retrait, pour que le nom du mois porte seul le titre.
+function monthName(ym: string): string {
+  const s = monthLabel(ym);
+  return s.replace(/\s+\d{4}$/, "");
+}
+
 const NUM = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fmt = (n: number) => NUM.format(Math.abs(n) < 0.005 ? 0 : n).replace(/[  ]/g, " ");
 
@@ -79,14 +86,46 @@ function soldeColor(v: number | null | undefined, delta?: number | null): string
   return v < -0.005 ? "text-red-600" : undefined;
 }
 
-// Pastille de décision sur une Balance en dépassement : ambre tant que rien n'est
-// tranché, gris pour un dépassement « exceptionnel », bleu pour un dépassement
-// « permanent » (budget relevé). Même style que le point ambre existant sur le nom
-// des non catégorisés (dépassement à traiter).
-function OverspendDot({ decision }: { decision: "exceptional" | "permanent" | null | undefined }) {
-  const color =
-    decision === "permanent" ? "bg-blue-500" : decision === "exceptional" ? "bg-muted-foreground/60" : "bg-amber-500";
-  return <span className={cn("ml-1 inline-block size-2 shrink-0 rounded-full", color)} />;
+// Étiquette de décision sur une Balance en dépassement. L'état est dit en toutes
+// lettres ; la couleur ne fait que renforcer le mot, elle ne le remplace pas.
+// L'ambre reprend exactement celui des badges de dépassement sous l'en-tête de mois :
+// même information, même couleur, où qu'elle apparaisse.
+const OVERSPEND_TAG: Record<
+  "pending" | "exceptional" | "permanent",
+  { label: string; title: string; cls: string }
+> = {
+  pending: {
+    label: "à trancher",
+    title: "Dépassement à trancher : décide s'il est exceptionnel, ou s'il faut relever le budget.",
+    cls: "border-amber-300 bg-amber-50 text-amber-800 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200",
+  },
+  exceptional: {
+    label: "exceptionnel",
+    title: "Dépassement classé exceptionnel : le budget n'a pas été modifié.",
+    cls: "border-border bg-muted text-muted-foreground",
+  },
+  permanent: {
+    label: "permanent",
+    title: "Dépassement classé permanent : le budget a été relevé à partir de ce mois.",
+    cls: "border-blue-300 bg-blue-50 text-blue-800 dark:border-blue-800 dark:bg-blue-950 dark:text-blue-200",
+  },
+};
+
+// Posée SOUS le montant par son appelant : la colonne garde la largeur du nombre,
+// seule la hauteur de la ligne augmente, et uniquement là où il y a un dépassement.
+function OverspendTag({ decision }: { decision: "exceptional" | "permanent" | null | undefined }) {
+  const t = OVERSPEND_TAG[decision ?? "pending"];
+  return (
+    <span
+      title={t.title}
+      className={cn(
+        "inline-block rounded-[3px] border px-1 py-px font-sans text-[9px] leading-[1.5] font-semibold tracking-[0.06em] uppercase",
+        t.cls,
+      )}
+    >
+      {t.label}
+    </span>
+  );
 }
 
 // Largeur fixe de la première colonne. Un conteneur interne à largeur px fixe
@@ -195,6 +234,13 @@ const SOLDE_TINTS: Partial<Record<ColKey, string>> = {
 // la distingue de la bande grise des soldes. Posée sur CHAQUE cellule Balance (via
 // renderCols), pas sur le <colgroup>, pour rester visible même sous un fond de
 // ligne opaque (totaux gris, teinte entrant/sortant).
+// Séparation entre deux mois : une bande de 12 px peinte à la couleur du fond,
+// posée en bordure gauche de la première colonne de chaque mois. C'est un vrai
+// espace, pas un trait — les blocs de mois se détachent les uns des autres —, et
+// ça évite d'insérer une colonne de séparation dans toute la structure du tableau
+// (colgroup, deux rangées d'en-tête, chaque constructeur de ligne, totalCols).
+const MONTH_GAP = "border-l-[12px] border-l-background";
+
 const BALANCE_TINT = "bg-[color-mix(in_oklab,oklch(0.75_0.16_80)_16%,var(--background))]";
 
 // Teinte de fond du bloc sortant (Récurrents, Enveloppes) : très légère, juste de
@@ -243,14 +289,14 @@ function renderCols(cols: ColKey[], slots: Record<ColKey, (b: boolean) => React.
 // Cellule vide (colonne non renseignée pour cette ligne), avec bordure de mois si
 // c'est la première colonne du mois.
 function blankCol(key: string, border: boolean) {
-  return <TableCell key={key} className={cn(border && "border-l")} />;
+  return <TableCell key={key} className={cn(border && MONTH_GAP)} />;
 }
 
 // Cellule de solde « plan » (prévu / si dépassement) : affichage simple, non
 // cliquable, rouge si négatif ; vide si la valeur est nulle (mois avant le courant).
 function plannedSoldeCol(key: string, val: number | null | undefined, border: boolean) {
   return (
-    <TableCell key={key} className={cn(border && "border-l", "text-right tabular-nums", soldeColor(val))}>
+    <TableCell key={key} className={cn(border && MONTH_GAP, "text-right tabular-nums", soldeColor(val))}>
       {val != null ? fmt(val) : ""}
     </TableCell>
   );
@@ -273,10 +319,13 @@ function blankSlots(): Record<ColKey, (border: boolean) => React.ReactNode> {
 
 // Boîte à largeur fixe placée dans la cellule de gauche. Le retrait (indent) est
 // appliqué à l'intérieur, donc toutes les cellules gardent la même largeur.
+// Filet à droite de la colonne figée : quand le tableau défile horizontalement,
+// les mois passent DERRIÈRE cette colonne. Sans séparation, les libellés et les
+// chiffres semblent se toucher.
 function FirstColBox({ children, indent = 0 }: { children: React.ReactNode; indent?: number }) {
   return (
     <div
-      className="flex items-center gap-1.5 overflow-hidden py-2 pr-2"
+      className="border-border/60 flex h-full items-center gap-1.5 overflow-hidden border-r py-2 pr-2 font-sans"
       style={{ width: COL1_W, paddingLeft: `${0.5 + indent * 1.25}rem` }}
     >
       {children}
@@ -350,7 +399,7 @@ function plannedSoldeCell(
   return (
     <CellAmount
       key={key}
-      className={cn(border && "border-l", "text-right tabular-nums", soldeColor(val, delta))}
+      className={cn(border && MONTH_GAP, "text-right tabular-nums", soldeColor(val, delta))}
       detail={val != null ? detail : null}
       onSelect={onSelect}
       cellKey={ck}
@@ -701,41 +750,48 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
         const slots: Record<ColKey, (border: boolean) => React.ReactNode> = {
           budgetRem: (b) =>
             dead ? blankCol("budgetRem", b) : (
-              <CellAmount key="budgetRem" className={cn(b && "border-l", "text-right tabular-nums")} detail={budgetRemDetail} onSelect={onSelect} cellKey={ck("revenus")} selCellKey={selCellKey}>
+              <CellAmount key="budgetRem" className={cn(b && MONTH_GAP, "text-right tabular-nums")} detail={budgetRemDetail} onSelect={onSelect} cellKey={ck("revenus")} selCellKey={selCellKey}>
                 {budgetRemVal != null ? fmt(budgetRemVal) : ""}
               </CellAmount>
             ),
           budgetDep: (b) =>
             dead ? blankCol("budgetDep", b) : (
-              <CellAmount key="budgetDep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} detail={budgetDepDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
+              <CellAmount key="budgetDep" className={cn(b && MONTH_GAP, "text-right tabular-nums text-muted-foreground")} detail={budgetDepDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
                 {budgetDepVal != null ? fmt(budgetDepVal) : ""}
               </CellAmount>
             ),
           dep: (b) =>
             dead ? blankCol("dep", b) : (
-              <CellAmount key="dep" className={cn(b && "border-l", "text-right tabular-nums")} detail={depDetail} onSelect={onSelect} cellKey={ck("depense")} selCellKey={selCellKey}>
+              <CellAmount key="dep" className={cn(b && MONTH_GAP, "text-right tabular-nums")} detail={depDetail} onSelect={onSelect} cellKey={ck("depense")} selCellKey={selCellKey}>
                 {mode === "in" ? "" : fmt(c.depense)}
               </CellAmount>
             ),
           recu: (b) =>
             dead ? blankCol("recu", b) : (
-              <CellAmount key="recu" className={cn(b && "border-l", "text-right tabular-nums")} detail={recuDetail} onSelect={onSelect} cellKey={ck("recu")} selCellKey={selCellKey}>
+              <CellAmount key="recu" className={cn(b && MONTH_GAP, "text-right tabular-nums")} detail={recuDetail} onSelect={onSelect} cellKey={ck("recu")} selCellKey={selCellKey}>
                 {mode === "out" ? "" : fmt(c.recu)}
               </CellAmount>
             ),
           reste: (b) =>
             dead ? blankCol("reste", b) : (
-              <CellAmount key="reste" className={cn(b && "border-l", "text-right tabular-nums", mode !== "in" && resteColor(c.balance))} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
+              <CellAmount key="reste" className={cn(b && MONTH_GAP, "text-right tabular-nums", mode !== "in" && resteColor(c.balance))} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
                 {mode === "in" ? "" : (
                   <>
                     {fmt(c.balance)}
-                    {isOverspendDecision && <OverspendDot decision={decisionByKey?.get(`${r!.id}::${month}`)} />}
+                    {/* Conteneur flex : il force le retour à la ligne sous le montant et,
+                        parce qu'il ouvre un contexte de formatage indépendant, il empêche
+                        le soulignement de survol de la case de déborder sur l'étiquette. */}
+                    {isOverspendDecision && (
+                      <span className="mt-0.5 flex justify-end">
+                        <OverspendTag decision={decisionByKey?.get(`${r!.id}::${month}`)} />
+                      </span>
+                    )}
                   </>
                 )}
               </CellAmount>
             ),
           soldeReel: (b) => (
-            <CellAmount key="soldeReel" className={cn(b && "border-l", "text-right tabular-nums", soldeColor(s, net))} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
+            <CellAmount key="soldeReel" className={cn(b && MONTH_GAP, "text-right tabular-nums", soldeColor(s, net))} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
               {s != null ? soldeWithSign(s, net) : ""}
             </CellAmount>
           ),
@@ -943,24 +999,24 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
 
         const slots: Record<ColKey, (border: boolean) => React.ReactNode> = {
           budgetRem: (b) => (
-            <TableCell key="budgetRem" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}></TableCell>
+            <TableCell key="budgetRem" className={cn(b && MONTH_GAP, "text-right tabular-nums text-muted-foreground")}></TableCell>
           ),
           // Les non catégorisés côté reçus n'ont pas de budget : « — ». Côté dépenses,
           // la case porte la provision (montant daté du groupe 0), éditable comme le
           // budget d'une enveloppe.
           budgetDep: (b) =>
             uncatIn ? (
-              <TableCell key="budgetDep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}></TableCell>
+              <TableCell key="budgetDep" className={cn(b && MONTH_GAP, "text-right tabular-nums text-muted-foreground")}></TableCell>
             ) : (
-              <CellAmount key="budgetDep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} detail={isUncat ? provisionDetail : budgetDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
+              <CellAmount key="budgetDep" className={cn(b && MONTH_GAP, "text-right tabular-nums text-muted-foreground")} detail={isUncat ? provisionDetail : budgetDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
                 {fmt(c.budgeted)}
               </CellAmount>
             ),
           dep: (b) =>
             uncatIn ? (
-              <TableCell key="dep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}></TableCell>
+              <TableCell key="dep" className={cn(b && MONTH_GAP, "text-right tabular-nums text-muted-foreground")}></TableCell>
             ) : (
-              <CellAmount key="dep" className={cn(b && "border-l", "text-right tabular-nums")} detail={depDetail} onSelect={onSelect} cellKey={ck("depense")} selCellKey={selCellKey}>
+              <CellAmount key="dep" className={cn(b && MONTH_GAP, "text-right tabular-nums")} detail={depDetail} onSelect={onSelect} cellKey={ck("depense")} selCellKey={selCellKey}>
                 {fmt(c.depense)}
               </CellAmount>
             ),
@@ -968,26 +1024,30 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
           // (Récurrents / Enveloppes / non catégorisés côté dépenses) affichent « — ».
           recu: (b) =>
             uncatIn ? (
-              <CellAmount key="recu" className={cn(b && "border-l", "text-right tabular-nums")} detail={recuDetail} onSelect={onSelect} cellKey={ck("recu")} selCellKey={selCellKey}>
+              <CellAmount key="recu" className={cn(b && MONTH_GAP, "text-right tabular-nums")} detail={recuDetail} onSelect={onSelect} cellKey={ck("recu")} selCellKey={selCellKey}>
                 {fmt(c.recu)}
               </CellAmount>
             ) : (
-              <TableCell key="recu" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}></TableCell>
+              <TableCell key="recu" className={cn(b && MONTH_GAP, "text-right tabular-nums text-muted-foreground")}></TableCell>
             ),
           // Balance : affichée seulement pour les non catégorisés côté dépenses (les
           // reçus n'ont pas de budget à confronter ; Récurrents / Enveloppes ont leurs
           // lignes « Balance ... » dédiées).
           reste: (b) =>
             isUncat && !uncatIn ? (
-              <CellAmount key="reste" className={cn(b && "border-l", "text-right tabular-nums", resteColor(resteVal))} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
+              <CellAmount key="reste" className={cn(b && MONTH_GAP, "text-right tabular-nums", resteColor(resteVal))} detail={resteDetail} onSelect={onSelect} cellKey={ck("reste")} selCellKey={selCellKey}>
                 {fmt(resteVal)}
-                {isOverspendDecision && <OverspendDot decision={decisionByKey?.get(`0::${month}`)} />}
+                {isOverspendDecision && (
+                  <span className="mt-0.5 flex justify-end">
+                    <OverspendTag decision={decisionByKey?.get(`0::${month}`)} />
+                  </span>
+                )}
               </CellAmount>
             ) : (
               blankCol("reste", b)
             ),
           soldeReel: (b) => (
-            <CellAmount key="soldeReel" className={cn(b && "border-l", "text-right tabular-nums", soldeColor(s, net))} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
+            <CellAmount key="soldeReel" className={cn(b && MONTH_GAP, "text-right tabular-nums", soldeColor(s, net))} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
               {s != null ? soldeWithSign(s, net) : ""}
             </CellAmount>
           ),
@@ -1045,18 +1105,18 @@ function IncomeTotalCells({ sec, months, currentMonth, onSelect, selCellKey }: {
 
         const slots: Record<ColKey, (border: boolean) => React.ReactNode> = {
           budgetRem: (b) => (
-            <CellAmount key="budgetRem" className={cn(b && "border-l", "text-right tabular-nums")} detail={budgetRemDetail} onSelect={onSelect} cellKey={cellKey(sectionRow("income"), "revenus", i)} selCellKey={selCellKey}>
+            <CellAmount key="budgetRem" className={cn(b && MONTH_GAP, "text-right tabular-nums")} detail={budgetRemDetail} onSelect={onSelect} cellKey={cellKey(sectionRow("income"), "revenus", i)} selCellKey={selCellKey}>
               {fmt(budgetRemTotal)}
             </CellAmount>
           ),
           budgetDep: (b) => (
-            <TableCell key="budgetDep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}></TableCell>
+            <TableCell key="budgetDep" className={cn(b && MONTH_GAP, "text-right tabular-nums text-muted-foreground")}></TableCell>
           ),
           dep: (b) => (
-            <TableCell key="dep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}></TableCell>
+            <TableCell key="dep" className={cn(b && MONTH_GAP, "text-right tabular-nums text-muted-foreground")}></TableCell>
           ),
           recu: (b) => (
-            <CellAmount key="recu" className={cn(b && "border-l", "text-right tabular-nums")} detail={recuDetail} onSelect={onSelect} cellKey={cellKey(sectionRow("income"), "recu", i)} selCellKey={selCellKey}>
+            <CellAmount key="recu" className={cn(b && MONTH_GAP, "text-right tabular-nums")} detail={recuDetail} onSelect={onSelect} cellKey={cellKey(sectionRow("income"), "recu", i)} selCellKey={selCellKey}>
               {fmt(c.recu)}
             </CellAmount>
           ),
@@ -1226,28 +1286,28 @@ function GrandTotalsCells({ sections, grand, solde, planned, months, currentMont
 
         const slots: Record<ColKey, (border: boolean) => React.ReactNode> = {
           budgetRem: (b) => (
-            <CellAmount key="budgetRem" className={cn(b && "border-l", "text-right tabular-nums")} detail={budgetRemDetail} onSelect={onSelect} cellKey={ck("revenus")} selCellKey={selCellKey}>
+            <CellAmount key="budgetRem" className={cn(b && MONTH_GAP, "text-right tabular-nums")} detail={budgetRemDetail} onSelect={onSelect} cellKey={ck("revenus")} selCellKey={selCellKey}>
               {fmt(budgetRemTotal)}
             </CellAmount>
           ),
           budgetDep: (b) => (
-            <CellAmount key="budgetDep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} detail={expenseBudgetDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
+            <CellAmount key="budgetDep" className={cn(b && MONTH_GAP, "text-right tabular-nums text-muted-foreground")} detail={expenseBudgetDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
               {fmt(expenseBudget)}
             </CellAmount>
           ),
           dep: (b) => (
-            <CellAmount key="dep" className={cn(b && "border-l", "text-right tabular-nums")} detail={depDetail} onSelect={onSelect} cellKey={ck("depense")} selCellKey={selCellKey}>
+            <CellAmount key="dep" className={cn(b && MONTH_GAP, "text-right tabular-nums")} detail={depDetail} onSelect={onSelect} cellKey={ck("depense")} selCellKey={selCellKey}>
               {fmt(c.depense)}
             </CellAmount>
           ),
           recu: (b) => (
-            <CellAmount key="recu" className={cn(b && "border-l", "text-right tabular-nums")} detail={recuDetail} onSelect={onSelect} cellKey={ck("recu")} selCellKey={selCellKey}>
+            <CellAmount key="recu" className={cn(b && MONTH_GAP, "text-right tabular-nums")} detail={recuDetail} onSelect={onSelect} cellKey={ck("recu")} selCellKey={selCellKey}>
               {fmt(c.recu)}
             </CellAmount>
           ),
           reste: (b) => blankCol("reste", b),
           soldeReel: (b) => (
-            <CellAmount key="soldeReel" className={cn(b && "border-l", "text-right tabular-nums", soldeColor(solde.closings[i]))} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
+            <CellAmount key="soldeReel" className={cn(b && MONTH_GAP, "text-right tabular-nums", soldeColor(solde.closings[i]))} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
               {fmt(solde.closings[i])}
             </CellAmount>
           ),
@@ -1288,19 +1348,19 @@ function TxnCells({ txn, months, currentMonth, onSelect, selCellKey }: { txn: Hi
           budgetDep: (b) => blankCol("budgetDep", b),
           dep: (b) =>
             here && isOut ? (
-              <CellAmount key="dep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} detail={detail} onSelect={onSelect} cellKey={ck} selCellKey={selCellKey}>
+              <CellAmount key="dep" className={cn(b && MONTH_GAP, "text-right tabular-nums text-muted-foreground")} detail={detail} onSelect={onSelect} cellKey={ck} selCellKey={selCellKey}>
                 {val}
               </CellAmount>
             ) : (
-              <TableCell key="dep" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} />
+              <TableCell key="dep" className={cn(b && MONTH_GAP, "text-right tabular-nums text-muted-foreground")} />
             ),
           recu: (b) =>
             here && !isOut ? (
-              <CellAmount key="recu" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} detail={detail} onSelect={onSelect} cellKey={ck} selCellKey={selCellKey}>
+              <CellAmount key="recu" className={cn(b && MONTH_GAP, "text-right tabular-nums text-muted-foreground")} detail={detail} onSelect={onSelect} cellKey={ck} selCellKey={selCellKey}>
                 {val}
               </CellAmount>
             ) : (
-              <TableCell key="recu" className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")} />
+              <TableCell key="recu" className={cn(b && MONTH_GAP, "text-right tabular-nums text-muted-foreground")} />
             ),
           reste: (b) => blankCol("reste", b),
           soldeReel: (b) => blankCol("soldeReel", b),
@@ -1358,11 +1418,13 @@ function TxnRow({ txn, months, currentMonth, groups, indent, onSelect, selCellKe
     <TableRow className="align-top text-sm text-muted-foreground">
       <TableCell className="bg-background sticky left-0 z-10 p-0">
         <div
-          className="flex flex-col gap-1 py-2 pr-2"
+          className="border-border/60 flex h-full flex-col gap-1 border-r py-2 pr-2 font-sans"
           style={{ width: COL1_W, paddingLeft: `${0.5 + indent * 1.25}rem` }}
         >
           <div className="flex items-center gap-1.5 overflow-hidden">
-            <span className="shrink-0 tabular-nums">{txn.date}</span>
+            {/* La date reste en chasse fixe : c'est une donnée, elle s'aligne
+                d'une ligne à l'autre comme les montants. */}
+            <span className="text-muted-foreground/80 shrink-0 font-mono text-xs">{txn.date}</span>
             <TruncatedText text={txn.label} className="min-w-0 flex-1" />
           </div>
           {ignored ? (
@@ -1861,7 +1923,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
             { subtitle, result: c.balance },
           );
           const resteCell = (b: boolean) => (
-            <CellAmount key="reste" className={cn(b && "border-l", "text-right tabular-nums", resteColor(c.balance))} detail={detail} onSelect={onSelect} cellKey={cellKey(rowKey, "reste", i)} selCellKey={selCellKey}>
+            <CellAmount key="reste" className={cn(b && MONTH_GAP, "text-right tabular-nums", resteColor(c.balance))} detail={detail} onSelect={onSelect} cellKey={cellKey(rowKey, "reste", i)} selCellKey={selCellKey}>
               {fmt(c.balance)}
             </CellAmount>
           );
@@ -1955,7 +2017,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
             const cell = (b: boolean) => (
               <CellAmount
                 key="ignored"
-                className={cn(b && "border-l", "text-right tabular-nums text-muted-foreground")}
+                className={cn(b && MONTH_GAP, "text-right tabular-nums text-muted-foreground")}
                 detail={detail}
                 onSelect={onSelect}
                 cellKey={cellKey(rowId, isIn ? "recu" : "depense", i)}
@@ -1997,7 +2059,17 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
     {/* w-max : la largeur du tableau suit son contenu, pas le conteneur. Sinon
         (w-full par defaut) les colonnes se resserrent quand la sidebar de detail
         s'ouvre et retrecit la zone : le tableau doit defiler, pas se tasser. */}
-    <Table className="w-max">
+    {/* font-mono sur TOUT le tableau : le défaut ici, c'est le chiffre. Les rares
+        zones de texte (première colonne, en-têtes) repassent en font-sans. 13px
+        compense la chasse fixe, plus large que la proportionnelle, pour garder la
+        même densité horizontale. */}
+    {/* [&_td]:align-top : une Balance en dépassement porte son étiquette SOUS le
+        montant, donc sa cellule est plus haute que les autres. Avec l'alignement
+        vertical centré par défaut, le montant remonterait de quelques pixels par
+        rapport aux chiffres du reste de la ligne. Calés en haut, tous les nombres
+        d'une même ligne restent sur la même ligne de base ; les lignes sans
+        étiquette, qui tiennent sur une seule ligne, ne bougent pas. */}
+    <Table className="w-max font-mono text-[13px] [&_td]:align-top">
       {/* Teinte de fond des colonnes (posée sous le fond des lignes) : par nature du
           mois (passé / courant / premier mois futur) sur tout le bloc du mois, sinon
           repli sur la teinte neutre des colonnes de solde pour les mois futurs suivants. */}
@@ -2014,7 +2086,9 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
       </colgroup>
       <TableHeader>
         <TableRow>
-          <TableHead rowSpan={2} className="bg-background sticky left-0 z-10 p-0 align-bottom">
+          {/* Centré comme les noms de mois : cette cellule couvre les deux rangées
+              d'en-tête, elle se cale donc au milieu de l'ensemble. */}
+          <TableHead rowSpan={2} className="bg-background sticky left-0 z-10 p-0 align-middle">
             <FirstColBox>Catégorie</FirstColBox>
           </TableHead>
           {months.map((m) => {
@@ -2025,15 +2099,37 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                 colSpan={cols.length}
                 data-current-month={m === currentMonth ? "" : undefined}
                 className={cn(
-                  "border-l text-center whitespace-nowrap align-middle",
-                  m === currentMonth && "text-foreground font-semibold",
-                  m > currentMonth && "text-muted-foreground italic",
+                  MONTH_GAP,
+                  // align-middle et non align-bottom : les mois de projection portent
+                  // une mention sous leur nom, donc ils sont plus hauts, et c'est eux
+                  // qui fixent la hauteur de la rangée. Alignés en bas, les autres mois
+                  // se retrouvaient plaqués en bas avec du vide au-dessus.
+                  "py-2 text-center whitespace-nowrap align-middle",
+                  m > currentMonth && "text-muted-foreground",
                 )}
               >
-                <div>
-                  {monthLabel(m)}
-                  {m > currentMonth ? " · projection" : ""}
+                {/* Le mois en serif, l'année en chasse fixe et en retrait : le mois
+                    est un titre de chapitre, l'année une donnée de repérage. Le mois
+                    courant est le seul à porter l'encre pleine et un filet sous son
+                    nom — plus lisible qu'un simple gras au milieu de douze colonnes. */}
+                <div className="flex items-baseline justify-center gap-1.5">
+                  <span
+                    className={cn(
+                      "font-display text-[15px] leading-none",
+                      m === currentMonth && "text-foreground decoration-foreground/40 underline decoration-1 underline-offset-[6px]",
+                    )}
+                  >
+                    {monthName(m)}
+                  </span>
+                  <span className="text-muted-foreground/70 font-mono text-[11px] leading-none">
+                    {m.slice(0, 4)}
+                  </span>
                 </div>
+                {m > currentMonth && (
+                  <div className="text-muted-foreground/60 mt-1 font-sans text-[9px] font-normal tracking-[0.16em] uppercase">
+                    projection
+                  </div>
+                )}
                 {accountId && (pendingByMonth?.[m]?.length ?? 0) > 0 && (
                   <div className="mt-1 flex flex-wrap justify-center gap-1 text-xs font-normal not-italic">
                     {pendingByMonth![m].map((it) => (
@@ -2058,13 +2154,23 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
             const cols = monthColumns(type);
             return (
               <Fragment key={m}>
+                {/* Micro-typographie : capitales espacées, petites et grises. Le
+                    libellé d'une colonne est une étiquette, pas un contenu — il doit
+                    s'effacer devant les chiffres qu'il coiffe tout en restant net. */}
                 {cols.map((col, idx) => (
-                  <TableHead key={col} className={cn(col === "reste" ? BALANCE_TINT : SOLDE_TINTS[col], idx === 0 && "border-l", "text-right")}>
+                  <TableHead
+                    key={col}
+                    className={cn(
+                      col === "reste" ? BALANCE_TINT : SOLDE_TINTS[col],
+                      idx === 0 && MONTH_GAP,
+                      "text-muted-foreground h-auto py-1.5 text-right align-bottom font-sans text-[10px] font-medium tracking-[0.09em] uppercase",
+                    )}
+                  >
                     {/* Cliquer l'en-tête ouvre l'explication de la colonne dans le panneau. */}
                     <button
                       type="button"
                       onClick={() => onSelect(makeInfo(labelFor(col, type), COL_INFO[col]))}
-                      className="cursor-pointer decoration-dotted underline-offset-2 hover:underline"
+                      className="hover:text-foreground cursor-pointer decoration-dotted underline-offset-2 hover:underline"
                     >
                       {labelFor(col, type)}
                     </button>
@@ -2129,7 +2235,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
               : firstFuture ? estimateValue
               : i > 0 && planned.depassClosings[i - 1] != null ? planned.depassClosings[i - 1] : v;
             const openingCell = (b: boolean) => (
-              <CellAmount key="soldeReel" className={cn(b && "border-l", "text-right tabular-nums", soldeColor(v))} detail={detail} onSelect={onSelect} cellKey={cellKey(openingRow, "solde", i)} selCellKey={selCellKey}>
+              <CellAmount key="soldeReel" className={cn(b && MONTH_GAP, "text-right tabular-nums", soldeColor(v))} detail={detail} onSelect={onSelect} cellKey={cellKey(openingRow, "solde", i)} selCellKey={selCellKey}>
                 {fmt(v)}
               </CellAmount>
             );
@@ -2191,7 +2297,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                     <TableCell colSpan={totalCols} className="p-0">
                       {/* Épinglé à gauche : les boutons d'ajout de rémunération ne
                           défilent pas avec le tableau lors d'un scroll horizontal. */}
-                      <div className="bg-background sticky left-0 z-10 flex w-fit items-center gap-3 py-0.5 pr-3 pl-1">
+                      <div className="font-sans bg-background sticky left-0 z-10 flex w-fit items-center gap-3 py-0.5 pr-3 pl-1">
                         {!hasPrincipal && (
                           <Button
                             type="button"
@@ -2222,7 +2328,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                   <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={totalCols} className="p-0">
                       {/* Épinglé à gauche : le formulaire ne défile pas avec le tableau. */}
-                      <div className="bg-background sticky left-0 z-10 w-fit">
+                      <div className="font-sans bg-background sticky left-0 z-10 w-fit">
                         <NewRemunerationInline
                           accountId={accountId}
                           incomeKind={adding}
@@ -2265,7 +2371,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                 <TableCell colSpan={totalCols} className="p-0">
                   {/* Épinglé à gauche : le bouton + et le libellé de section ne
                       défilent pas avec le tableau lors d'un scroll horizontal. */}
-                  <div className="bg-background sticky left-0 z-10 flex w-fit items-center py-1 pr-3 pl-1">
+                  <div className="font-sans bg-background sticky left-0 z-10 flex w-fit items-center py-1 pr-3 pl-1">
                     <Button
                       type="button"
                       size="xs"
@@ -2282,7 +2388,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={totalCols} className="p-0">
                     {/* Épinglé à gauche : le formulaire ne défile pas avec le tableau. */}
-                    <div className="bg-background sticky left-0 z-10 w-fit">
+                    <div className="font-sans bg-background sticky left-0 z-10 w-fit">
                       <NewGroupInline
                         accountId={accountId}
                         kind={sectionKind}
@@ -2345,7 +2451,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
             const type = monthType(m, currentMonth);
             const cols = monthColumns(type);
             const estCell = (b: boolean) => (
-              <CellAmount key="est" className={cn(b && "border-l", "text-right tabular-nums", soldeColor(v))} detail={detail} onSelect={onSelect} cellKey={cellKey("estime", "solde", i)} selCellKey={selCellKey}>
+              <CellAmount key="est" className={cn(b && MONTH_GAP, "text-right tabular-nums", soldeColor(v))} detail={detail} onSelect={onSelect} cellKey={cellKey("estime", "solde", i)} selCellKey={selCellKey}>
                 {fmt(v)}
               </CellAmount>
             );
@@ -2382,7 +2488,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
             const type = monthType(m, currentMonth);
             const cols = monthColumns(type);
             const depCell = (b: boolean) => (
-              <CellAmount key="overspend" className={cn(b && "border-l", "text-right tabular-nums", val > 0.005 && "text-red-600")} detail={detail} onSelect={onSelect} cellKey={cellKey("overspend", "reste", i)} selCellKey={selCellKey}>
+              <CellAmount key="overspend" className={cn(b && MONTH_GAP, "text-right tabular-nums", val > 0.005 && "text-red-600")} detail={detail} onSelect={onSelect} cellKey={cellKey("overspend", "reste", i)} selCellKey={selCellKey}>
                 {val > 0.005 ? fmt(val) : ""}
               </CellAmount>
             );

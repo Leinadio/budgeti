@@ -3,66 +3,80 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Le parti pris : du papier, pas un écran. Le fond n'est plus le blanc pur de
+   shadcn mais un blanc chaud très légèrement teinté, et l'encre n'est plus un
+   noir pur mais un brun-noir. Rien de spectaculaire pris isolément ; ensemble,
+   c'est la différence entre une interface générique et un relevé imprimé.
+   Toutes les teintes de colonnes du tableau sont des color-mix avec
+   var(--background) : elles se réchauffent d'elles-mêmes. */
 :root {
   --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --sidebar: hsl(0 0% 98%);
-  --sidebar-foreground: hsl(240 5.3% 26.1%);
-  --sidebar-primary: hsl(240 5.9% 10%);
-  --sidebar-primary-foreground: hsl(0 0% 98%);
-  --sidebar-accent: hsl(240 4.8% 95.9%);
-  --sidebar-accent-foreground: hsl(240 5.9% 10%);
-  --sidebar-border: hsl(220 13% 91%);
-  --sidebar-ring: hsl(217.2 91.2% 59.8%);
+  --background: oklch(0.992 0.004 85);
+  --foreground: oklch(0.23 0.012 65);
+  --card: oklch(0.998 0.003 85);
+  --card-foreground: oklch(0.23 0.012 65);
+  --popover: oklch(0.998 0.003 85);
+  --popover-foreground: oklch(0.23 0.012 65);
+  --primary: oklch(0.27 0.024 55);
+  --primary-foreground: oklch(0.985 0.004 85);
+  --secondary: oklch(0.965 0.006 85);
+  --secondary-foreground: oklch(0.27 0.024 55);
+  --muted: oklch(0.965 0.006 85);
+  --muted-foreground: oklch(0.53 0.014 65);
+  --accent: oklch(0.965 0.006 85);
+  --accent-foreground: oklch(0.27 0.024 55);
+  --destructive: oklch(0.55 0.2 27);
+  --border: oklch(0.902 0.008 80);
+  --input: oklch(0.902 0.008 80);
+  --ring: oklch(0.68 0.03 70);
+  --sidebar: oklch(0.975 0.006 85);
+  --sidebar-foreground: oklch(0.36 0.014 65);
+  --sidebar-primary: oklch(0.27 0.024 55);
+  --sidebar-primary-foreground: oklch(0.985 0.004 85);
+  --sidebar-accent: oklch(0.945 0.008 85);
+  --sidebar-accent-foreground: oklch(0.27 0.024 55);
+  --sidebar-border: oklch(0.9 0.008 80);
+  --sidebar-ring: oklch(0.68 0.03 70);
 }
 
+/* Le pendant sombre du papier : de l'encre chaude sur un support sombre chaud,
+   pas le gris neutre par défaut. Même intention, éclairage inverse. */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: oklch(0.168 0.008 70);
+  --foreground: oklch(0.945 0.006 85);
+  --card: oklch(0.215 0.009 70);
+  --card-foreground: oklch(0.945 0.006 85);
+  --popover: oklch(0.215 0.009 70);
+  --popover-foreground: oklch(0.945 0.006 85);
+  --primary: oklch(0.925 0.006 85);
+  --primary-foreground: oklch(0.215 0.009 70);
+  --secondary: oklch(0.278 0.01 70);
+  --secondary-foreground: oklch(0.945 0.006 85);
+  --muted: oklch(0.278 0.01 70);
+  --muted-foreground: oklch(0.715 0.012 78);
+  --accent: oklch(0.278 0.01 70);
+  --accent-foreground: oklch(0.945 0.006 85);
   --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --sidebar: hsl(240 5.9% 10%);
-  --sidebar-foreground: hsl(240 4.8% 95.9%);
-  --sidebar-primary: hsl(224.3 76.3% 48%);
-  --sidebar-primary-foreground: hsl(0 0% 100%);
-  --sidebar-accent: hsl(240 3.7% 15.9%);
-  --sidebar-accent-foreground: hsl(240 4.8% 95.9%);
-  --sidebar-border: hsl(240 3.7% 15.9%);
-  --sidebar-ring: hsl(217.2 91.2% 59.8%);
+  --border: oklch(0.98 0.01 85 / 11%);
+  --input: oklch(0.98 0.01 85 / 16%);
+  --ring: oklch(0.58 0.02 70);
+  --sidebar: oklch(0.135 0.008 70);
+  --sidebar-foreground: oklch(0.93 0.006 85);
+  --sidebar-primary: oklch(0.55 0.13 250);
+  --sidebar-primary-foreground: oklch(1 0 0);
+  --sidebar-accent: oklch(0.235 0.009 70);
+  --sidebar-accent-foreground: oklch(0.93 0.006 85);
+  --sidebar-border: oklch(0.235 0.009 70);
+  --sidebar-ring: oklch(0.58 0.02 70);
 }
 
 @theme inline {
+  /* Les trois rôles typographiques, déclarés par next/font dans layout.tsx.
+     font-sans = interface, font-mono = tout ce qui est chiffre,
+     font-display = les mois et les titres de compte, rien d'autre. */
+  --font-sans: var(--font-sans-ui), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-num), ui-monospace, "SF Mono", monospace;
+  --font-display: var(--font-display-vf), Georgia, "Times New Roman", serif;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -100,6 +114,19 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
+    /* La virgule décimale et les milliers doivent tomber au même endroit d'une
+       ligne à l'autre : chiffres à chasse fixe partout, y compris hors tableau. */
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* Fraunces est une fonte variable : son axe optique doit être réglé à la taille
+     réelle d'emploi, ici 15 px pour les noms de mois. Trop haut, les déliés
+     s'amincissent et bavent ; trop bas, la serif perd son contraste et son
+     intérêt. SOFT arrondit légèrement les terminaisons : moins sévère qu'une
+     Didot, plus proche d'un caractère de labeur imprimé. */
+  .font-display {
+    font-variation-settings: "opsz" 18, "SOFT" 35;
+    letter-spacing: -0.005em;
   }
 }

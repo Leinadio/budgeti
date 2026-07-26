@@ -50,3 +50,4 @@ scaffold-tmp/
 next-env.d.ts
 
 certificates
+.superpowers/
