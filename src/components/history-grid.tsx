@@ -234,12 +234,15 @@ const SOLDE_TINTS: Partial<Record<ColKey, string>> = {
 // la distingue de la bande grise des soldes. Posée sur CHAQUE cellule Balance (via
 // renderCols), pas sur le <colgroup>, pour rester visible même sous un fond de
 // ligne opaque (totaux gris, teinte entrant/sortant).
-// Séparation entre deux mois : une bande de 12 px peinte à la couleur du fond,
-// posée en bordure gauche de la première colonne de chaque mois. C'est un vrai
-// espace, pas un trait — les blocs de mois se détachent les uns des autres —, et
-// ça évite d'insérer une colonne de séparation dans toute la structure du tableau
-// (colgroup, deux rangées d'en-tête, chaque constructeur de ligne, totalCols).
-const MONTH_GAP = "border-l-[12px] border-l-background";
+// Séparation entre deux mois : un filet vertical plus du blanc tournant, posés sur
+// la première colonne de chaque mois. Surtout PAS une bande épaisse peinte à la
+// couleur du fond : elle perçait les fonds de ligne et coupait les filets
+// horizontaux, et comme elle défile avec les colonnes, ça donnait un trou mobile
+// qui faisait passer le tableau « en dessous ». Ici la ligne reste continue d'un
+// bout à l'autre ; ce sont la teinte du mois et le filet qui détachent les blocs.
+// Ça évite aussi d'insérer une colonne de séparation dans toute la structure du
+// tableau (colgroup, deux rangées d'en-tête, chaque constructeur de ligne, totalCols).
+const MONTH_GAP = "border-l border-l-border/70 pl-5";
 
 const BALANCE_TINT = "bg-[color-mix(in_oklab,oklch(0.75_0.16_80)_16%,var(--background))]";
 
@@ -322,6 +325,14 @@ function blankSlots(): Record<ColKey, (border: boolean) => React.ReactNode> {
 // Filet à droite de la colonne figée : quand le tableau défile horizontalement,
 // les mois passent DERRIÈRE cette colonne. Sans séparation, les libellés et les
 // chiffres semblent se toucher.
+// h-full ne suffit pas seul : dans un <td>, un pourcentage de hauteur se résout
+// contre la hauteur INTRINSÈQUE de la cellule, pas contre celle que la ligne lui
+// impose. Sur une ligne étirée par une autre colonne (une Balance qui porte son
+// étiquette sous le montant), la boîte restait à sa hauteur naturelle et le filet
+// s'arrêtait avant le bas — d'où le bout clair au coin. Les cellules de cette
+// colonne portent donc `h-px` : la hauteur déclarée rend le 100 % résoluble, et la
+// ligne étire la cellule de toute façon puisqu'elle ne peut pas être plus petite
+// que son contenu.
 function FirstColBox({ children, indent = 0 }: { children: React.ReactNode; indent?: number }) {
   return (
     <div
@@ -1384,7 +1395,7 @@ function NameCell({ children, indent, expandable, expanded, onToggle, bg = "bg-b
 }) {
   return (
     <TableCell
-      className={cn(bg, "sticky left-0 z-10 p-0", expandable && "cursor-pointer")}
+      className={cn(bg, "sticky left-0 z-10 h-px p-0", expandable && "cursor-pointer")}
       onClick={onToggle}
     >
       <FirstColBox indent={indent}>
@@ -1416,7 +1427,7 @@ function TxnRow({ txn, months, currentMonth, groups, indent, onSelect, selCellKe
 }) {
   return (
     <TableRow className="align-top text-sm text-muted-foreground">
-      <TableCell className="bg-background sticky left-0 z-10 p-0">
+      <TableCell className="bg-background sticky left-0 z-10 h-px p-0">
         <div
           className="border-border/60 flex h-full flex-col gap-1 border-r py-2 pr-2 font-sans"
           style={{ width: COL1_W, paddingLeft: `${0.5 + indent * 1.25}rem` }}
@@ -1904,7 +1915,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
       // Sous-total de section (bloc sortant) : même teinte que les lignes de groupe
       // Récurrents/Enveloppes juste au-dessus (cf. OUT_TINT).
       <TableRow className={cn("text-sm", OUT_TINT)}>
-        <TableCell className={cn(OUT_TINT, "sticky left-0 z-10 p-0")}>
+        <TableCell className={cn(OUT_TINT, "sticky left-0 z-10 h-px p-0")}>
           <FirstColBox><span className="text-muted-foreground">{label}</span></FirstColBox>
         </TableCell>
         {months.map((m, i) => {
@@ -2088,7 +2099,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
         <TableRow>
           {/* Centré comme les noms de mois : cette cellule couvre les deux rangées
               d'en-tête, elle se cale donc au milieu de l'ensemble. */}
-          <TableHead rowSpan={2} className="bg-background sticky left-0 z-10 p-0 align-middle">
+          <TableHead rowSpan={2} className="bg-background sticky left-0 z-10 h-px p-0 align-middle">
             <FirstColBox>Catégorie</FirstColBox>
           </TableHead>
           {months.map((m) => {
@@ -2104,7 +2115,9 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                   // une mention sous leur nom, donc ils sont plus hauts, et c'est eux
                   // qui fixent la hauteur de la rangée. Alignés en bas, les autres mois
                   // se retrouvaient plaqués en bas avec du vide au-dessus.
-                  "py-2 text-center whitespace-nowrap align-middle",
+                  // pr-5 en écho au pl-5 de MONTH_GAP : sans ça le retrait de
+                  // séparation décentrerait le nom du mois au-dessus de son bloc.
+                  "py-2 pr-5 text-center whitespace-nowrap align-middle",
                   m > currentMonth && "text-muted-foreground",
                 )}
               >
@@ -2183,7 +2196,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
       </TableHeader>
       <TableBody>
         <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
-          <TableCell className={cn("sticky left-0 z-10 p-0", MUTED40)}>
+          <TableCell className={cn("sticky left-0 z-10 h-px p-0", MUTED40)}>
             <FirstColBox>Argent de départ</FirstColBox>
           </TableCell>
           {solde.openings.map((v, i) => {
@@ -2341,7 +2354,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                 {sec.rows.map((r) => renderGroup(r, true))}
                 {uncatIn && renderUncatRows(uncatIn)}
                 <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
-                  <TableCell className={cn("sticky left-0 z-10 p-0", MUTED40)}>
+                  <TableCell className={cn("sticky left-0 z-10 h-px p-0", MUTED40)}>
                     <FirstColBox>Total rémunérations</FirstColBox>
                   </TableCell>
                   <IncomeTotalCells sec={sec} months={months} currentMonth={currentMonth} onSelect={onSelect} selCellKey={selCellKey} />
@@ -2403,7 +2416,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
               )}
               {sec.rows.map((r) => renderGroup(r))}
               <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
-                <TableCell className={cn("sticky left-0 z-10 p-0", MUTED40)}>
+                <TableCell className={cn("sticky left-0 z-10 h-px p-0", MUTED40)}>
                   <FirstColBox>{sec.kind === "envelope" ? "Total Enveloppes" : "Total Récurrents"}</FirstColBox>
                 </TableCell>
                 <SectionTotalsCells sec={sec} months={months} currentMonth={currentMonth} onSelect={onSelect} selCellKey={selCellKey} />
@@ -2413,7 +2426,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
           );
         })}
         <TableRow className="bg-muted/60 hover:bg-muted/60 font-semibold">
-          <TableCell className="sticky left-0 z-10 bg-[color-mix(in_oklab,var(--muted)_60%,var(--background))] p-0">
+          <TableCell className="sticky left-0 z-10 h-px bg-[color-mix(in_oklab,var(--muted)_60%,var(--background))] p-0">
             <FirstColBox>Solde actuel</FirstColBox>
           </TableCell>
           <GrandTotalsCells sections={sections} grand={grand} solde={solde} planned={planned} months={months} currentMonth={currentMonth} currentEstimate={estimateValue} onSelect={onSelect} selCellKey={selCellKey} />
@@ -2423,7 +2436,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
             fin du mois) ; autres mois = leur solde de clôture (même détail que la
             ligne « Solde actuel » pour ce mois — cf. soldeActuelDetail). */}
         <TableRow className="text-sm">
-          <TableCell className="bg-background sticky left-0 z-10 p-0">
+          <TableCell className="bg-background sticky left-0 z-10 h-px p-0">
             <FirstColBox><span className="text-muted-foreground">Estimé fin de mois</span></FirstColBox>
           </TableCell>
           {months.map((m, i) => {
@@ -2466,7 +2479,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
             Balance (groupes qui débordent + Non catégorisés), hors lignes
             « Balance récurrents / enveloppes » qui agrègent déjà ces montants. */}
         <TableRow className="text-sm">
-          <TableCell className="bg-background sticky left-0 z-10 p-0">
+          <TableCell className="bg-background sticky left-0 z-10 h-px p-0">
             <FirstColBox><span className="text-muted-foreground">Dépassement hors budget</span></FirstColBox>
           </TableCell>
           {months.map((m, i) => {
