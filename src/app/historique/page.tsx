@@ -138,10 +138,13 @@ export default async function HistoriquePage({
 
           return (
             <TabsContent key={a.id} value={a.id} className="flex flex-col gap-4">
-              <MonthRangePicker min={stripMin} max={stripMax} from={from} to={to} current={currentMonth} />
+              {/* Au-dessus de la frise, pas en dessous : la frise et le tableau
+                  qu'elle commande restent collés, et le bouton d'explication du
+                  calcul se lit comme un outil de la page, à l'écart de ce couple. */}
               <div className="flex justify-end">
                 <ForecastDetailSheet label={accountLabel(a)} forecast={forecast} />
               </div>
+              <MonthRangePicker min={stripMin} max={stripMax} from={from} to={to} current={currentMonth} />
               {sections.length === 0 ? (
                 <p className="text-muted-foreground text-sm">Aucune donnée pour ce compte.</p>
               ) : (

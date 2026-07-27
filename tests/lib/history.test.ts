@@ -640,21 +640,21 @@ describe("Rappels d'argent dépensé au-delà du budget", () => {
     const r = computeOverspends([courses], txns, "2026-07", []);
     // Mois terminés, non tranchés : Courses juin (50) et Non catégorisés juin (80).
     expect(r.pendingClosed).toEqual([
-      { groupId: 1, name: "Courses", month: "2026-06", amount: 50 },
-      { groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 80 },
+      { groupId: 1, name: "Courses", month: "2026-06", amount: 50, kind: "envelope" },
+      { groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 80, kind: "envelope" },
     ]);
     // Pastilles : un dépassement non tranché par élément (le plus récent), mois courant inclus.
     expect(r.pending).toEqual([
-      { groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 80 },
-      { groupId: 1, name: "Courses", month: "2026-07", amount: 80 },
+      { groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 80, kind: "envelope" },
+      { groupId: 1, name: "Courses", month: "2026-07", amount: 80, kind: "envelope" },
     ]);
     // Groupés par mois pour les bandeaux par mois (mois courant inclus).
     expect(r.pendingByMonth["2026-06"]).toEqual([
-      { groupId: 1, name: "Courses", month: "2026-06", amount: 50 },
-      { groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 80 },
+      { groupId: 1, name: "Courses", month: "2026-06", amount: 50, kind: "envelope" },
+      { groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 80, kind: "envelope" },
     ]);
     expect(r.pendingByMonth["2026-07"]).toEqual([
-      { groupId: 1, name: "Courses", month: "2026-07", amount: 80 },
+      { groupId: 1, name: "Courses", month: "2026-07", amount: 80, kind: "envelope" },
     ]);
   });
 
@@ -665,8 +665,8 @@ describe("Rappels d'argent dépensé au-delà du budget", () => {
     ];
     // Rien tranché : les deux dépassements attendent une décision.
     const none = computeOverspends([courses], txns, "2026-07", []);
-    expect(none.pendingClosed).toEqual([{ groupId: 1, name: "Courses", month: "2026-06", amount: 50 }]);
-    expect(none.pending).toEqual([{ groupId: 1, name: "Courses", month: "2026-07", amount: 80 }]);
+    expect(none.pendingClosed).toEqual([{ groupId: 1, name: "Courses", month: "2026-06", amount: 50, kind: "envelope" }]);
+    expect(none.pending).toEqual([{ groupId: 1, name: "Courses", month: "2026-07", amount: 80, kind: "envelope" }]);
     // Juin tranché (permanent ou exceptionnel, peu importe la décision) : il quitte le
     // bandeau des mois terminés, sans effet sur le prévisionnel (plus de report).
     const permJuin = computeOverspends([courses], txns, "2026-07", [{ groupId: 1, month: "2026-06", decision: "permanent" }]);
@@ -676,8 +676,8 @@ describe("Rappels d'argent dépensé au-delà du budget", () => {
     // Juillet tranché : quitte les pastilles (pending), qui retombent alors sur le
     // dépassement non tranché suivant (juin, toujours dans les rappels).
     const permJuillet = computeOverspends([courses], txns, "2026-07", [{ groupId: 1, month: "2026-07", decision: "permanent" }]);
-    expect(permJuillet.pending).toEqual([{ groupId: 1, name: "Courses", month: "2026-06", amount: 50 }]);
-    expect(permJuillet.pendingClosed).toEqual([{ groupId: 1, name: "Courses", month: "2026-06", amount: 50 }]);
+    expect(permJuillet.pending).toEqual([{ groupId: 1, name: "Courses", month: "2026-06", amount: 50, kind: "envelope" }]);
+    expect(permJuillet.pendingClosed).toEqual([{ groupId: 1, name: "Courses", month: "2026-06", amount: 50, kind: "envelope" }]);
   });
 
   it("devrait, de bout en bout, ne plus reporter aucun dépassement sur le prévisionnel des mois à venir, même marqué permanent", () => {
@@ -774,10 +774,10 @@ describe("Durée de vie d'un groupe", () => {
     ];
     // Sans provision : dépassement = 260.
     const sans = computeOverspends([], txns, "2026-07", []);
-    expect(sans.pendingClosed).toEqual([{ groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 260 }]);
+    expect(sans.pendingClosed).toEqual([{ groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 260, kind: "envelope" }]);
     // Provision de 100 en vigueur en juin (budget daté du groupe 0) : dépassement = 160.
     const dated = { 0: [{ effectiveMonth: "2026-06", amount: 100 }] };
     const avec = computeOverspends([], txns, "2026-07", [], dated);
-    expect(avec.pendingClosed).toEqual([{ groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 160 }]);
+    expect(avec.pendingClosed).toEqual([{ groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 160, kind: "envelope" }]);
   });
 });

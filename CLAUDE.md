@@ -1,31 +1,9 @@
-# Style de réponse
-
-- Priorité numéro 1 : répondre en faisant des phrases. De la prose, des
-  paragraphes courts — pas de listes à puces ni de tableaux, sauf si
-  l'utilisateur le demande explicitement.
-- Réponses courtes, l'essentiel uniquement.
-- Langage humain, clair et compréhensible.
-- Pas d'emoji, pas de symboles décoratifs (flèches, puces fantaisie, etc.).
-- Aller droit au but.
-
 # Le projet : Budget CIC
 
 App web locale et personnelle de suivi de budget. Elle se connecte au compte CIC
 de l'utilisateur via l'agrégateur Open Banking Enable Banking, catégorise les
 dépenses, gère des enveloppes de budget mensuelles et affiche des alertes. Tout
 tourne en local (localhost), les données bancaires ne quittent pas la machine.
-
-## Stack
-- Next.js (App Router, TypeScript, React) + SQLite (better-sqlite3) + Vitest.
-- Enable Banking pour la connexion bancaire (JWT RS256 signé avec une clé privée).
-
-## Structure
-- `src/lib/` : logique pure testée (montants, catégorisation par règles, budgets, alertes).
-- `src/db/` : schéma SQLite + repositories d'accès aux données. Base dans `data/budget.db`.
-- `src/enablebanking/` : JWT, client HTTP, flux de connexion, synchronisation.
-- `src/app/` : écrans (Tableau de bord, Transactions, Budgets, Catégories, Réglages) + routes API.
-- `docs/superpowers/` : spec et plan de construction.
-- `scripts/list-aspsps.mjs` : liste les banques dispo pour l'app Enable Banking (debug).
 
 ## Config (.env.local, jamais commité)
 - `ENABLEBANKING_APPLICATION_ID`, `ENABLEBANKING_KEY_PATH` (clé dans `secrets/`, jamais commitée),
@@ -35,19 +13,26 @@ tourne en local (localhost), les données bancaires ne quittent pas la machine.
   `npm run dev -- --experimental-https`. L'app Enable Banking doit être "Active"
   (comptes liés dans le Control Panel).
 
-## Lancer
-- `npm run dev` (ou `npm run dev -- --experimental-https` pour la Production).
-- `npm test` pour les tests.
-
-## État actuel (à jour du 2026-07-04)
-- App complète, testée, mergée sur `main`. Connexion réelle au CIC de l'utilisateur validée.
-- Contraintes DSP2 assumées : reconnexion ~90 jours, rafraîchissement non temps réel.
-- Dernier ajout : affichage par compte (chaque compte a sa carte solde + transactions ;
-  Transactions regroupées par compte). Le libellé de compte utilise l'IBAN masqué,
-  récupéré via `/accounts/{uid}/details` pendant la synchro (champs devinés
-  `account_id.iban` et `name` — à confirmer avec le vrai CIC, non fatal si absents).
+## Méthode de développement : le test d'abord
+- **TOUJOURS** lancer `npm test` AVANT de toucher au code. On doit savoir ce qui était
+  déjà rouge : ne jamais attribuer un échec préexistant à son propre travail, ni
+  l'inverse.
+- **TOUJOURS** écrire le test avant le code, et le lancer pour le VOIR échouer. Un test
+  qui n'a jamais échoué ne prouve rien.
+- **JAMAIS** dire « c'est corrigé » ou « ça marche » sans la sortie de `npm test` sous
+  les yeux. Si un test échoue, le dire, avec sa sortie.
+- Un bug corrigé commence par un test qui le reproduit. Sinon il revient.
+- La logique de calcul vit dans `src/lib/` et se teste dans `tests/lib/`. Une nouvelle
+  règle métier commence là, pas dans un composant.
+- Avant de changer une fonction ou un type de `src/lib/` ou `src/db/` : chercher ses
+  appelants (`grep`) et vérifier qu'ils sont couverts AVANT de toucher la signature.
+  La base est grosse, un effet de bord non testé se paie des semaines plus tard.
+- Un correctif purement visuel ou de routage n'a pas de test unitaire utile : il se
+  vérifie en lançant le vrai serveur, et on le dit explicitement.
 
 ## Pièges connus
+- Contraintes DSP2 assumées : reconnexion au CIC tous les ~90 jours, données jamais
+  en temps réel.
 - Enable Banking : le nom de banque (ASPSP) doit correspondre EXACTEMENT au catalogue de
   l'environnement. Production rejette les redirect en http (https obligatoire).
 - Next.js ne relit `.env.local` qu'au démarrage : redémarrer après modification.
