@@ -1,44 +1,11 @@
 "use client";
 import { TriangleAlert } from "lucide-react";
 import { monthLabel } from "@/lib/transactions-view";
-import { cellKey, groupRow, sectionRow, type CellDetail } from "@/lib/history-explain";
 import type { PendingOverspend } from "@/lib/history";
+import { overspendDecisionDetail } from "@/lib/history-detail";
 import { useDetailSidebar } from "@/components/detail-sidebar";
 
 const NUM = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-// Détail minimal ouvert par le bandeau ou la pastille : le montant du
-// dépassement et le bloc de décision. cellRef surligne la Balance du bon mois
-// quand il est affiché (monthIdx), sinon le panneau s'ouvre sans surbrillance.
-// currentBudget : budget/provision du groupe en vigueur au mois courant, pour
-// pré-remplir le champ « Permanent » ; null si inconnu.
-export function overspendDecisionDetail(
-  item: PendingOverspend,
-  accountId: string,
-  monthIdx: number | null,
-  decision: "exceptional" | "permanent" | null,
-  currentBudget: number | null = null,
-): CellDetail {
-  return {
-    title: "Dépassement",
-    subtitle: `${item.name} · ${monthLabel(item.month)}`,
-    nodes: [],
-    result: item.amount,
-    cellRef:
-      monthIdx != null
-        ? cellKey(item.groupId === 0 ? sectionRow("uncategorized") : groupRow(item.groupId), "reste", monthIdx)
-        : undefined,
-    overspendAction: {
-      accountId,
-      groupId: item.groupId,
-      groupName: item.name,
-      month: item.month,
-      amount: item.amount,
-      decision,
-      currentBudget,
-    },
-  };
-}
 
 // Bandeau « dépassements à traiter » : listé par mois terminé, chaque élément
 // ouvre le side panel de décision du bon groupe et du bon mois.

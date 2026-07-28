@@ -1,6 +1,7 @@
 "use client";
 import { createContext, useContext, useState } from "react";
 import type { CellDetail } from "@/lib/history-explain";
+import { selectionForDetail, selectionForRow } from "@/lib/history-nav";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { HistoryDetailSidebar } from "@/components/history-detail-sidebar";
 
@@ -48,14 +49,16 @@ export function DetailSidebarProvider({ children }: { children: React.ReactNode 
   // (surligné jusqu'à la fermeture) et la case active est réinitialisée. Fermer le
   // panneau (d = null) efface tout.
   const setDetail = (d: CellDetail | null) => {
+    const next = selectionForDetail(d);
     setDetailState(d);
-    setAnchor(d?.cellRef ?? null);
-    setSelected(null);
-    setSelectedPanel(null);
+    setAnchor(next.anchor);
+    setSelected(next.selected);
+    setSelectedPanel(next.panel);
   };
   const select = (cells: string[] | null, panel: string) => {
-    setSelected(cells);
-    setSelectedPanel(panel);
+    const next = selectionForRow({ anchor, selected, panel: selectedPanel }, cells, panel);
+    setSelected(next.selected);
+    setSelectedPanel(next.panel);
   };
   return (
     <DetailSidebarContext.Provider value={{ detail, setDetail, selected, setSelected, anchor }}>

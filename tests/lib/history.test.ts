@@ -1,5 +1,5 @@
 import { expect, describe, it } from "vitest";
-import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde, computePlannedSoldes, budgetInForce, toDatedBudgets, computeOverspends, onceBudgetWrites } from "../../src/lib/history";
+import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde, computePlannedSoldes, budgetInForce, toDatedBudgets, computeOverspends, onceBudgetWrites, rowRevenus, rowOverspend, uncatOverspend, uncatOverspendOf, type HistoryRow } from "../../src/lib/history";
 import { isGroupAlive, type Group, type Txn } from "../../src/lib/forecast";
 
 // Fixtures partagées : une enveloppe « Courses » avec un budget mensuel, un groupe
@@ -658,6 +658,24 @@ describe("Rappels d'argent dépensé au-delà du budget", () => {
     ]);
   });
 
+  it("devrait dire la nature du groupe qui dépasse, enveloppe ou récurrent", () => {
+    // Un récurrent (Loyer, budget 100 par sa ligne) et une enveloppe (Courses, 300)
+    // dépassent le même mois : chaque rappel doit porter la nature de SON groupe.
+    const loyer: Group = {
+      id: 2, accountId: "a1", name: "Loyer", direction: "out", kind: "recurring",
+      monthlyAmount: null, lines: [{ id: 21, name: "Loyer", amount: 100, day: 5 }], incomeKind: null,
+    };
+    const txns = [
+      tx({ id: "1", date: "2026-06-10", amount: -350, label: "CARREFOUR", groupId: 1 }), // enveloppe : 50
+      tx({ id: "2", date: "2026-06-05", amount: -130, label: "LOYER", groupId: 2 }), // récurrent : 30
+    ];
+    const r = computeOverspends([courses, loyer], txns, "2026-07", []);
+    expect(r.pendingClosed).toEqual([
+      { groupId: 1, name: "Courses", month: "2026-06", amount: 50, kind: "envelope" },
+      { groupId: 2, name: "Loyer", month: "2026-06", amount: 30, kind: "recurring" },
+    ]);
+  });
+
   it("devrait exclure des rappels un dépassement déjà tranché, quelle que soit la décision", () => {
     const txns = [
       tx({ id: "1", date: "2026-06-10", amount: -350, label: "CARREFOUR", groupId: 1 }), // juin (terminé) : 50
@@ -779,5 +797,119 @@ describe("Durée de vie d'un groupe", () => {
     const dated = { 0: [{ effectiveMonth: "2026-06", amount: 100 }] };
     const avec = computeOverspends([], txns, "2026-07", [], dated);
     expect(avec.pendingClosed).toEqual([{ groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 160, kind: "envelope" }]);
+  });
+});
+
+// Ces deux règles pilotent à la fois les chaînes de solde et ce que le side panel
+// affiche quand on ouvre une case de projection. Elles sont exportées justement
+// pour que la grille ne les réécrive pas de son côté : si elles divergeaient, le
+// détail n'additionnerait plus le chiffre de la case qu'il prétend expliquer.
+describe("Ce qu'une ligne apporte au plan du mois", () => {
+  const row = (p: Partial<HistoryRow>): HistoryRow => ({
+    id: 1, name: "L", kind: "envelope", direction: "out", incomeKind: null,
+    cells: [{ budgeted: 100, depense: 0, recu: 0, balance: 100 }],
+    aliveMonths: [true], subRows: [], txns: [], ...p,
+  });
+
+  it("devrait projeter une rémunération principale sur tous les mois", () => {
+    const r = row({ direction: "in", incomeKind: "principal", cells: [{ budgeted: 2000, depense: 0, recu: 0, balance: 0 }] });
+    expect(rowRevenus(r, 0, true)).toBe(2000);
+    expect(rowRevenus(r, 0, false)).toBe(2000);
+  });
+
+  it("ne devrait projeter une rémunération supplémentaire que sur le mois courant", () => {
+    // Un coup de pouce ponctuel ne se parie pas sur les mois suivants.
+    const r = row({ direction: "in", incomeKind: "supplementary", cells: [{ budgeted: 500, depense: 0, recu: 0, balance: 0 }] });
+    expect(rowRevenus(r, 0, true)).toBe(500);
+    expect(rowRevenus(r, 0, false)).toBe(0);
+  });
+
+  it("ne devrait attendre aucune rentrée d'une ligne de dépense", () => {
+    expect(rowRevenus(row({}), 0, true)).toBe(0);
+  });
+
+  it("devrait mesurer le dépassement d'une dépense par la part sortie au-delà du budget", () => {
+    expect(rowOverspend(row({ cells: [{ budgeted: 100, depense: 130, recu: 0, balance: -30 }] }), 0)).toBe(30);
+  });
+
+  it("ne devrait voir aucun dépassement quand la dépense reste dans le budget", () => {
+    expect(rowOverspend(row({ cells: [{ budgeted: 100, depense: 80, recu: 0, balance: 20 }] }), 0)).toBe(0);
+  });
+
+  it("ne devrait jamais voir de dépassement sur une rentrée d'argent", () => {
+    const r = row({ direction: "in", cells: [{ budgeted: 0, depense: 0, recu: 2000, balance: 0 }] });
+    expect(rowOverspend(r, 0)).toBe(0);
+  });
+
+  it("devrait rester muet sur un mois hors de la plage plutôt que d'échouer", () => {
+    // La grille interroge parfois l'index du mois courant alors qu'il est hors
+    // fenêtre : mieux vaut 0 qu'une lecture de cellule inexistante.
+    expect(rowOverspend(row({}), 5)).toBe(0);
+  });
+});
+
+// La grille affichait ce calcul une seconde fois de son côté (resteVal). Ce test
+// verrouille la règle ici, à sa place : la Balance stockée EST celle que le tableau
+// montre, il n'y a plus qu'une seule vérité à maintenir.
+describe("La Balance des non catégorisés, telle que le tableau la lit", () => {
+  it("devrait valoir provision + reçus sans groupe − dépenses sans groupe", () => {
+    const dated = { 0: [{ effectiveMonth: "2026-07", amount: 100 }] };
+    const txns = [
+      tx({ id: "a", date: "2026-07-05", amount: -180, label: "SANS GROUPE" }),
+      tx({ id: "b", date: "2026-07-06", amount: 40, label: "REMBOURSEMENT" }),
+    ];
+    const sections = computeHistory([], txns, ["2026-07"], "2026-07", dated);
+    const out = sections.find((s) => s.kind === "uncategorized" && (s.uncatDirection ?? "out") === "out")!;
+    const inSec = sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in")!;
+    // 100 de provision + 40 remboursés − 180 dépensés = −40.
+    expect(out.totals[0].balance).toBeCloseTo(-40, 5);
+    expect(out.totals[0].balance).toBeCloseTo(
+      out.totals[0].budgeted + inSec.totals[0].recu - out.totals[0].depense,
+      5,
+    );
+  });
+
+  it("devrait laisser la Balance des reçus sans groupe à zéro : ils n'ont pas de budget", () => {
+    const txns = [tx({ id: "b", date: "2026-07-06", amount: 40, label: "REMBOURSEMENT" })];
+    const sections = computeHistory([], txns, ["2026-07"], "2026-07");
+    const inSec = sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in")!;
+    expect(inSec.totals[0].balance).toBe(0);
+  });
+});
+
+// Le débordement des non catégorisés alimente à la fois la chaîne « si dépassement »,
+// la ligne « Dépassement hors budget » et le rappel à trancher : une seule formule,
+// testée une fois.
+describe("Le débordement des dépenses sans groupe", () => {
+  const sectionsOf = (dated?: { 0: { effectiveMonth: string; amount: number }[] }) =>
+    computeHistory([], [
+      tx({ id: "a", date: "2026-07-05", amount: -180, label: "SANS GROUPE" }),
+      tx({ id: "b", date: "2026-07-06", amount: 40, label: "REMBOURSEMENT" }),
+    ], ["2026-07"], "2026-07", dated);
+
+  it("devrait compter ce qui est sorti au-delà des remboursements et de la provision", () => {
+    // 180 sortis, 40 remboursés, 100 de provision -> 40 de débordement.
+    expect(uncatOverspend(sectionsOf({ 0: [{ effectiveMonth: "2026-07", amount: 100 }] }), 0)).toBeCloseTo(40, 5);
+  });
+
+  it("devrait retomber à zéro quand la provision et les remboursements couvrent tout", () => {
+    expect(uncatOverspend(sectionsOf({ 0: [{ effectiveMonth: "2026-07", amount: 200 }] }), 0)).toBe(0);
+  });
+
+  it("devrait tout compter comme débordement quand aucune provision n'est posée", () => {
+    expect(uncatOverspend(sectionsOf(), 0)).toBeCloseTo(140, 5);
+  });
+
+  it("devrait donner le même résultat à partir des deux totaux directement", () => {
+    // La grille appelle cette forme-là : les deux chemins doivent coïncider, sinon
+    // la case et son explication afficheraient deux chiffres différents.
+    const sections = sectionsOf({ 0: [{ effectiveMonth: "2026-07", amount: 100 }] });
+    const out = sections.find((s) => s.kind === "uncategorized" && (s.uncatDirection ?? "out") === "out")!;
+    const inSec = sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in")!;
+    expect(uncatOverspendOf(out.totals[0], inSec.totals[0])).toBeCloseTo(uncatOverspend(sections, 0), 5);
+  });
+
+  it("ne devrait rien voir déborder quand il n'y a aucune dépense sans groupe", () => {
+    expect(uncatOverspendOf(undefined, undefined)).toBe(0);
   });
 });

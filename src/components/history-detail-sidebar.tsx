@@ -3,8 +3,10 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { X, ChevronRight, ChevronDown, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { CellDetail, DetailNode, OverspendActionInfo, GroupManageInfo, UncatProvisionInfo } from "@/lib/history-explain";
+import type { CellDetail, OverspendActionInfo, GroupManageInfo, UncatProvisionInfo } from "@/lib/history-explain";
 import { monthLabel } from "@/lib/transactions-view";
+import { detailKey } from "@/lib/history-detail";
+import { flattenNodes, cellsForNode, cellsForTotal, TOTAL_ROW, type PanelRow } from "@/lib/history-nav";
 import {
   decideOverspend,
   undoOverspendDecision,
@@ -44,27 +46,12 @@ const opOf = (n: number) => (n < 0 ? "−" : "+");
 const HL =
   "bg-[color-mix(in_oklab,var(--primary)_18%,var(--background))] hover:bg-[color-mix(in_oklab,var(--primary)_18%,var(--background))] shadow-[inset_3px_0_0_0_var(--primary)]";
 
-// Aplatit l'arbre de nœuds en lignes de tableau, en ne gardant que les enfants des
-// nœuds dépliés (open). depth pilote le retrait ; path identifie la ligne.
-type FlatRow = { node: DetailNode; path: string; depth: number; hasChildren: boolean; expanded: boolean };
-function flatten(nodes: DetailNode[], open: Set<string>, depth = 0, prefix = ""): FlatRow[] {
-  const out: FlatRow[] = [];
-  nodes.forEach((n, i) => {
-    const path = prefix ? `${prefix}.${i}` : `${i}`;
-    const hasChildren = !!n.children && n.children.length > 0;
-    const expanded = hasChildren && open.has(path);
-    out.push({ node: n, path, depth, hasChildren, expanded });
-    if (expanded) out.push(...flatten(n.children!, open, depth + 1, path));
-  });
-  return out;
-}
-
 // Une ligne du tableau de détail : montant signé (opérateur + valeur absolue) à
 // gauche, libellé (avec retrait et chevron dépliable) à droite. Cliquer la ligne
 // la sélectionne (surbrillance ici et dans le grand tableau) si elle porte un ref ;
 // sinon, si elle a des enfants, le clic la déplie.
 function DetailRow({ row, selected, onToggle, onSelect }: {
-  row: FlatRow;
+  row: PanelRow;
   selected: boolean;
   onToggle: () => void;
   onSelect?: () => void;
@@ -500,8 +487,6 @@ function UncatProvisionBlock({ info, onClose }: { info: UncatProvisionInfo; onCl
 
 // Corps du détail : monté sous une clé liée au détail (voir plus bas), de sorte que
 // l'état de dépliage (open) repart de zéro à chaque nouveau montant cliqué.
-// Identité de la ligne « Total » du panneau (distincte des chemins de nœuds « 0.1 »).
-const TOTAL_ROW = "__total__";
 
 function DetailBody({ detail, onClose, selectedPanel, onSelectRow }: {
   detail: CellDetail;
@@ -520,7 +505,7 @@ function DetailBody({ detail, onClose, selectedPanel, onSelectRow }: {
       else next.add(p);
       return next;
     });
-  const rows = flatten(detail.nodes, open);
+  const rows = flattenNodes(detail.nodes, open);
   // Gestion d'un groupe : formulaires (renommer, montant, lignes, supprimer) au
   // lieu d'un calcul.
   if (detail.groupManage) {
@@ -581,8 +566,7 @@ function DetailBody({ detail, onClose, selectedPanel, onSelectRow }: {
               // est identifiée par son propre chemin (r.path), donc cliquer une ligne
               // n'active jamais aussi la ligne « Total » — même si elles surlignent la
               // même case du tableau.
-              const cells =
-                r.node.refs ?? (r.node.ref ? [r.node.ref] : detail.cellRef ? [detail.cellRef] : null);
+              const cells = cellsForNode(r.node, detail.cellRef);
               return (
                 <DetailRow
                   key={r.path}
@@ -597,7 +581,7 @@ function DetailBody({ detail, onClose, selectedPanel, onSelectRow }: {
               // Le total correspond à la case du tableau qui a ouvert ce détail
               // (cellRef) : la cliquer surligne cette case. Identité propre (TOTAL_ROW)
               // pour n'activer que cette ligne.
-              const onTotal = onSelectRow ? () => onSelectRow(detail.cellRef ? [detail.cellRef] : null, TOTAL_ROW) : undefined;
+              const onTotal = onSelectRow ? () => onSelectRow(cellsForTotal(detail), TOTAL_ROW) : undefined;
               const totalSelected = selectedPanel === TOTAL_ROW;
               return (
                 <TableRow
@@ -636,7 +620,7 @@ export function HistoryDetailSidebar({ detail, onClose, selectedPanel, onSelectR
     <Sidebar side="right" variant="inset" collapsible="offcanvas">
       {detail && (
         <DetailBody
-          key={`${detail.groupManage ? `manage:${detail.groupManage.groupId}:${detail.groupManage.month}` : detail.uncatProvision ? `uncatProvision:${detail.uncatProvision.month}` : ""}${detail.title}·${detail.subtitle ?? ""}·${detail.result}`}
+          key={detailKey(detail)}
           detail={detail}
           onClose={onClose}
           selectedPanel={selectedPanel}

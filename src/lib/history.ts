@@ -490,7 +490,9 @@ export function computeSolde(
 
 // Revenu projeté d'une ligne pour un mois : montant de la principale (tous mois),
 // montant de la supplémentaire au mois courant seulement, 0 pour une dépense.
-function rowRevenus(r: HistoryRow, i: number, isCurrent: boolean): number {
+// Exportée : la grille et le side panel doivent projeter EXACTEMENT la même règle
+// que les chaînes de solde ci-dessous, sinon le détail ne retombe pas sur la case.
+export function rowRevenus(r: HistoryRow, i: number, isCurrent: boolean): number {
   if (r.direction !== "in") return 0;
   if (r.incomeKind === "supplementary") return isCurrent ? r.cells[i].budgeted : 0;
   return r.cells[i].budgeted;
@@ -501,10 +503,14 @@ function rowBudget(r: HistoryRow, i: number): number {
   return r.direction === "out" ? r.cells[i].budgeted : 0;
 }
 
-// Dépassement maintenu d'une ligne = dépassement réel constaté au mois courant.
-function rowOverspend(r: HistoryRow, ci: number): number {
+// Dépassement d'une ligne au mois d'index ci : part dépensée au-delà du budget.
+// Exportée pour la même raison que rowRevenus : le « Dépassement » lu dans le side
+// panel doit être celui-là même que retire la chaîne « si dépassement ».
+export function rowOverspend(r: HistoryRow, ci: number): number {
   if (r.direction !== "out") return 0;
-  return Math.max(0, r.cells[ci].depense - r.cells[ci].budgeted);
+  const c = r.cells[ci];
+  if (!c) return 0;
+  return Math.max(0, c.depense - c.budgeted);
 }
 
 export type PlannedSoldes = {
@@ -606,6 +612,12 @@ export function computeTableEstimate(
 export function uncatOverspend(sections: HistorySection[], i: number): number {
   const outT = sections.find((s) => s.kind === "uncategorized" && (s.uncatDirection ?? "out") === "out")?.totals[i];
   const inT = sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in")?.totals[i];
+  return uncatOverspendOf(outT, inT);
+}
+
+// Même règle, à partir des deux totaux déjà en main (la grille les a sous la main
+// quand elle rend la ligne « Non catégorisés » : inutile de rechercher les sections).
+export function uncatOverspendOf(outT?: MonthCell, inT?: MonthCell): number {
   return Math.max(0, (outT?.depense ?? 0) - (inT?.recu ?? 0) - (outT?.budgeted ?? 0));
 }
 
@@ -616,7 +628,9 @@ export function uncatOverspend(sections: HistorySection[], i: number): number {
 // pendingByMonth : les mêmes dépassements non tranchés, groupés par mois (bandeaux par mois).
 // Un dépassement tranché (exceptionnel ou permanent) n'alimente plus rien ici : il n'y a
 // plus de report sur le prévisionnel des mois futurs (cf. `computePlannedSoldes`).
-export type PendingOverspend = { groupId: number; name: string; month: string; amount: number };
+// kind : nature du groupe qui dépasse. Les non catégorisés (groupe 0) sont donnés
+// pour une enveloppe : ils ont une provision, pas des lignes datées.
+export type PendingOverspend = { groupId: number; name: string; month: string; amount: number; kind: "envelope" | "recurring" };
 
 export function computeOverspends(
   groups: Group[],
@@ -659,13 +673,13 @@ export function computeOverspends(
       const spent = owned.filter((o) => o.ownerId === g.id && o.month === m).reduce((s, o) => s + Math.abs(o.t.amount), 0);
       const os = Math.max(0, spent - budgetInForce(g, m, dated));
       if (os <= 0.005) continue;
-      classify({ groupId: g.id, name: g.name, month: m, amount: os }, `${g.id}::${m}`);
+      classify({ groupId: g.id, name: g.name, month: m, amount: os, kind: g.kind }, `${g.id}::${m}`);
     }
     const uncat = owned.filter((o) => o.ownerId === null && o.month === m);
     const dep = uncat.filter((o) => o.t.amount < 0).reduce((s, o) => s + Math.abs(o.t.amount), 0);
     const rec = uncat.filter((o) => o.t.amount > 0).reduce((s, o) => s + o.t.amount, 0);
     const os = Math.max(0, dep - rec - provisionInForce(dated, m));
-    if (os > 0.005) classify({ groupId: 0, name: "Non catégorisés", month: m, amount: os }, `0::${m}`);
+    if (os > 0.005) classify({ groupId: 0, name: "Non catégorisés", month: m, amount: os, kind: "envelope" }, `0::${m}`);
   }
   // Tri : par mois puis nom, pour un bandeau et des pastilles stables.
   const byMonthThenName = (a: PendingOverspend, b: PendingOverspend) =>
