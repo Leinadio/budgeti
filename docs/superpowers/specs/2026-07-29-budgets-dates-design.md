@@ -149,10 +149,21 @@ L'action serveur ne fait que les appliquer.
 ### Annuler une décision
 
 Symétrique : les entrées posées par « Permanent » sont retirées, au bon mois et
-sur les bonnes lignes. Pour retrouver quoi retirer sans stocker de lien, on
-recalcule les écritures qu'aurait produites la décision et on supprime celles qui
-existent encore à l'identique. Une entrée modifiée à la main depuis n'est pas
-touchée.
+sur les bonnes lignes.
+
+Recalculer après coup ce qu'une décision avait posé est impossible : le montant
+saisi dans le formulaire est libre. La décision garde donc la trace de ses
+écritures, dans une colonne `writes` ajoutée à `overspend_decisions` (JSON, NULL
+quand la décision n'a rien écrit) :
+
+```json
+[{ "target": "group", "id": 16, "month": "2026-08", "amount": 300, "before": 250 }]
+```
+
+`before` est le montant qui existait à ce mois avant la décision, ou `null` s'il
+n'y en avait aucun. Annuler restaure `before`, ou supprime l'entrée si `before`
+est `null`. Une entrée modifiée à la main depuis n'est pas touchée : on ne
+restaure que si le montant en place est encore celui que la décision avait posé.
 
 ## Interface
 
