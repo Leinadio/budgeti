@@ -86,8 +86,13 @@ export type OverspendActionInfo = {
   decision: "exceptional" | "permanent" | null; // null = non tranché
   currentBudget: number | null; // budget/provision actuel, pour pré-remplir « permanent »
   // Lignes d'un récurrent qui ont dépassé ce mois-là, avec leur budget et leur
-  // dépense réelle. Vide pour une enveloppe et pour les non catégorisés.
-  overspentLines: { lineId: number; name: string; budget: number; spent: number }[];
+  // dépense réelle. [] pour une enveloppe et pour les non catégorisés (jamais de
+  // lignes, donc jamais d'inconnue). null pour un récurrent dont le mois du
+  // dépassement n'est pas dans la fenêtre de mois actuellement affichée : les
+  // données de ce mois ne sont alors pas disponibles côté client pour distinguer
+  // « aucune ligne n'a dépassé » de « on ne sait pas » — à ne jamais confondre
+  // avec [], qui affirme un fait.
+  overspentLines: { lineId: number; name: string; budget: number; spent: number }[] | null;
 };
 
 export function sumOf(nodes: DetailNode[]): number {

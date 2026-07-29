@@ -89,14 +89,24 @@ export function isValidLineAmount(l: { amount: number }): boolean {
 // d'enregistrer une décision qui fait taire l'alerte sans rien relever. Il ne
 // suffit pas que la liste soit non vide : decideOverspend filtre ensuite les
 // montants non finis, négatifs ou nuls avant d'écrire (lineWrites), donc le
-// garde-fou exige qu'au moins un montant SURVIVE à ce même filtre — sinon une
-// liste entièrement invalide passerait le garde-fou pour ne rien écrire du
-// tout, en enregistrant quand même la décision.
+// garde-fou exige qu'au moins un montant SURVIVE à ce même filtre.
+//
+// Ce test sur lineAmounts s'applique QUEL QUE SOIT groupKind, pas seulement pour
+// un récurrent : decideOverspend aiguille sur `lineAmounts?.length` avant même de
+// regarder newBudget, sans se soucier de groupKind. Un appel « envelope » avec un
+// lineAmounts non vide mais entièrement invalide prendrait donc, lui aussi, la
+// branche lineWrites — écrivant une liste vide tout en enregistrant la décision,
+// la même faille que celle visée ci-dessus, sur l'autre branche. D'où l'ordre : on
+// juge d'abord ce que lineAmounts, quand il est fourni, laissera réellement
+// écrire ; on ne retombe sur la simple nature du groupe que lorsqu'aucune
+// ventilation n'a été envoyée du tout (le cas normal d'une enveloppe, qui passe
+// newBudget à la place).
 export function canDecidePermanent(
   groupKind: "envelope" | "recurring",
   lineAmounts: { lineId: number; amount: number }[] | undefined,
 ): boolean {
-  return groupKind === "envelope" || !!lineAmounts?.some(isValidLineAmount);
+  if (lineAmounts !== undefined) return lineAmounts.some(isValidLineAmount);
+  return groupKind === "envelope";
 }
 
 // Une décision qui ne pose aucune écriture ne doit jamais garder un tableau

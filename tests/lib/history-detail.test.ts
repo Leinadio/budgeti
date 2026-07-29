@@ -12,6 +12,7 @@ import {
   sectionRowKey,
   soldeActuelDetail,
   overspendDecisionDetail,
+  overspentLinesOf,
   detailKey,
 } from "../../src/lib/history-detail";
 import type { DetailNode } from "../../src/lib/history-explain";
@@ -231,6 +232,57 @@ describe("Les transactions et les postes d'une ligne", () => {
     const nodes = budgetNodes(loyer, 1)!;
     expect(nodes).toHaveLength(1);
     expect(nodes[0]).toMatchObject({ label: "Loyer", amount: 800, ref: "subrow:21::budget::1" });
+  });
+});
+
+describe("overspentLinesOf : lignes d'un récurrent en dépassement à un mois précis", () => {
+  // Abonnements sur 3 mois : Direct Assurance voiture ne dépasse (81.84 → 151.84)
+  // qu'en juillet (index 1) ; Sosh Internet ne dépasse jamais. Trois mois, pas
+  // deux : un décalage d'indice d'un seul cran doit retomber sur un mois qui NE
+  // dépasse PAS, pour que le test morde dessus (avec deux mois seulement, un
+  // décalage circulaire pourrait retomber par hasard sur le même résultat).
+  const abonnements: HistoryRow = {
+    id: 13,
+    name: "Abonnements",
+    kind: "recurring",
+    direction: "out",
+    incomeKind: null,
+    cells: [cell(), cell(), cell()],
+    aliveMonths: [true, true, true],
+    subRows: [
+      {
+        id: 2,
+        name: "Direct Assurance voiture",
+        cells: [
+          cell({ budgeted: 81.84, depense: 81.84 }),
+          cell({ budgeted: 81.84, depense: 151.84 }),
+          cell({ budgeted: 81.84, depense: 81.84 }),
+        ],
+        txns: [],
+      },
+      {
+        id: 3,
+        name: "Sosh Internet",
+        cells: [cell({ budgeted: 30.99, depense: 30.99 }), cell({ budgeted: 30.99, depense: 30.99 }), cell({ budgeted: 30.99, depense: 30.99 })],
+        txns: [],
+      },
+    ],
+    txns: [],
+  };
+
+  it("devrait retenir la ligne en dépassement au bon mois, avec son budget et sa dépense réelle", () => {
+    expect(overspentLinesOf(abonnements, 1)).toEqual([
+      { lineId: 2, name: "Direct Assurance voiture", budget: 81.84, spent: 151.84 },
+    ]);
+  });
+
+  it("ne devrait rien retenir aux mois où aucune ligne ne dépasse (avant / après)", () => {
+    expect(overspentLinesOf(abonnements, 0)).toEqual([]);
+    expect(overspentLinesOf(abonnements, 2)).toEqual([]);
+  });
+
+  it("ne devrait jamais rien retenir pour une enveloppe (subRows toujours vide)", () => {
+    expect(overspentLinesOf(courses, 1)).toEqual([]);
   });
 });
 

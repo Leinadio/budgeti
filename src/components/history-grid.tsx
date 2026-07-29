@@ -1332,12 +1332,18 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
   // pour lui associer ses lignes en dépassement (overspentLinesOf).
   const rowsById = useMemo(() => new Map(sections.flatMap((s) => s.rows).map((r) => [r.id, r])), [sections]);
   // Lignes d'un récurrent en dépassement au mois d'un dépassement en attente :
-  // vide si le groupe est une enveloppe, si le mois n'est pas dans la fenêtre
-  // affichée (données non disponibles ici) ou si aucune ligne n'a dépassé.
-  const overspentLinesOfPending = (item: PendingOverspend) => {
+  // [] si le groupe est une enveloppe (jamais de lignes) ou si aucune ligne n'a
+  // dépassé ; null si le mois n'est pas dans la fenêtre affichée — sections ne
+  // porte alors pas les données de ce mois, donc on ne PEUT PAS savoir, ce qui
+  // n'est pas la même chose que « aucune ligne n'a dépassé ». Une pastille sur le
+  // nom d'un groupe peut viser le dépassement non tranché le plus récent, qui
+  // peut être hors de la fenêtre par défaut (mois courant + projections) : le cas
+  // n'est pas rare, il ne faut pas le confondre avec [].
+  const overspentLinesOfPending = (item: PendingOverspend): { lineId: number; name: string; budget: number; spent: number }[] | null => {
+    if (item.kind === "envelope") return [];
     const row = rowsById.get(item.groupId);
     const i = months.indexOf(item.month);
-    if (!row || i === -1) return [];
+    if (!row || i === -1) return null;
     return overspentLinesOf(row, i);
   };
   // Un dépassement non tranché par groupe (le plus récent, mois courant inclus),

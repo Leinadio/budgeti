@@ -146,6 +146,17 @@ describe("canDecidePermanent : refuse un récurrent sans ventilation par ligne",
       ]),
     ).toBe(true);
   });
+
+  // decideOverspend aiguille sur `lineAmounts?.length` AVANT de regarder newBudget,
+  // quel que soit groupKind : un appel « envelope » avec un lineAmounts non vide
+  // mais entièrement invalide prendrait donc la branche lineWrites, écrirait une
+  // liste vide, et enregistrerait quand même la décision — la même faille que
+  // celle refermée ci-dessus pour un récurrent, sur l'autre branche.
+  it("refuse une enveloppe dont le lineAmounts fourni est entièrement invalide (même faille que sur un récurrent)", () => {
+    expect(canDecidePermanent("envelope", [{ lineId: 101, amount: 0 }])).toBe(false);
+    expect(canDecidePermanent("envelope", [{ lineId: 101, amount: -5 }])).toBe(false);
+    expect(canDecidePermanent("envelope", [{ lineId: 101, amount: NaN }])).toBe(false);
+  });
 });
 
 describe("normalizeWrites : une décision qui n'a rien écrit ne garde jamais un tableau vide", () => {
