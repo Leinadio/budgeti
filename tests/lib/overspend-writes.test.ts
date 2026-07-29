@@ -120,6 +120,32 @@ describe("canDecidePermanent : refuse un récurrent sans ventilation par ligne",
   it("autorise un récurrent dès qu'une ventilation par ligne est fournie", () => {
     expect(canDecidePermanent("recurring", [{ lineId: 101, amount: 50 }])).toBe(true);
   });
+
+  // decideOverspend (actions.ts) filtre ensuite les montants non finis, négatifs ou
+  // nuls avant d'écrire (lineWrites ne retient que ceux-là). Si TOUS les montants
+  // envoyés sont invalides, le garde-fou doit refuser au même titre qu'une
+  // ventilation vide ou absente — sinon une décision « permanent » se retrouve
+  // enregistrée sans qu'aucun montant ait réellement bougé.
+  it("refuse un récurrent dont tous les montants fournis sont invalides (non finis, négatifs ou nuls)", () => {
+    expect(canDecidePermanent("recurring", [{ lineId: 101, amount: NaN }])).toBe(false);
+    expect(canDecidePermanent("recurring", [{ lineId: 101, amount: -5 }])).toBe(false);
+    expect(canDecidePermanent("recurring", [{ lineId: 101, amount: 0 }])).toBe(false);
+    expect(
+      canDecidePermanent("recurring", [
+        { lineId: 101, amount: 0 },
+        { lineId: 102, amount: -1 },
+      ]),
+    ).toBe(false);
+  });
+
+  it("autorise un récurrent dès qu'au moins un montant fourni est valide, même si d'autres ne le sont pas", () => {
+    expect(
+      canDecidePermanent("recurring", [
+        { lineId: 101, amount: 0 },
+        { lineId: 102, amount: 50 },
+      ]),
+    ).toBe(true);
+  });
 });
 
 describe("normalizeWrites : une décision qui n'a rien écrit ne garde jamais un tableau vide", () => {

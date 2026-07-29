@@ -9,6 +9,7 @@ import {
   type CellDetail,
   type DetailNode,
   type Col,
+  type OverspendActionInfo,
   cellKey,
   openingRow,
   sectionRow,
@@ -18,6 +19,7 @@ import {
   makeDetail,
   txnNode,
 } from "./history-explain";
+import { overspentLines } from "./overspend-writes";
 
 // Nature du montant porté par un nœud : les trois colonnes chiffrées du tableau,
 // plus le « net » (recu − depense) que lisent les chaînes de solde.
@@ -55,6 +57,18 @@ export function budgetNodes(r: HistoryRow, i: number): DetailNode[] | undefined 
     .map((s): DetailNode => ({ label: s.name, amount: s.cells[i].budgeted, ref: cellKey(subRow(s.id), "budget", i) }))
     .filter((n) => n.amount !== 0);
   return nodes.length > 0 ? nodes : undefined;
+}
+
+// Lignes d'un récurrent en dépassement au mois i, pour pré-remplir le formulaire
+// « Permanent » par ligne (Task 11) : à partir des cellules déjà calculées de
+// chaque ligne (budgeted / depense), sans recalcul depuis les transactions.
+// Toujours vide pour une enveloppe (subRows y est toujours vide).
+export function overspentLinesOf(r: HistoryRow, i: number): OverspendActionInfo["overspentLines"] {
+  return overspentLines(
+    r.subRows.map((sr) => ({ id: sr.id, name: sr.name })),
+    (id) => r.subRows.find((sr) => sr.id === id)!.cells[i].budgeted,
+    (id) => r.subRows.find((sr) => sr.id === id)!.cells[i].depense,
+  );
 }
 
 // Un groupe comme nœud d'un calcul de section/total : montant = sa contribution
@@ -164,13 +178,16 @@ export function soldeActuelDetail(
 // montant du dépassement et le bloc de décision. cellRef surligne la Balance du bon
 // mois quand il est affiché (monthIdx), sinon le panneau s'ouvre sans surbrillance.
 // currentBudget : budget/provision du groupe en vigueur au mois courant, pour
-// pré-remplir le champ « Permanent » ; null si inconnu.
+// pré-remplir le champ « Permanent » ; null si inconnu. overspentLines : lignes du
+// récurrent en dépassement à item.month (voir overspentLinesOf) ; vide pour une
+// enveloppe et pour les non catégorisés.
 export function overspendDecisionDetail(
   item: PendingOverspend,
   accountId: string,
   monthIdx: number | null,
   decision: "exceptional" | "permanent" | null,
   currentBudget: number | null = null,
+  overspentLines: OverspendActionInfo["overspentLines"] = [],
 ): CellDetail {
   return {
     title: "Dépassement",
@@ -185,10 +202,12 @@ export function overspendDecisionDetail(
       accountId,
       groupId: item.groupId,
       groupName: item.name,
+      groupKind: item.kind,
       month: item.month,
       amount: item.amount,
       decision,
       currentBudget,
+      overspentLines,
     },
   };
 }

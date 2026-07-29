@@ -27,6 +27,7 @@ import {
   sectionNode,
   soldeActuelDetail,
   overspendDecisionDetail,
+  overspentLinesOf,
 } from "@/lib/history-detail";
 import {
   type CellDetail,
@@ -439,10 +440,15 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
             accountId,
             groupId: r.id,
             groupName: r.name,
+            groupKind: r.kind,
             month,
             amount: -c.balance,
             decision: decisionByKey?.get(`${r.id}::${month}`) ?? null,
             currentBudget: currentBudgets?.[r.id] ?? null,
+            // Lignes de ce récurrent qui ont dépassé au mois de la case cliquée (vide
+            // pour une enveloppe, dont subRows est toujours vide) — voir
+            // overspentLinesOf dans src/lib/history-detail.ts.
+            overspentLines: overspentLinesOf(r, i),
           };
         }
 
@@ -726,10 +732,14 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
             accountId,
             groupId: 0,
             groupName: "Non catégorisés",
+            groupKind: "envelope",
             month,
             amount: -resteVal,
             decision: decisionByKey?.get(`0::${month}`) ?? null,
             currentBudget: currentUncatProvision ?? null,
+            // Les non catégorisés n'ont pas de lignes (pas de récurrent) : jamais de
+            // dépassement à ventiler.
+            overspentLines: [],
           };
         }
 
@@ -1317,6 +1327,19 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
     () => new Map((decisions ?? []).map((d) => [`${d.groupId}::${d.month}`, d.decision])),
     [decisions],
   );
+  // Toutes les lignes de groupe du tableau, indexées par id : sert à retrouver la
+  // ligne d'un dépassement affiché via une pastille (bandeau / en-tête de mois),
+  // pour lui associer ses lignes en dépassement (overspentLinesOf).
+  const rowsById = useMemo(() => new Map(sections.flatMap((s) => s.rows).map((r) => [r.id, r])), [sections]);
+  // Lignes d'un récurrent en dépassement au mois d'un dépassement en attente :
+  // vide si le groupe est une enveloppe, si le mois n'est pas dans la fenêtre
+  // affichée (données non disponibles ici) ou si aucune ligne n'a dépassé.
+  const overspentLinesOfPending = (item: PendingOverspend) => {
+    const row = rowsById.get(item.groupId);
+    const i = months.indexOf(item.month);
+    if (!row || i === -1) return [];
+    return overspentLinesOf(row, i);
+  };
   // Un dépassement non tranché par groupe (le plus récent, mois courant inclus),
   // pour la pastille : chaque élément qui dépasse et attend une décision est marqué.
   const pendingByGroup = useMemo(() => {
@@ -1474,7 +1497,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                   e.stopPropagation();
                   const p = pendingByGroup.get(r.id)!;
                   const idx = months.indexOf(p.month);
-                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null, currentBudgets?.[r.id] ?? null));
+                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null, currentBudgets?.[r.id] ?? null, overspentLinesOfPending(p)));
                 }}
                 className="ml-1 inline-block size-2 shrink-0 rounded-full bg-amber-500"
               />
@@ -1637,7 +1660,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                   e.stopPropagation();
                   const p = pendingByGroup.get(0)!;
                   const idx = months.indexOf(p.month);
-                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null, currentUncatProvision ?? null));
+                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null, currentUncatProvision ?? null, overspentLinesOfPending(p)));
                 }}
                 className="ml-1 inline-block size-2 shrink-0 rounded-full bg-amber-500"
               />
@@ -1813,7 +1836,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                       <button
                         key={`${it.groupId}-${it.month}`}
                         type="button"
-                        onClick={() => onSelect(overspendDecisionDetail(it, accountId, months.indexOf(it.month) === -1 ? null : months.indexOf(it.month), null))}
+                        onClick={() => onSelect(overspendDecisionDetail(it, accountId, months.indexOf(it.month) === -1 ? null : months.indexOf(it.month), null, null, overspentLinesOfPending(it)))}
                         className="rounded border border-amber-300 bg-amber-50 px-1 text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
                       >
                         {it.name} ({NUM.format(it.amount)} €)

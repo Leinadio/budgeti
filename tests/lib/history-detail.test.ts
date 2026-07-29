@@ -328,6 +328,22 @@ describe("Le dépassement ouvert depuis un bandeau ou une pastille", () => {
   it("devrait reporter la décision déjà prise", () => {
     expect(overspendDecisionDetail(item, "a1", 1, "permanent").overspendAction!.decision).toBe("permanent");
   });
+
+  it("devrait porter la nature du groupe (envelope/recurring) issue de l'item", () => {
+    expect(overspendDecisionDetail(item, "a1", 1, null).overspendAction!.groupKind).toBe("envelope");
+    expect(overspendDecisionDetail({ ...item, kind: "recurring" }, "a1", 1, null).overspendAction!.groupKind).toBe(
+      "recurring",
+    );
+  });
+
+  it("devrait porter les lignes en dépassement transmises, sans les recalculer", () => {
+    const lignes = [{ lineId: 101, name: "Direct Assurance voiture", budget: 81.84, spent: 151.84 }];
+    expect(overspendDecisionDetail(item, "a1", 1, null, 300, lignes).overspendAction!.overspentLines).toEqual(lignes);
+  });
+
+  it("devrait rendre une liste vide de lignes en dépassement quand rien n'est transmis", () => {
+    expect(overspendDecisionDetail(item, "a1", 1, null).overspendAction!.overspentLines).toEqual([]);
+  });
 });
 
 describe("L'identité d'un détail, qui décide quand le panneau repart de zéro", () => {

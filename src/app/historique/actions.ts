@@ -17,7 +17,7 @@ import {
 } from "../../db/repositories/groups";
 import { toDatedBudgets, toDatedLineAmounts, onceBudgetWrites, nextMonthKey } from "../../lib/history";
 import { canRemoveBudgetChange } from "../../lib/budget-history";
-import { envelopeWrites, lineWrites, undoWrites, amountAt, canDecidePermanent, normalizeWrites, type BudgetWrite } from "../../lib/overspend-writes";
+import { envelopeWrites, lineWrites, undoWrites, amountAt, canDecidePermanent, normalizeWrites, isValidLineAmount, type BudgetWrite } from "../../lib/overspend-writes";
 import { revalidatePath } from "next/cache";
 
 // Défait les écritures d'une décision « permanent » : restaure les entrées qui
@@ -52,6 +52,9 @@ function applyUndo(database: Database.Database, writes: BudgetWrite[]): void {
 // avant d'en poser de nouvelles : sans ça, le montant d'avant capturé par la
 // nouvelle décision serait celui posé par l'ancienne, pas la vraie valeur
 // d'origine — orpheline, sans recours, une fois la nouvelle décision annulée.
+// Rend true si la décision a bien été enregistrée, false si elle a été refusée
+// (mois invalide, ou canDecidePermanent) : le side panel s'en sert pour ne
+// jamais annoncer une décision qui n'a pas eu lieu.
 export async function decideOverspend(
   accountId: string,
   groupId: number,
@@ -59,13 +62,13 @@ export async function decideOverspend(
   decision: "exceptional" | "permanent",
   newBudget?: number,
   lineAmounts?: { lineId: number; amount: number }[],
-): Promise<void> {
-  if (!/^\d{4}-\d{2}$/.test(month)) return;
+): Promise<boolean> {
+  if (!/^\d{4}-\d{2}$/.test(month)) return false;
   const database = db();
 
   if (decision === "permanent") {
     const kind = groupId === 0 ? "envelope" : (getGroupKind(database, groupId) ?? "envelope");
-    if (!canDecidePermanent(kind, lineAmounts)) return;
+    if (!canDecidePermanent(kind, lineAmounts)) return false;
   }
 
   const existing = getOverspendDecision(database, accountId, groupId, month);
@@ -79,7 +82,7 @@ export async function decideOverspend(
       writes = lineWrites(
         month,
         lineAmounts
-          .filter((l) => Number.isFinite(l.amount) && l.amount > 0)
+          .filter(isValidLineAmount)
           .map((l) => ({
             lineId: l.lineId,
             amount: l.amount,
@@ -101,6 +104,7 @@ export async function decideOverspend(
   });
   revalidatePath("/historique");
   revalidatePath("/");
+  return true;
 }
 
 // Annule une décision : le dépassement redevient « à trancher ». Les montants

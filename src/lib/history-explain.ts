@@ -76,10 +76,18 @@ export type OverspendActionInfo = {
   accountId: string;
   groupId: number; // 0 = non catégorisés
   groupName: string;
+  // Nature du groupe : une enveloppe (et les non catégorisés, toujours "envelope")
+  // ont un montant à eux ; un récurrent n'en a pas (son budget est la somme de ses
+  // lignes). Pilote le formulaire « Permanent » affiché (un seul montant, ou une
+  // ligne par poste en dépassement — voir overspentLines).
+  groupKind: "envelope" | "recurring";
   month: string; // YYYY-MM
   amount: number; // dépassement, positif
   decision: "exceptional" | "permanent" | null; // null = non tranché
   currentBudget: number | null; // budget/provision actuel, pour pré-remplir « permanent »
+  // Lignes d'un récurrent qui ont dépassé ce mois-là, avec leur budget et leur
+  // dépense réelle. Vide pour une enveloppe et pour les non catégorisés.
+  overspentLines: { lineId: number; name: string; budget: number; spent: number }[];
 };
 
 export function sumOf(nodes: DetailNode[]): number {

@@ -100,21 +100,39 @@ function DetailRow({ row, selected, onToggle, onSelect }: {
 
 // Bloc de décision d'un dépassement : affiché sous le détail quand la case
 // cliquée est une Balance en dépassement. « Exceptionnel » enregistre en un clic ;
-// « Permanent » déplie un mini-formulaire avec le nouveau budget (ou la nouvelle
-// provision, pour les non catégorisés) pré-rempli — budget actuel + dépassement —
-// ajustable avant validation.
+// « Permanent » déplie un formulaire — un seul montant (budget ou provision) pour
+// une enveloppe ou les non catégorisés, un montant par ligne en dépassement pour
+// un récurrent (un récurrent n'a pas de budget à lui, voir action.overspentLines).
 function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
   const router = useRouter();
   const [openForm, setOpenForm] = useState(false);
   const [value, setValue] = useState(() => String(Math.round(((action.currentBudget ?? 0) + action.amount) * 100) / 100));
+  // Montants saisis par ligne (formulaire « Permanent » d'un récurrent), indexés
+  // par lineId. Non renseigné = pré-rempli au montant réellement dépensé.
+  const [lineValues, setLineValues] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
+  // Le serveur peut refuser une décision « permanent » (canDecidePermanent : aucun
+  // montant valide envoyé) : ce message ne s'affiche que dans ce cas, pour ne
+  // jamais laisser croire qu'une décision a été prise quand ce n'est pas vrai.
+  const [error, setError] = useState<string | null>(null);
   // Décision affichée : celle déjà en base à l'ouverture, mise à jour tout de suite
-  // après un choix pour que la question disparaisse sans attendre un nouveau clic.
+  // après un choix pour que la question disparaisse sans attendre un nouveau clic —
+  // mais seulement si le serveur a réellement enregistré la décision (decide) :
+  // sinon l'écran annoncerait une décision qui n'a pas eu lieu.
   const [decided, setDecided] = useState<"exceptional" | "permanent" | null>(action.decision);
-  const decide = async (decision: "exceptional" | "permanent", newBudget?: number) => {
+  const decide = async (
+    decision: "exceptional" | "permanent",
+    newBudget?: number,
+    lineAmounts?: { lineId: number; amount: number }[],
+  ) => {
     setBusy(true);
-    await decideOverspend(action.accountId, action.groupId, action.month, decision, newBudget);
+    setError(null);
+    const ok = await decideOverspend(action.accountId, action.groupId, action.month, decision, newBudget, lineAmounts);
     setBusy(false);
+    if (!ok) {
+      setError("Aucun montant valide : la décision n'a pas été enregistrée.");
+      return;
+    }
     setOpenForm(false);
     setDecided(decision);
     router.refresh();
@@ -159,7 +177,57 @@ function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
           Permanent
         </button>
       </div>
-      {openForm && (
+      {/* Récurrent dont aucune ligne n'a dépassé ce mois-ci : la dépense est
+          rattachée au groupe, pas à une ligne précise — rien à ventiler ici, on
+          renvoie vers l'édition des lignes plutôt que d'inventer une répartition. */}
+      {openForm && action.overspentLines.length === 0 && action.groupKind === "recurring" && (
+        <p className="text-muted-foreground mt-2 text-sm">
+          Aucune ligne n&apos;a dépassé ce mois-ci : la dépense est rattachée au groupe,
+          pas à une ligne précise. Ajuste la ligne concernée depuis « Gérer le groupe ».
+        </p>
+      )}
+      {/* Récurrent : un montant par ligne en dépassement, pré-rempli au montant
+          réellement dépensé, en vigueur à partir du mois qui suit le dépassement. */}
+      {openForm && action.overspentLines.length > 0 && (
+        <div className="mt-2 flex flex-col gap-2">
+          <p className="text-muted-foreground">Nouveaux montants, à partir du mois suivant :</p>
+          {action.overspentLines.map((l) => (
+            <div key={l.lineId} className="flex items-center justify-between gap-2">
+              <span className="min-w-0 truncate">{l.name}</span>
+              <span className="flex items-center gap-2">
+                <span className="text-muted-foreground tabular-nums">{formatEur(l.budget)} →</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={lineValues[l.lineId] ?? String(Math.round(l.spent * 100) / 100)}
+                  onChange={(e) => setLineValues((v) => ({ ...v, [l.lineId]: e.target.value }))}
+                  className="w-24 rounded-md border px-2 py-1 text-right tabular-nums"
+                />
+              </span>
+            </div>
+          ))}
+          <Button
+            type="button"
+            size="sm"
+            disabled={busy}
+            onClick={() =>
+              decide(
+                "permanent",
+                undefined,
+                action.overspentLines.map((l) => ({
+                  lineId: l.lineId,
+                  amount: parseFloat(lineValues[l.lineId] ?? String(Math.round(l.spent * 100) / 100)),
+                })),
+              )
+            }
+          >
+            Valider
+          </Button>
+        </div>
+      )}
+      {/* Enveloppe (ou non catégorisés) : un seul montant, comme avant. */}
+      {openForm && action.overspentLines.length === 0 && action.groupKind !== "recurring" && (
         <div className="mt-2 flex items-center gap-2">
           <label className="text-muted-foreground" htmlFor="new-budget">
             {action.groupId === 0 ? "Nouvelle provision" : "Nouveau budget"}
@@ -183,6 +251,7 @@ function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
           </button>
         </div>
       )}
+      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
     </div>
   );
 }

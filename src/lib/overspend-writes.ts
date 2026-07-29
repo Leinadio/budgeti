@@ -72,17 +72,31 @@ export function amountAt(serie: { effectiveMonth: string; amount: number }[], mo
   return serie.find((e) => e.effectiveMonth === month)?.amount ?? null;
 }
 
+// Un montant de ligne que decideOverspend retiendra réellement pour écrire (même
+// filtre que celui appliqué avant lineWrites dans actions.ts). Partagé ici pour
+// que le garde-fou et l'écriture jugent exactement la même chose — sinon un
+// montant que l'un accepte et l'autre rejette rouvre la faille que ce garde-fou
+// doit fermer (voir canDecidePermanent).
+export function isValidLineAmount(l: { amount: number }): boolean {
+  return Number.isFinite(l.amount) && l.amount > 0;
+}
+
 // Une décision « permanent » sur un récurrent n'a de sens que ventilée sur ses
 // lignes : un récurrent n'a pas de montant à lui (son budget est la somme de
 // ses lignes), il n'y a donc rien de sûr à écrire au niveau du groupe. Sans
 // ventilation fournie (lineAmounts absent ou vide), la décision doit être
 // refusée — plutôt que d'écrire un montant mort sur le groupe (jamais lu) ou
-// d'enregistrer une décision qui fait taire l'alerte sans rien relever.
+// d'enregistrer une décision qui fait taire l'alerte sans rien relever. Il ne
+// suffit pas que la liste soit non vide : decideOverspend filtre ensuite les
+// montants non finis, négatifs ou nuls avant d'écrire (lineWrites), donc le
+// garde-fou exige qu'au moins un montant SURVIVE à ce même filtre — sinon une
+// liste entièrement invalide passerait le garde-fou pour ne rien écrire du
+// tout, en enregistrant quand même la décision.
 export function canDecidePermanent(
   groupKind: "envelope" | "recurring",
   lineAmounts: { lineId: number; amount: number }[] | undefined,
 ): boolean {
-  return groupKind === "envelope" || !!lineAmounts?.length;
+  return groupKind === "envelope" || !!lineAmounts?.some(isValidLineAmount);
 }
 
 // Une décision qui ne pose aucune écriture ne doit jamais garder un tableau
