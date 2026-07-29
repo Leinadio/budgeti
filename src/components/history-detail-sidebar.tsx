@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { X, ChevronRight, ChevronDown, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CellDetail, OverspendActionInfo, GroupManageInfo, UncatProvisionInfo } from "@/lib/history-explain";
-import { monthLabel, monthPhrase, deMonthPhrase } from "@/lib/transactions-view";
+import { monthLabel, monthPhrase, deMonthPhrase, deMonthLabel } from "@/lib/transactions-view";
 import { nextMonthKey } from "@/lib/history";
 import { formatEur } from "@/lib/money";
 import { detailKey } from "@/lib/history-detail";
@@ -321,14 +321,22 @@ function BudgetChangesList({ changes, busy, onRemoveChange, size = "sm" }: {
     <ul className={cn("text-muted-foreground flex flex-col gap-1", size === "sm" ? "text-sm" : "text-xs")}>
       {changes.map((c) => (
         <li key={c.month} className="flex items-center justify-between gap-2">
-          <span>{c.isStart ? "Montant de départ" : `À partir de ${monthLabel(c.month)}`}</span>
+          {/* Le libellé ouvre l'élément (comme « Montant de départ » à côté) :
+              la majuscule de monthLabel y reste légitime, seule l'élision
+              manquait — d'où deMonthLabel (garde la casse) et non deMonthPhrase
+              (qui la mettrait en minuscule, hors de propos ici). */}
+          <span>{c.isStart ? "Montant de départ" : `À partir ${deMonthLabel(c.month)}`}</span>
           <span className="flex items-center gap-2">
             <span className="tabular-nums">{formatEur(c.amount)}</span>
             {!c.isStart && (
               <button
                 type="button"
                 disabled={busy}
-                aria-label={`Supprimer le changement de ${monthLabel(c.month)}`}
+                // Même correctif que le libellé ci-dessus (deMonthLabel, pas
+                // deMonthPhrase) : ne change que l'élision manquante, pas la
+                // casse — les mois qui ne demandent pas l'élision gardent
+                // exactement le même texte qu'avant.
+                aria-label={`Supprimer le changement ${deMonthLabel(c.month)}`}
                 onClick={() => onRemoveChange(c.month)}
                 className="text-muted-foreground hover:text-foreground"
               >

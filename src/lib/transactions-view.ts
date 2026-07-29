@@ -31,6 +31,16 @@ export function deMonthPhrase(ym: string): string {
   return (VOWEL_START.test(phrase) ? "d'" : "de ") + phrase;
 }
 
+// « de »/« d' » + le mois, mais SANS toucher à la majuscule de monthLabel : pour
+// un libellé qui ouvre lui-même son élément (ex. « À partir de <mois> » dans la
+// vie d'un budget — BudgetChangesList) plutôt qu'inséré au milieu d'une phrase
+// plus large, où deMonthPhrase (minuscule) convient mieux. Seule l'élision
+// manque dans ce contexte-là, pas la casse.
+export function deMonthLabel(ym: string): string {
+  const label = monthLabel(ym);
+  return (VOWEL_START.test(label) ? "d'" : "de ") + label;
+}
+
 export function groupByMonth<T extends { date: string }>(
   items: T[],
 ): { month: string; label: string; items: T[] }[] {

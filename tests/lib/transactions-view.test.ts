@@ -1,5 +1,5 @@
 import { expect, test, describe } from "vitest";
-import { monthLabel, groupByMonth, monthPhrase, deMonthPhrase } from "../../src/lib/transactions-view";
+import { monthLabel, groupByMonth, monthPhrase, deMonthPhrase, deMonthLabel } from "../../src/lib/transactions-view";
 
 test("monthLabel formats the French month with a capital initial", () => {
   expect(monthLabel("2026-07")).toBe("Juillet 2026");
@@ -51,6 +51,33 @@ describe("deMonthPhrase : « de »/« d' » + le mois, élidé devant une voyell
   for (const [ym, expected] of cases) {
     test(`${ym} -> "${expected}"`, () => {
       expect(deMonthPhrase(ym)).toBe(expected);
+    });
+  }
+});
+
+// « de »/« d' » + le mois, mais SANS toucher à la majuscule de monthLabel : pour
+// un libellé qui ouvre son propre élément (ex. « À partir de <mois> » dans la vie
+// d'un budget, BudgetChangesList) plutôt qu'inséré au milieu d'une phrase plus
+// large où deMonthPhrase (minuscule) conviendrait. Seule l'élision manque là,
+// pas la casse — à ne pas confondre avec deMonthPhrase.
+describe("deMonthLabel : « de »/« d' » + le mois, en conservant la majuscule de monthLabel", () => {
+  const cases: [string, string][] = [
+    ["2026-01", "de Janvier 2026"],
+    ["2026-02", "de Février 2026"],
+    ["2026-03", "de Mars 2026"],
+    ["2026-04", "d'Avril 2026"], // élision : voyelle
+    ["2026-05", "de Mai 2026"],
+    ["2026-06", "de Juin 2026"],
+    ["2026-07", "de Juillet 2026"],
+    ["2026-08", "d'Août 2026"], // élision : voyelle
+    ["2026-09", "de Septembre 2026"],
+    ["2026-10", "d'Octobre 2026"], // élision : voyelle
+    ["2026-11", "de Novembre 2026"],
+    ["2026-12", "de Décembre 2026"],
+  ];
+  for (const [ym, expected] of cases) {
+    test(`${ym} -> "${expected}"`, () => {
+      expect(deMonthLabel(ym)).toBe(expected);
     });
   }
 });
