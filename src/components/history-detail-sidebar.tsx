@@ -187,12 +187,51 @@ function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
   );
 }
 
+// Vie d'un budget (enveloppe ou ligne) : ce qui s'applique et depuis quand. Le
+// montant de départ se modifie mais ne se supprime pas — sans lui, l'un ou
+// l'autre n'aurait plus de budget du tout, d'où l'absence de corbeille sur
+// cette entrée (voir aussi canRemoveBudgetChange, revérifié côté serveur).
+// Partagée entre le bloc « Vie du budget » d'une enveloppe et la liste sous
+// chaque ligne d'un récurrent : mêmes libellés, même motif de corbeille
+// conditionnelle, seule la taille du texte et de l'icône diffère entre les
+// deux contextes.
+function BudgetChangesList({ changes, busy, onRemoveChange, size = "sm" }: {
+  changes: BudgetChange[];
+  busy: boolean;
+  onRemoveChange: (month: string) => void;
+  size?: "sm" | "xs";
+}) {
+  if (changes.length === 0) return null;
+  return (
+    <ul className={cn("text-muted-foreground flex flex-col gap-1", size === "sm" ? "text-sm" : "text-xs")}>
+      {changes.map((c) => (
+        <li key={c.month} className="flex items-center justify-between gap-2">
+          <span>{c.isStart ? "Montant de départ" : `À partir de ${monthLabel(c.month)}`}</span>
+          <span className="flex items-center gap-2">
+            <span className="tabular-nums">{formatEur(c.amount)}</span>
+            {!c.isStart && (
+              <button
+                type="button"
+                disabled={busy}
+                aria-label={`Supprimer le changement de ${monthLabel(c.month)}`}
+                onClick={() => onRemoveChange(c.month)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <Trash2 className={size === "sm" ? "size-3.5" : "size-3"} />
+              </button>
+            )}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 // Une ligne d'un récurrent en édition : nom / montant du mois affiché / jour, plus
 // la vie de son montant. Le nom et le jour valent pour tous les mois ; le montant
 // est daté, avec la même portée que celle d'une enveloppe.
-function LineRow({ line, month, busy, onSave, onRemove, onRemoveChange }: {
+function LineRow({ line, busy, onSave, onRemove, onRemoveChange }: {
   line: { id: number; name: string; amount: number; day: number; changes: BudgetChange[] };
-  month: string;
   busy: boolean;
   onSave: (name: string, day: number, amount: number, scope: "once" | "ongoing") => void;
   onRemove: () => void;
@@ -240,29 +279,7 @@ function LineRow({ line, month, busy, onSave, onRemove, onRemoveChange }: {
           Enregistrer
         </Button>
       </div>
-      {line.changes.length > 0 && (
-        <ul className="text-muted-foreground flex flex-col gap-1 text-xs">
-          {line.changes.map((c) => (
-            <li key={c.month} className="flex items-center justify-between gap-2">
-              <span>{c.isStart ? "Montant de départ" : `À partir de ${monthLabel(c.month)}`}</span>
-              <span className="flex items-center gap-2">
-                <span className="tabular-nums">{formatEur(c.amount)}</span>
-                {!c.isStart && (
-                  <button
-                    type="button"
-                    disabled={busy}
-                    aria-label={`Supprimer le changement de ${monthLabel(c.month)}`}
-                    onClick={() => onRemoveChange(c.month)}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <Trash2 className="size-3" />
-                  </button>
-                )}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
+      <BudgetChangesList changes={line.changes} busy={busy} onRemoveChange={onRemoveChange} size="xs" />
     </div>
   );
 }
@@ -356,35 +373,16 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
           </div>
         )}
 
-        {/* Vie du budget : ce qui s'applique et depuis quand. Le montant de
-            départ se modifie mais ne se supprime pas — sans lui le groupe
-            n'aurait plus de budget du tout. */}
+        {/* Vie du budget : ce qui s'applique et depuis quand. */}
         {info.kind === "envelope" && info.changes.length > 0 && (
           <div className="flex flex-col gap-2">
             <Label className="font-normal">Vie du budget</Label>
-            <ul className="text-muted-foreground flex flex-col gap-1 text-sm">
-              {info.changes.map((c) => (
-                <li key={c.month} className="flex items-center justify-between gap-2">
-                  <span>
-                    {c.isStart ? "Montant de départ" : `À partir de ${monthLabel(c.month)}`}
-                  </span>
-                  <span className="flex items-center gap-2">
-                    <span className="tabular-nums">{formatEur(c.amount)}</span>
-                    {!c.isStart && (
-                      <button
-                        type="button"
-                        disabled={busy}
-                        aria-label={`Supprimer le changement de ${monthLabel(c.month)}`}
-                        onClick={() => run(() => removeGroupAmount(info.groupId, c.month))}
-                        className="text-muted-foreground hover:text-foreground"
-                      >
-                        <Trash2 className="size-3.5" />
-                      </button>
-                    )}
-                  </span>
-                </li>
-              ))}
-            </ul>
+            <BudgetChangesList
+              changes={info.changes}
+              busy={busy}
+              onRemoveChange={(m) => run(() => removeGroupAmount(info.groupId, m))}
+              size="sm"
+            />
           </div>
         )}
 
@@ -397,7 +395,6 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
               <LineRow
                 key={l.id}
                 line={{ ...l, amount: amountAtMonth(l.changes, info.month) }}
-                month={info.month}
                 busy={busy}
                 onSave={(n, d, a, s) => run(() => editGroupLine(l.id, n, d, info.month, a, s))}
                 onRemoveChange={(m) => run(() => removeLineAmount(l.id, m))}
