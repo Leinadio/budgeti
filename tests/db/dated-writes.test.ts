@@ -17,9 +17,11 @@ test("une enveloppe créée est immédiatement lisible à son mois de départ", 
   const db = seed();
   const gid = insertEnvelopeGroup(db, "a1", "Activités", "out", 250, null, "2026-03", null);
   // getDb a déjà lancé la reprise ; ici c'est la création qui doit poser l'entrée.
-  // Reproduit ici le corps de createGroup (actions.ts) : insertEnvelopeGroup +
-  // setBudgetAmount, car "use server" empêche d'appeler l'action directement
-  // depuis Vitest. Voir task-7-report.md pour la trace de ce constat.
+  // "use server" empêche d'appeler createGroup (actions.ts) directement depuis
+  // Vitest : cet appel reproduit donc son corps (insertEnvelopeGroup +
+  // setBudgetAmount) plutôt que de contourner le test. Le retirer casserait
+  // l'assertion pour de bon, quel que soit le contenu de actions.ts, puisque
+  // rien d'autre dans ce test n'écrit l'entrée datée.
   setBudgetAmount(db, gid, "2026-03", 250);
   const g: Group = { id: gid, accountId: "a1", name: "Activités", direction: "out", kind: "envelope", monthlyAmount: null, lines: [], startMonth: "2026-03", endMonth: null };
   const dated = toDatedBudgets(listBudgetAmounts(db));

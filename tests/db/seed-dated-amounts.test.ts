@@ -3,9 +3,10 @@ import Database from "better-sqlite3";
 import { getDb } from "../../src/db/index";
 import { migrateSeedDatedAmounts } from "../../src/db/migrations";
 import { upsertAccount } from "../../src/db/repositories/accounts";
-import { insertEnvelopeGroup, insertRecurringGroup, insertLine } from "../../src/db/repositories/groups";
+import { insertEnvelopeGroup, insertRecurringGroup, insertLine, updateLine } from "../../src/db/repositories/groups";
 import { listBudgetAmounts, setBudgetAmount } from "../../src/db/repositories/budget-amounts";
-import { listLineAmounts } from "../../src/db/repositories/line-amounts";
+import { listLineAmounts, setLineAmount } from "../../src/db/repositories/line-amounts";
+import { onceBudgetWrites, toDatedLineAmounts } from "../../src/lib/history";
 
 // getDb applique déjà migrateSeedDatedAmounts : on part donc d'une base propre
 // et on rappelle la migration pour vérifier l'idempotence.
@@ -75,6 +76,46 @@ test("la provision des non catégorisés (groupe 0) n'est pas touchée", () => {
   setBudgetAmount(db, 0, "2026-07", 30);
   migrateSeedDatedAmounts(db);
   expect(listBudgetAmounts(db)).toEqual([{ groupId: 0, effectiveMonth: "2026-07", amount: 30 }]);
+});
+
+// Task 7, relecture : la migration ne doit plus rejouer sur une ligne (ou un
+// groupe) qui a déjà au moins une entrée datée, quel que soit le mois. Sinon
+// chaque redémarrage du serveur (chaque appel à migrateSeedDatedAmounts, via
+// getDb) réintroduit une entrée au mois de départ du groupe à partir de
+// group_lines.amount — colonne qui n'est plus la source de vérité mais reste
+// écrite par editGroupLine.
+test("le rejeu de la migration ne recrée pas d'entrée rétroactive pour une ligne ajoutée en cours de route", () => {
+  const db = seed();
+  const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-01", null);
+  // Comme addGroupLine : la ligne est ajoutée en juin, son entrée datée est posée
+  // à son mois d'ajout, pas au mois de départ du groupe (janvier).
+  const lid = insertLine(db, gid, "Netflix", 15, 8);
+  setLineAmount(db, lid, "2026-06", 15);
+  // Simule un redémarrage du serveur : getDb rappellerait migrateSeedDatedAmounts.
+  migrateSeedDatedAmounts(db);
+  expect(listLineAmounts(db)).toEqual([{ lineId: lid, effectiveMonth: "2026-06", amount: 15 }]);
+});
+
+test("le rejeu de la migration ne propage pas un montant « ce mois seulement » au mois de départ", () => {
+  const db = seed();
+  const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-01", null);
+  const lid = insertLine(db, gid, "Netflix", 15, 8);
+  setLineAmount(db, lid, "2026-06", 15);
+  // Simule editGroupLine(lid, "Netflix", 8, "2026-07", 25, "once") : updateLine
+  // écrit le montant exceptionnel dans group_lines.amount, puis onceBudgetWrites
+  // pose l'exception à juillet et restaure le montant sous-jacent à août.
+  updateLine(db, lid, "Netflix", 25, 8);
+  const existantes = toDatedLineAmounts(listLineAmounts(db))[lid] ?? [];
+  for (const w of onceBudgetWrites(existantes, "2026-07", 25).writes) {
+    setLineAmount(db, lid, w.effectiveMonth, w.amount);
+  }
+  // Simule un redémarrage du serveur.
+  migrateSeedDatedAmounts(db);
+  expect(listLineAmounts(db)).toEqual([
+    { lineId: lid, effectiveMonth: "2026-06", amount: 15 },
+    { lineId: lid, effectiveMonth: "2026-07", amount: 25 },
+    { lineId: lid, effectiveMonth: "2026-08", amount: 15 },
+  ]);
 });
 
 test("la migration tourne sur une base qui n'a pas encore line_amounts", () => {

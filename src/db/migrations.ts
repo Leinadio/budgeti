@@ -190,13 +190,19 @@ export function migrateBudgetAmountsDropGroupFk(db: Database.Database): void {
 // récurrent dans line_amounts. Après passage, plus aucun calcul n'a besoin de
 // groups.monthly_amount ni de group_lines.amount.
 //
-// Idempotent : INSERT OR IGNORE sur la contrainte d'unicité, donc une entrée déjà
-// posée (par l'utilisateur ou par un passage précédent) n'est jamais écrasée.
-//
-// Les entrées datées posées sur un groupe RÉCURRENT sont un vestige de l'ancien
-// modèle : elles n'ont plus de sens (un récurrent n'a plus de montant propre) et
-// ne sont plus lues. On les signale sans y toucher ; la base réelle n'en contient
-// aucune.
+// Idempotent, mais pas seulement par l'unicité (group_id, effective_month) /
+// (line_id, effective_month) : cette migration tourne à CHAQUE démarrage
+// (getDb), pas une seule fois. Si elle ne vérifiait que « pas d'entrée pile à
+// ce mois-là », une ligne ou un groupe déjà repris (dont la première entrée
+// datée est à un mois différent de start_month — ex. une ligne ajoutée en
+// cours d'année) se ferait réinjecter à chaque redémarrage une entrée
+// rétroactive à start_month, avec la valeur COURANTE de monthly_amount /
+// group_lines.amount — colonnes qui ne sont plus la source de vérité mais que
+// certaines actions continuent d'écrire (editGroupLine, portée « once »
+// incluse). La condition est donc « ce groupe/cette ligne n'a AUCUNE entrée
+// datée du tout » (WHERE NOT EXISTS), pas « pas d'entrée à ce mois précis » :
+// dès qu'une entrée existe, la reprise est faite pour de bon et la migration
+// n'a plus jamais rien à y faire.
 export function migrateSeedDatedAmounts(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS line_amounts (
@@ -210,13 +216,20 @@ export function migrateSeedDatedAmounts(db: Database.Database): void {
   db.transaction(() => {
     db.exec(`
       INSERT OR IGNORE INTO budget_amounts (group_id, effective_month, amount)
-        SELECT id, COALESCE(start_month, '2000-01'), COALESCE(monthly_amount, 0)
-        FROM groups WHERE kind = 'envelope';
+        SELECT g.id, COALESCE(g.start_month, '2000-01'), COALESCE(g.monthly_amount, 0)
+        FROM groups g
+        WHERE g.kind = 'envelope'
+          AND NOT EXISTS (SELECT 1 FROM budget_amounts b WHERE b.group_id = g.id);
       INSERT OR IGNORE INTO line_amounts (line_id, effective_month, amount)
         SELECT l.id, COALESCE(g.start_month, '2000-01'), l.amount
-        FROM group_lines l JOIN groups g ON g.id = l.group_id;
+        FROM group_lines l JOIN groups g ON g.id = l.group_id
+        WHERE NOT EXISTS (SELECT 1 FROM line_amounts la WHERE la.line_id = l.id);
     `);
   })();
+  // Les entrées datées posées sur un groupe RÉCURRENT sont un vestige de l'ancien
+  // modèle : elles n'ont plus de sens (un récurrent n'a plus de montant propre) et
+  // ne sont plus lues. On les signale sans y toucher ; la base réelle n'en contient
+  // aucune.
   const vestiges = db
     .prepare(`SELECT COUNT(*) AS n FROM budget_amounts b JOIN groups g ON g.id = b.group_id WHERE g.kind = 'recurring'`)
     .get() as { n: number };

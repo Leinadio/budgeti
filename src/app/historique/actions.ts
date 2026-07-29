@@ -197,8 +197,11 @@ export async function editGroupLine(
   const trimmed = name.trim();
   if (!trimmed || !/^\d{4}-\d{2}$/.test(month) || !Number.isFinite(amount) || amount < 0) return;
   const database = db();
-  // updateLine écrit encore group_lines.amount, qui n'est plus lu : on lui passe
-  // le montant courant pour ne pas laisser un champ incohérent en base.
+  // updateLine écrit encore group_lines.amount : plus lu par les calculs de
+  // budget, mais toujours lu par listGroups (affichage) et par la migration de
+  // reprise (migrateSeedDatedAmounts) tant qu'aucune entrée datée n'existe
+  // encore pour cette ligne. On lui passe donc le montant courant pour ne pas
+  // laisser un champ incohérent en base.
   updateLine(database, lineId, trimmed, amount, day);
   if (scope === "once") {
     const existantes = toDatedLineAmounts(listLineAmounts(database))[lineId] ?? [];
