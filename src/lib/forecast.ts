@@ -1,5 +1,6 @@
 import { monthKey } from "./money";
 import { resolveOwnership, type OwnableGroup, type OwnedTxn } from "./ownership";
+import { budgetInForce, lineAmountInForce, type DatedBudgets, type DatedLineAmounts } from "./budget-in-force";
 
 export type Direction = "in" | "out";
 
@@ -105,6 +106,8 @@ export function computeForecast(
   groups: Group[],
   txns: Txn[],
   month: string,
+  dated?: DatedBudgets,
+  datedLines?: DatedLineAmounts,
 ): AccountForecast {
   const ownable = groups.map(toOwnable);
   const prevMonth = prevMonthKey(month);
@@ -140,7 +143,12 @@ export function computeForecast(
     const sign = g.direction === "in" ? 1 : -1;
 
     if (g.kind === "envelope") {
-      const amount = g.monthlyAmount ?? 0;
+      // Le montant en vigueur peut différer d'un mois à l'autre (budget daté) :
+      // le mois courant lit son propre montant, la projection au mois prochain
+      // lit celui en vigueur à CE mois-là (utile pour un groupe qui démarre le
+      // mois prochain, dont le montant courant serait encore 0).
+      const amount = budgetInForce(g, month, dated, datedLines);
+      const nextAmount = budgetInForce(g, nextMonthKey(month), dated, datedLines);
       const spent = spentIn(g.id, month);
       const remaining = Math.max(0, amount - spent);
       // La supplémentaire couvre le mois courant mais n'est pas projetée au mois suivant.
@@ -161,11 +169,11 @@ export function computeForecast(
         groupViews.push({ id: g.id, name: g.name, direction: g.direction, kind: g.kind, total: amount, spent, overspend, prevSpent, prevOverspend });
       }
       if (aliveNext && projectNext) {
-        nextDelta += sign * amount;
-        if (amount > 0)
+        nextDelta += sign * nextAmount;
+        if (nextAmount > 0)
           nextSteps.push({
             label: `${g.name} — ${g.direction === "in" ? "revenu mensuel" : "budget mensuel"}`,
-            amount: sign * amount,
+            amount: sign * nextAmount,
             groupId: g.id,
           });
       }
@@ -174,18 +182,22 @@ export function computeForecast(
       let total = 0;
       let seenSum = 0;
       for (const line of g.lines) {
-        total += line.amount;
-        if (aliveNext) nextDelta += sign * line.amount;
+        // Même remarque que pour une enveloppe : le montant du mois courant et
+        // celui projeté au mois prochain se lisent chacun à leur propre mois.
+        const montant = lineAmountInForce(line.id, month, datedLines);
+        const nextMontant = lineAmountInForce(line.id, nextMonthKey(month), datedLines);
+        total += montant;
+        if (aliveNext) nextDelta += sign * nextMontant;
         // « Vue » uniquement si une transaction a été rattachée manuellement à
         // cette ligne précise (plus de détection automatique par mot-clé).
         const seen = mine.some((t) => t.lineId === line.id);
         if (aliveNow && !seen) {
-          current += sign * line.amount;
-          currentSteps.push({ label: `${g.name} · ${line.name} — pas encore passé (le ${line.day})`, amount: sign * line.amount, groupId: g.id, lineId: line.id });
+          current += sign * montant;
+          currentSteps.push({ label: `${g.name} · ${line.name} — pas encore passé (le ${line.day})`, amount: sign * montant, groupId: g.id, lineId: line.id });
         }
-        if (seen) seenSum += line.amount;
-        if (aliveNext) nextSteps.push({ label: `${g.name} · ${line.name}`, amount: sign * line.amount, groupId: g.id, lineId: line.id });
-        if (aliveNow) timeline.push({ day: line.day, name: line.name, amount: sign * line.amount, seen });
+        if (seen) seenSum += montant;
+        if (aliveNext) nextSteps.push({ label: `${g.name} · ${line.name}`, amount: sign * nextMontant, groupId: g.id, lineId: line.id });
+        if (aliveNow) timeline.push({ day: line.day, name: line.name, amount: sign * montant, seen });
       }
       if (aliveNow)
         groupViews.push({ id: g.id, name: g.name, direction: g.direction, kind: g.kind, total, spent: seenSum, overspend: 0, prevSpent: 0, prevOverspend: 0 });

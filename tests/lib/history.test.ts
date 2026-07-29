@@ -1003,4 +1003,39 @@ describe("montant en vigueur", () => {
     expect(budgetInForce(recurrent, "2026-05", {}, datedLines)).toBe(10);
     expect(budgetInForce(recurrent, "2026-06", {}, datedLines)).toBe(25);
   });
+
+  it("date le budget des lignes affichées d'un récurrent", () => {
+    const datedLines = toDatedLineAmounts([
+      { lineId: 11, effectiveMonth: "2026-01", amount: 10 },
+      { lineId: 12, effectiveMonth: "2026-01", amount: 15 },
+      { lineId: 12, effectiveMonth: "2026-08", amount: 20 },
+    ]);
+    const sections = computeHistory([recurrent], [], ["2026-07", "2026-08"], "2026-07", {}, datedLines);
+    const row = sections.flatMap((s) => s.rows).find((r) => r.id === 2)!;
+    const netflix = row.subRows.find((sr) => sr.id === 12)!;
+    expect(netflix.cells.map((c) => c.budgeted)).toEqual([15, 20]);
+    expect(row.cells.map((c) => c.budgeted)).toEqual([25, 30]);
+  });
+
+  it("voit un dépassement disparaître quand la ligne est relevée", () => {
+    // Le dépassement d'un récurrent se lit sur le total de ses lignes (budgetInForce
+    // additionne tout le groupe) : Spotify est payée pile son budget (10) les deux
+    // mois, seule Netflix bouge. Le total budgété suit donc exactement Netflix.
+    const txns = [
+      tx({ id: "s1", date: "2026-07-03", amount: -10, label: "SPOTIFY", groupId: 2, lineId: 11 }),
+      tx({ id: "a", date: "2026-07-08", amount: -20, label: "NETFLIX", groupId: 2, lineId: 12 }),
+      tx({ id: "s2", date: "2026-08-03", amount: -10, label: "SPOTIFY", groupId: 2, lineId: 11 }),
+      tx({ id: "b", date: "2026-08-08", amount: -20, label: "NETFLIX", groupId: 2, lineId: 12 }),
+    ];
+    const datedLines = toDatedLineAmounts([
+      { lineId: 11, effectiveMonth: "2026-01", amount: 10 },
+      { lineId: 12, effectiveMonth: "2026-01", amount: 15 },
+      { lineId: 12, effectiveMonth: "2026-08", amount: 20 },
+    ]);
+    const r = computeOverspends([recurrent], txns, "2026-08", [], {}, datedLines);
+    // Juillet dépasse de 5 (30 dépensés pour 25 budgétés), août non (30 pour 30).
+    expect(r.pendingClosed).toEqual([
+      { groupId: 2, name: "Abonnements", month: "2026-07", amount: 5, kind: "recurring" },
+    ]);
+  });
 });
