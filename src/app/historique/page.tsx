@@ -11,6 +11,7 @@ import {
   sliceHistorySections, sliceSoldeColumn, slicePlannedSoldes, computeTableEstimate,
   toDatedBudgets, toDatedLineAmounts, computeOverspends, budgetInForce, provisionInForce, computeIgnoredBlocks,
 } from "../../lib/history";
+import { budgetChanges } from "../../lib/budget-history";
 import { computeForecast, type Group, type Txn } from "../../lib/forecast";
 import { ForecastDetailSheet } from "@/components/forecast-detail-sheet";
 import { monthKey } from "../../lib/money";
@@ -137,7 +138,11 @@ export default async function HistoriquePage({
             id: g.id,
             name: g.name,
             kind: g.kind,
-            lines: g.lines.map((l) => ({ id: l.id, name: l.name, amount: l.amount, day: l.day })),
+            changes: budgetChanges(datedBudgets[g.id] ?? []),
+            lines: g.lines.map((l) => ({
+              id: l.id, name: l.name, amount: l.amount, day: l.day,
+              changes: budgetChanges(datedLines[l.id] ?? []),
+            })),
           }));
 
           return (

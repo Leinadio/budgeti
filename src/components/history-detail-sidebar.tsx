@@ -5,6 +5,7 @@ import { X, ChevronRight, ChevronDown, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CellDetail, OverspendActionInfo, GroupManageInfo, UncatProvisionInfo } from "@/lib/history-explain";
 import { monthLabel } from "@/lib/transactions-view";
+import { formatEur } from "@/lib/money";
 import { detailKey } from "@/lib/history-detail";
 import { flattenNodes, cellsForNode, cellsForTotal, TOTAL_ROW, type PanelRow } from "@/lib/history-nav";
 import {
@@ -13,6 +14,7 @@ import {
   renameGroupAction,
   deleteGroupAction,
   setGroupAmount,
+  removeGroupAmount,
   setUncatProvision,
   addGroupLine,
   editGroupLine,
@@ -314,6 +316,38 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
           </div>
         )}
 
+        {/* Vie du budget : ce qui s'applique et depuis quand. Le montant de
+            départ se modifie mais ne se supprime pas — sans lui le groupe
+            n'aurait plus de budget du tout. */}
+        {info.kind === "envelope" && info.changes.length > 0 && (
+          <div className="flex flex-col gap-2">
+            <Label className="font-normal">Vie du budget</Label>
+            <ul className="text-muted-foreground flex flex-col gap-1 text-sm">
+              {info.changes.map((c) => (
+                <li key={c.month} className="flex items-center justify-between gap-2">
+                  <span>
+                    {c.isStart ? "Montant de départ" : `À partir de ${monthLabel(c.month)}`}
+                  </span>
+                  <span className="flex items-center gap-2">
+                    <span className="tabular-nums">{formatEur(c.amount)}</span>
+                    {!c.isStart && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        aria-label={`Supprimer le changement de ${monthLabel(c.month)}`}
+                        onClick={() => run(() => removeGroupAmount(info.groupId, c.month))}
+                        className="text-muted-foreground hover:text-foreground"
+                      >
+                        <Trash2 className="size-3.5" />
+                      </button>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* Lignes (récurrent) */}
         {info.kind === "recurring" && (
           <div className="flex flex-col gap-3">
@@ -362,7 +396,10 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
                     // une suppression/édition immédiate (sans refermer le panneau)
                     // viserait un id fictif et laisserait une ligne fantôme en base.
                     if (id > 0) {
-                      setLines((cur) => [...cur, { id, name: n, amount: a, day: d }]);
+                      setLines((cur) => [
+                        ...cur,
+                        { id, name: n, amount: a, day: d, changes: [{ month: info.month, amount: a, isStart: true }] },
+                      ]);
                     }
                     setNewName("");
                     setNewAmount("");

@@ -42,6 +42,7 @@ import {
   makeInfo,
   txnNode,
 } from "@/lib/history-explain";
+import { type BudgetChange, amountAtMonth } from "@/lib/budget-history";
 
 // Décision déjà prise sur un dépassement (groupId, mois), telle que chargée en page
 // (Task 4). groupId = 0 pour les non catégorisés.
@@ -53,7 +54,8 @@ type SelectGroup = {
   id: number;
   name: string;
   kind: "envelope" | "recurring";
-  lines: { id: number; name: string; amount: number; day: number }[];
+  changes: BudgetChange[];
+  lines: { id: number; name: string; amount: number; day: number; changes: BudgetChange[] }[];
 };
 const MUTED40 = "bg-[color-mix(in_oklab,var(--muted)_40%,var(--background))]";
 // Surbrillance de la case sélectionnée depuis le side panel : fond teinté + anneau.
@@ -1444,7 +1446,13 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
         name: r.name,
         kind: sg?.kind ?? "envelope",
         month: manageMonth,
-        currentAmount: currentBudgets?.[r.id] ?? 0,
+        // Le montant du mois visé, pas celui du mois courant : manageMonth peut
+        // être le premier mois de la frise quand le mois courant n'est pas affiché.
+        currentAmount:
+          sg?.kind === "recurring"
+            ? (sg?.lines ?? []).reduce((s, l) => s + amountAtMonth(l.changes, manageMonth), 0)
+            : amountAtMonth(sg?.changes ?? [], manageMonth),
+        changes: sg?.changes ?? [],
         lines: sg?.lines ?? [],
       },
     };

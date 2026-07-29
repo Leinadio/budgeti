@@ -346,7 +346,7 @@ describe("L'identité d'un détail, qui décide quand le panneau repart de zéro
   it("devrait donner son identité propre à la gestion d'un groupe", () => {
     const k = detailKey({
       title: "Courses", nodes: [], result: 0,
-      groupManage: { groupId: 3, name: "Courses", kind: "envelope", month: "2026-07", currentAmount: 300, lines: [] },
+      groupManage: { groupId: 3, name: "Courses", kind: "envelope", month: "2026-07", currentAmount: 300, changes: [], lines: [] },
     });
     expect(k).toContain("3");
     expect(k).toContain("2026-07");

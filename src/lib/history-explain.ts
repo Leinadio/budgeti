@@ -1,3 +1,5 @@
+import type { BudgetChange } from "./budget-history";
+
 // Colonne d'une case du tableau. Colonnes réelles (mois passés / courant) plus les
 // colonnes de projection (mois courant / futurs) : revenus, dépassement, solde prévu
 // et solde si dépassement.
@@ -46,14 +48,16 @@ export type CellDetail = { title: string; subtitle?: string; nodes: DetailNode[]
 // Info nécessaire à la vue de gestion d'un groupe dans le side panel : quel groupe,
 // son nom, sa nature (enveloppe = un montant unique / récurrent = des lignes), le
 // mois sélectionné (pour le montant daté), le budget en vigueur ce mois-là (pré-
-// remplissage) et, pour un récurrent, ses lignes.
+// remplissage), la vie du budget (ce qui s'applique et depuis quand) et, pour un
+// récurrent, ses lignes.
 export type GroupManageInfo = {
   groupId: number;
   name: string;
   kind: "envelope" | "recurring";
   month: string;          // mois affiché sélectionné (pour le montant daté)
   currentAmount: number;  // budget en vigueur ce mois (pré-remplissage)
-  lines: { id: number; name: string; amount: number; day: number }[];
+  changes: BudgetChange[]; // vie du budget (enveloppe) ; vide pour un récurrent
+  lines: { id: number; name: string; amount: number; day: number; changes: BudgetChange[] }[];
 };
 
 // Info nécessaire au bloc d'édition de la provision des non catégorisés (case

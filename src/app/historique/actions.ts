@@ -212,6 +212,14 @@ export async function setGroupAmount(
   await revalidate();
 }
 
+// Retire un changement de budget daté (jamais le montant de départ : le panneau
+// ne propose la corbeille que sur les autres).
+export async function removeGroupAmount(groupId: number, month: string): Promise<void> {
+  if (!/^\d{4}-\d{2}$/.test(month)) return;
+  deleteBudgetAmount(db(), groupId, month);
+  await revalidate();
+}
+
 // Fixe la provision des non catégorisés (budget daté du groupe 0, une case
 // virtuelle sans ligne dans `groups`) pour un mois, avec la même sémantique
 // once/ongoing que setGroupAmount, gardée comme une action à part pour ce motif.

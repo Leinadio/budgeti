@@ -1,6 +1,7 @@
 "use client";
 import type { AccountForecast } from "@/lib/forecast";
 import type { MonthCell, HistorySection, SoldeColumn, PlannedSoldes, PendingOverspend, IgnoredBlock } from "@/lib/history";
+import type { BudgetChange } from "@/lib/budget-history";
 import { CenterScroll } from "@/components/center-scroll";
 import { HistoryGrid } from "@/components/history-grid";
 import { OverspendBanner } from "@/components/overspend-banner";
@@ -10,7 +11,8 @@ type SelectGroup = {
   id: number;
   name: string;
   kind: "envelope" | "recurring";
-  lines: { id: number; name: string; amount: number; day: number }[];
+  changes: BudgetChange[];
+  lines: { id: number; name: string; amount: number; day: number; changes: BudgetChange[] }[];
 };
 
 // Le tableau de l'Historique : un clic sur un montant envoie son détail à la
