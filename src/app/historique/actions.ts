@@ -2,6 +2,7 @@
 import { db } from "../../db/index";
 import { setOverspendDecision, deleteOverspendDecision, getOverspendDecision } from "../../db/repositories/overspend-decisions";
 import { setBudgetAmount, deleteBudgetAmount, listBudgetAmounts } from "../../db/repositories/budget-amounts";
+import { listLineAmounts, setLineAmount } from "../../db/repositories/line-amounts";
 import {
   insertEnvelopeGroup,
   insertRecurringGroup,
@@ -12,7 +13,7 @@ import {
   deleteLine,
   hasIncomeGroup,
 } from "../../db/repositories/groups";
-import { toDatedBudgets, onceBudgetWrites, addMonthsKey } from "../../lib/history";
+import { toDatedBudgets, toDatedLineAmounts, onceBudgetWrites, addMonthsKey } from "../../lib/history";
 import { monthKey } from "../../lib/money";
 import { revalidatePath } from "next/cache";
 
@@ -78,9 +79,12 @@ export async function createGroup(input: {
   const endMonth = scope === "once" ? startMonth : null;
   const database = db();
   if (kind === "envelope") {
-    insertEnvelopeGroup(database, accountId, trimmed, "out", amount ?? 0, null, startMonth, endMonth);
+    const gid = insertEnvelopeGroup(database, accountId, trimmed, "out", amount ?? 0, null, startMonth, endMonth);
+    setBudgetAmount(database, gid, startMonth, amount ?? 0);
   } else {
     insertRecurringGroup(database, accountId, trimmed, "out", null, startMonth, endMonth);
+    // Un récurrent n'a pas de montant à lui : il n'y a rien à poser tant qu'il
+    // n'a pas de ligne.
   }
   revalidatePath("/historique");
   revalidatePath("/");
@@ -110,7 +114,8 @@ export async function createRemuneration(
   const database = db();
   if (hasIncomeGroup(database, accountId, incomeKind)) return; // déjà créée
   const name = incomeKind === "principal" ? "Rémunération principale" : "Rémunération supplémentaire";
-  insertEnvelopeGroup(database, accountId, name, "in", amount, incomeKind, "2000-01", null);
+  const gid = insertEnvelopeGroup(database, accountId, name, "in", amount, incomeKind, "2000-01", null);
+  setBudgetAmount(database, gid, "2000-01", amount);
   await revalidate();
 }
 
@@ -170,17 +175,39 @@ export async function setUncatProvision(
   revalidatePath("/");
 }
 
-export async function addGroupLine(groupId: number, name: string, amount: number, day: number): Promise<number> {
+// `month` est le mois affiché au moment de l'ajout : la ligne compte à partir de
+// là, pas depuis la création du groupe.
+export async function addGroupLine(
+  groupId: number, name: string, amount: number, day: number, month: string,
+): Promise<number> {
   const trimmed = name.trim();
-  if (!trimmed) return -1;
-  const id = insertLine(db(), groupId, trimmed, amount, day);
+  if (!trimmed || !/^\d{4}-\d{2}$/.test(month)) return -1;
+  const database = db();
+  const id = insertLine(database, groupId, trimmed, amount, day);
+  setLineAmount(database, id, month, amount);
   await revalidate();
   return id;
 }
 
-export async function editGroupLine(lineId: number, name: string, amount: number, day: number): Promise<void> {
-  if (!name.trim()) return;
-  updateLine(db(), lineId, name.trim(), amount, day);
+// Modifie une ligne : le nom et le jour changent pour tous les mois (ce sont des
+// propriétés de la ligne), le montant est daté selon la portée choisie.
+export async function editGroupLine(
+  lineId: number, name: string, day: number, month: string, amount: number, scope: "once" | "ongoing",
+): Promise<void> {
+  const trimmed = name.trim();
+  if (!trimmed || !/^\d{4}-\d{2}$/.test(month) || !Number.isFinite(amount) || amount < 0) return;
+  const database = db();
+  // updateLine écrit encore group_lines.amount, qui n'est plus lu : on lui passe
+  // le montant courant pour ne pas laisser un champ incohérent en base.
+  updateLine(database, lineId, trimmed, amount, day);
+  if (scope === "once") {
+    const existantes = toDatedLineAmounts(listLineAmounts(database))[lineId] ?? [];
+    for (const w of onceBudgetWrites(existantes, month, amount).writes) {
+      setLineAmount(database, lineId, w.effectiveMonth, w.amount);
+    }
+  } else {
+    setLineAmount(database, lineId, month, amount);
+  }
   await revalidate();
 }
 

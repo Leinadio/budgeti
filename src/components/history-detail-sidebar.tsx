@@ -324,7 +324,7 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
                 key={l.id}
                 line={l}
                 busy={busy}
-                onSave={(n, a, d) => run(() => editGroupLine(l.id, n, a, d))}
+                onSave={(n, a, d) => run(() => editGroupLine(l.id, n, d, info.month, a, "ongoing"))}
                 onRemove={() =>
                   run(async () => {
                     await removeGroupLine(l.id);
@@ -357,7 +357,7 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
                     const n = newName.trim();
                     const a = parseFloat(newAmount) || 0;
                     const d = parseInt(newDay, 10) || 1;
-                    const id = await addGroupLine(info.groupId, n, a, d);
+                    const id = await addGroupLine(info.groupId, n, a, d, info.month);
                     // On n'ajoute la ligne optimiste qu'avec le vrai id en base : sinon
                     // une suppression/édition immédiate (sans refermer le panneau)
                     // viserait un id fictif et laisserait une ligne fantôme en base.

@@ -130,14 +130,3 @@ export function updateLine(
 export function deleteLine(db: Database.Database, id: number): void {
   db.prepare(`DELETE FROM group_lines WHERE id = ?`).run(id);
 }
-
-// Montant « par défaut » d'une enveloppe : celui qui s'applique aux mois sur
-// lesquels aucun montant daté n'a été posé. Ne touche pas aux montants datés.
-export function updateGroupMonthlyAmount(db: Database.Database, id: number, amount: number): void {
-  db.prepare(`UPDATE groups SET monthly_amount = ? WHERE id = ?`).run(amount, id);
-}
-
-// Idem pour une ligne de récurrent, sans toucher à son nom ni à son jour.
-export function updateLineAmount(db: Database.Database, id: number, amount: number): void {
-  db.prepare(`UPDATE group_lines SET amount = ? WHERE id = ?`).run(amount, id);
-}
