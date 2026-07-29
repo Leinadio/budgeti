@@ -240,3 +240,11 @@ export function migrateSeedDatedAmounts(db: Database.Database): void {
     );
   }
 }
+
+// Ajoute la colonne writes (trace des montants posés par une décision
+// « permanent »), pour pouvoir annuler exactement. Idempotent.
+export function migrateOverspendWrites(db: Database.Database): void {
+  const cols = db.prepare("PRAGMA table_info(overspend_decisions)").all() as { name: string }[];
+  if (cols.some((c) => c.name === "writes")) return;
+  db.exec(`ALTER TABLE overspend_decisions ADD COLUMN writes TEXT`);
+}

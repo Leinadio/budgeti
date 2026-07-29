@@ -109,6 +109,7 @@ CREATE TABLE IF NOT EXISTS overspend_decisions (
   month TEXT NOT NULL,             -- YYYY-MM
   decision TEXT NOT NULL CHECK (decision IN ('exceptional', 'permanent')),
   decided_at TEXT NOT NULL,        -- ISO datetime
+  writes TEXT,                     -- JSON des écritures posées (BudgetWrite[]), NULL si aucune
   UNIQUE(account_id, group_id, month)
 );
 
