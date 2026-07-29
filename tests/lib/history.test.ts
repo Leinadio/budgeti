@@ -1037,5 +1037,10 @@ describe("montant en vigueur", () => {
     expect(r.pendingClosed).toEqual([
       { groupId: 2, name: "Abonnements", month: "2026-07", amount: 5, kind: "recurring" },
     ]);
+    // pendingClosed ne retient que les mois STRICTEMENT antérieurs au mois courant
+    // (août n'y figurerait jamais, dépassement ou pas) : la vraie preuve que le
+    // dépassement d'août a disparu se lit dans pendingByMonth, qui couvre aussi le
+    // mois courant. Sans entrée pour août, aucun dépassement n'y a été classé.
+    expect(r.pendingByMonth["2026-08"]).toBeUndefined();
   });
 });
