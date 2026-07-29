@@ -111,3 +111,15 @@ CREATE TABLE IF NOT EXISTS overspend_decisions (
   decided_at TEXT NOT NULL,        -- ISO datetime
   UNIQUE(account_id, group_id, month)
 );
+
+-- Montants datés d'une ligne de récurrent. Même règle que budget_amounts : le
+-- montant en vigueur au mois M est celui de la ligne au plus grand
+-- effective_month <= M. Le budget d'un récurrent est la somme de ses lignes.
+-- ON DELETE CASCADE : supprimer une ligne emporte son historique.
+CREATE TABLE IF NOT EXISTS line_amounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  line_id INTEGER NOT NULL REFERENCES group_lines(id) ON DELETE CASCADE,
+  effective_month TEXT NOT NULL,   -- YYYY-MM
+  amount REAL NOT NULL,
+  UNIQUE(line_id, effective_month)
+);
