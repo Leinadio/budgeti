@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { X, ChevronRight, ChevronDown, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { CellDetail, OverspendActionInfo, GroupManageInfo, UncatProvisionInfo } from "@/lib/history-explain";
-import { monthLabel } from "@/lib/transactions-view";
+import { monthLabel, monthPhrase, deMonthPhrase } from "@/lib/transactions-view";
 import { nextMonthKey } from "@/lib/history";
 import { formatEur } from "@/lib/money";
 import { detailKey } from "@/lib/history-detail";
@@ -160,7 +160,7 @@ function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
       <div className="mt-4 rounded-md border p-3 text-sm">
         <p>
           Décidé : {decided === "exceptional" ? "exceptionnel" : "permanent"} pour le dépassement de{" "}
-          {fmtAbs(action.amount)} en {monthLabel(action.month)}.
+          {fmtAbs(action.amount)} en {monthPhrase(action.month)}.
         </p>
         <div className="mt-2 flex gap-3">
           <button type="button" disabled={busy} onClick={() => setDecided(null)} className="text-muted-foreground underline decoration-dotted underline-offset-2 hover:no-underline">
@@ -176,7 +176,7 @@ function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
   return (
     <div className="mt-4 rounded-md border p-3 text-sm">
       <p>
-        Dépassement de {fmtAbs(action.amount)} en {monthLabel(action.month)} — va-t-il revenir ?
+        Dépassement de {fmtAbs(action.amount)} en {monthPhrase(action.month)} — va-t-il revenir ?
       </p>
       <div className="mt-2 flex gap-2">
         <button type="button" disabled={busy} onClick={() => decide("exceptional")} className="rounded-md border px-2 py-1 hover:bg-muted">
@@ -211,7 +211,7 @@ function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
           renvoie vers l'édition des lignes plutôt que d'inventer une répartition. */}
       {openForm && overspentLines !== null && overspentLines.length === 0 && action.groupKind === "recurring" && (
         <p className="text-muted-foreground mt-2 text-sm">
-          Aucune ligne n&apos;a dépassé en {monthLabel(action.month)} : la dépense est
+          Aucune ligne n&apos;a dépassé en {monthPhrase(action.month)} : la dépense est
           rattachée au groupe, pas à une ligne précise. Ajuste la ligne concernée depuis
           « Gérer le groupe ».
         </p>
@@ -219,11 +219,14 @@ function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
       {/* Récurrent : un montant par ligne en dépassement, pré-rempli au montant
           réellement dépensé, en vigueur à partir du mois qui suit le dépassement
           (celui du dépassement, pas le mois courant — affiché en clair pour ne
-          pas laisser planer le doute). */}
+          pas laisser planer le doute). deMonthPhrase pose la préposition ET le
+          mois : « à partir » + deMonthPhrase, jamais « à partir de » + monthLabel
+          (sinon « de Août » — ni l'élision devant voyelle, ni la minuscule
+          attendue en milieu de phrase). */}
       {openForm && overspentLines !== null && overspentLines.length > 0 && (
         <div className="mt-2 flex flex-col gap-2">
           <p className="text-muted-foreground">
-            Nouveaux montants, à partir de {monthLabel(nextMonthKey(action.month))} :
+            Nouveaux montants, à partir {deMonthPhrase(nextMonthKey(action.month))} :
           </p>
           {overspentLines.map((l) => (
             <div key={l.lineId} className="flex items-center justify-between gap-2">
