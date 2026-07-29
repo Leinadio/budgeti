@@ -184,3 +184,46 @@ export function migrateBudgetAmountsDropGroupFk(db: Database.Database): void {
     `);
   })();
 }
+
+// Matérialise les montants « de base » en première entrée datée, au mois de
+// départ du groupe : chaque enveloppe dans budget_amounts, chaque ligne de
+// récurrent dans line_amounts. Après passage, plus aucun calcul n'a besoin de
+// groups.monthly_amount ni de group_lines.amount.
+//
+// Idempotent : INSERT OR IGNORE sur la contrainte d'unicité, donc une entrée déjà
+// posée (par l'utilisateur ou par un passage précédent) n'est jamais écrasée.
+//
+// Les entrées datées posées sur un groupe RÉCURRENT sont un vestige de l'ancien
+// modèle : elles n'ont plus de sens (un récurrent n'a plus de montant propre) et
+// ne sont plus lues. On les signale sans y toucher ; la base réelle n'en contient
+// aucune.
+export function migrateSeedDatedAmounts(db: Database.Database): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS line_amounts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      line_id INTEGER NOT NULL REFERENCES group_lines(id) ON DELETE CASCADE,
+      effective_month TEXT NOT NULL,
+      amount REAL NOT NULL,
+      UNIQUE(line_id, effective_month)
+    );
+  `);
+  db.transaction(() => {
+    db.exec(`
+      INSERT OR IGNORE INTO budget_amounts (group_id, effective_month, amount)
+        SELECT id, COALESCE(start_month, '2000-01'), COALESCE(monthly_amount, 0)
+        FROM groups WHERE kind = 'envelope';
+      INSERT OR IGNORE INTO line_amounts (line_id, effective_month, amount)
+        SELECT l.id, COALESCE(g.start_month, '2000-01'), l.amount
+        FROM group_lines l JOIN groups g ON g.id = l.group_id;
+    `);
+  })();
+  const vestiges = db
+    .prepare(`SELECT COUNT(*) AS n FROM budget_amounts b JOIN groups g ON g.id = b.group_id WHERE g.kind = 'recurring'`)
+    .get() as { n: number };
+  if (vestiges.n > 0) {
+    console.warn(
+      `[budgets] ${vestiges.n} montant(s) daté(s) posé(s) sur un groupe récurrent sont ignorés : ` +
+        `un récurrent tire désormais son budget de ses lignes. À reporter à la main sur les lignes concernées.`,
+    );
+  }
+}
