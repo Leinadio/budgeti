@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { budgetChanges, amountAtMonth } from "../../src/lib/budget-history";
+import { budgetChanges, amountAtMonth, canRemoveBudgetChange } from "../../src/lib/budget-history";
 
 describe("vie d'un budget", () => {
   it("marque la première entrée comme montant de départ", () => {
@@ -43,5 +43,39 @@ describe("vie d'un budget", () => {
     expect(amountAtMonth(c, "2026-07")).toBe(250);
     expect(amountAtMonth(c, "2026-08")).toBe(300);
     expect(amountAtMonth([], "2026-08")).toBe(0);
+  });
+});
+
+describe("protection du montant de départ contre la suppression", () => {
+  it("refuse de supprimer l'entrée la plus ancienne, même s'il existe un changement plus tardif", () => {
+    const entries = [
+      { effectiveMonth: "2000-01", amount: 250 },
+      { effectiveMonth: "2026-08", amount: 300 },
+    ];
+    expect(canRemoveBudgetChange(entries, "2000-01")).toBe(false);
+  });
+
+  it("refuse de supprimer l'unique entrée d'un groupe", () => {
+    const entries = [{ effectiveMonth: "2000-01", amount: 250 }];
+    expect(canRemoveBudgetChange(entries, "2000-01")).toBe(false);
+  });
+
+  it("autorise la suppression d'un changement postérieur au montant de départ", () => {
+    const entries = [
+      { effectiveMonth: "2000-01", amount: 250 },
+      { effectiveMonth: "2026-08", amount: 300 },
+    ];
+    expect(canRemoveBudgetChange(entries, "2026-08")).toBe(true);
+  });
+
+  it("refuse aussi quand l'entrée la plus ancienne n'est pas 2000-01 (pas de repli)", () => {
+    // Cas tordu : si la vraie base a déjà disparu, la nouvelle entrée la plus
+    // ancienne joue le même rôle et doit être protégée de la même façon.
+    const entries = [
+      { effectiveMonth: "2026-08", amount: 300 },
+      { effectiveMonth: "2026-11", amount: 280 },
+    ];
+    expect(canRemoveBudgetChange(entries, "2026-08")).toBe(false);
+    expect(canRemoveBudgetChange(entries, "2026-11")).toBe(true);
   });
 });

@@ -16,6 +16,7 @@ import {
   getGroupKind,
 } from "../../db/repositories/groups";
 import { toDatedBudgets, toDatedLineAmounts, onceBudgetWrites, nextMonthKey } from "../../lib/history";
+import { canRemoveBudgetChange } from "../../lib/budget-history";
 import { envelopeWrites, lineWrites, undoWrites, amountAt, canDecidePermanent, normalizeWrites, type BudgetWrite } from "../../lib/overspend-writes";
 import { revalidatePath } from "next/cache";
 
@@ -213,10 +214,16 @@ export async function setGroupAmount(
 }
 
 // Retire un changement de budget daté (jamais le montant de départ : le panneau
-// ne propose la corbeille que sur les autres).
+// ne propose la corbeille que sur les autres). La protection est revérifiée ici,
+// côté serveur, sur les entrées réellement en base : le panneau ne masque la
+// corbeille sur le montant de départ qu'à l'affichage, ça ne suffit pas à
+// empêcher un appel direct de cette action avec ce mois-là.
 export async function removeGroupAmount(groupId: number, month: string): Promise<void> {
   if (!/^\d{4}-\d{2}$/.test(month)) return;
-  deleteBudgetAmount(db(), groupId, month);
+  const database = db();
+  const entries = toDatedBudgets(listBudgetAmounts(database))[groupId] ?? [];
+  if (!canRemoveBudgetChange(entries, month)) return;
+  deleteBudgetAmount(database, groupId, month);
   await revalidate();
 }
 

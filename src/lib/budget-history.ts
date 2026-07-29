@@ -27,3 +27,16 @@ export function amountAtMonth(changes: BudgetChange[], month: string): number {
   for (const c of changes) if (c.month <= month) amount = c.amount;
   return amount;
 }
+
+// Une entrée ne se supprime que s'il en existe une antérieure pour prendre le
+// relais. Sinon `month` est (au moins à égalité) la plus ancienne entrée du
+// groupe — le montant de départ, ou ce qui en tient lieu — et la retirer
+// laisserait sans budget tous les mois qui la précédaient, jusqu'au prochain
+// changement s'il y en a un, ou le groupe entier s'il n'y en a pas. La règle
+// porte sur la donnée telle qu'elle est en base (les `entries` passées ici),
+// jamais sur un `isStart` calculé côté client : c'est justement ce qui manquait
+// — l'affichage cachait la corbeille sur le montant de départ, mais rien
+// n'empêchait d'appeler l'action serveur directement avec ce mois-là.
+export function canRemoveBudgetChange(entries: { effectiveMonth: string }[], month: string): boolean {
+  return entries.some((e) => e.effectiveMonth < month);
+}

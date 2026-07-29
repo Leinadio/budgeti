@@ -56,7 +56,9 @@ export type GroupManageInfo = {
   kind: "envelope" | "recurring";
   month: string;          // mois affiché sélectionné (pour le montant daté)
   currentAmount: number;  // budget en vigueur ce mois (pré-remplissage)
-  changes: BudgetChange[]; // vie du budget (enveloppe) ; vide pour un récurrent
+  changes: BudgetChange[]; // vie du budget ; le panneau ne l'affiche que pour une
+                            // enveloppe, mais le champ n'est pas garanti vide pour
+                            // un récurrent (calculé sans regarder `kind`, voir page.tsx)
   lines: { id: number; name: string; amount: number; day: number; changes: BudgetChange[] }[];
 };
 
