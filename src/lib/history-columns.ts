@@ -78,3 +78,10 @@ export const COL_INFO: Record<ColKey, string[]> = {
     "Tant que rien n'est marqué permanent, cette colonne rejoint le Solde prévu sur les mois à venir. L'écart entre les deux mesure ce que tes dépassements récurrents coûtent vraiment à ta projection.",
   ],
 };
+
+// Mois où le budget diffère de celui du mois précédent, pour signaler dans le
+// tableau qu'une hausse ou une baisse a pris effet là. La première colonne n'a
+// pas de précédent : elle n'est jamais marquée.
+export function budgetChangePoints(cells: { budgeted: number }[]): boolean[] {
+  return cells.map((c, i) => i > 0 && Math.abs(c.budgeted - cells[i - 1].budgeted) > 0.005);
+}

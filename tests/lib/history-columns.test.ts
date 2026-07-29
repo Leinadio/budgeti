@@ -1,5 +1,5 @@
 import { expect, describe, it } from "vitest";
-import { monthType, monthColumns, COL_LABEL, COL_INFO, type ColKey } from "../../src/lib/history-columns";
+import { monthType, monthColumns, COL_LABEL, COL_INFO, budgetChangePoints, type ColKey } from "../../src/lib/history-columns";
 
 describe("La nature d'un mois par rapport au mois courant", () => {
   it("devrait classer un mois en passé, courant ou futur", () => {
@@ -47,5 +47,24 @@ describe("Ce que chaque colonne annonce et explique", () => {
       expect(paragraphs.length).toBeGreaterThan(0);
       for (const p of paragraphs) expect(p.trim().length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("repère de changement de budget", () => {
+  it("marque le mois où le budget change", () => {
+    expect(budgetChangePoints([{ budgeted: 250 }, { budgeted: 250 }, { budgeted: 300 }]))
+      .toEqual([false, false, true]);
+  });
+
+  it("ne marque jamais la première colonne", () => {
+    expect(budgetChangePoints([{ budgeted: 300 }])).toEqual([false]);
+  });
+
+  it("ignore un écart d'arrondi", () => {
+    expect(budgetChangePoints([{ budgeted: 250 }, { budgeted: 250.001 }])).toEqual([false, false]);
+  });
+
+  it("rend une liste vide sans cellule", () => {
+    expect(budgetChangePoints([])).toEqual([]);
   });
 });
