@@ -3,12 +3,13 @@ import { listAccounts } from "../../db/repositories/accounts";
 import { listTransactions, sumIgnoredByAccount, type TxnView } from "../../db/repositories/transactions";
 import { listGroups } from "../../db/repositories/groups";
 import { listBudgetAmounts } from "../../db/repositories/budget-amounts";
+import { listLineAmounts } from "../../db/repositories/line-amounts";
 import { listOverspendDecisions } from "../../db/repositories/overspend-decisions";
 import {
   computeHistory, grandTotals, monthlyOverspend, monthsWithData, computeSolde,
   computePlannedSoldes, addMonthsKey, monthRange, isMonthKey, clampMonth,
   sliceHistorySections, sliceSoldeColumn, slicePlannedSoldes, computeTableEstimate,
-  toDatedBudgets, computeOverspends, budgetInForce, provisionInForce, computeIgnoredBlocks,
+  toDatedBudgets, toDatedLineAmounts, computeOverspends, budgetInForce, provisionInForce, computeIgnoredBlocks,
 } from "../../lib/history";
 import { computeForecast, type Group, type Txn } from "../../lib/forecast";
 import { ForecastDetailSheet } from "@/components/forecast-detail-sheet";
@@ -32,6 +33,7 @@ export default async function HistoriquePage({
   const accounts = listAccounts(database);
   const allGroups = listGroups(database);
   const datedBudgets = toDatedBudgets(listBudgetAmounts(database));
+  const datedLines = toDatedLineAmounts(listLineAmounts(database));
   const toTxn = (t: TxnView): Txn => ({
     id: t.id,
     date: t.date,
@@ -107,8 +109,8 @@ export default async function HistoriquePage({
           // Le solde de la banque privé de ce qui est hors calcul : c'est LUI qui
           // ancre tout ce qui suit (prévision, estimé de fin de mois, chaîne de soldes).
           const balance = effectiveBalance(a.balance, ignoredByAccount[a.id]);
-          const forecast = computeForecast(a.id, balance, groups, txns, currentMonth);
-          const sectionsFull = computeHistory(groups, txns, calcMonths, currentMonth, datedBudgets);
+          const forecast = computeForecast(a.id, balance, groups, txns, currentMonth, datedBudgets, datedLines);
+          const sectionsFull = computeHistory(groups, txns, calcMonths, currentMonth, datedBudgets, datedLines);
           // Estimé de fin du mois courant aligné sur le tableau (Balances vertes +
           // rémunérations restant à recevoir) : c'est lui qui ancre les chaînes des
           // mois futurs.
@@ -116,8 +118,10 @@ export default async function HistoriquePage({
             computeTableEstimate(sectionsFull, calcMonths, currentMonth, balance)?.value ?? forecast.currentEstimate;
           const soldeFull = computeSolde(sectionsFull, calcMonths, currentMonth, balance, estimateValue);
           const decisions = listOverspendDecisions(database, a.id);
-          const overspends = computeOverspends(groups, txns, currentMonth, decisions, datedBudgets);
-          const currentBudgets = Object.fromEntries(groups.map((g) => [g.id, budgetInForce(g, currentMonth, datedBudgets)]));
+          const overspends = computeOverspends(groups, txns, currentMonth, decisions, datedBudgets, datedLines);
+          const currentBudgets = Object.fromEntries(
+            groups.map((g) => [g.id, budgetInForce(g, currentMonth, datedBudgets, datedLines)]),
+          );
           // Provision non catégorisés en vigueur au mois courant, pour pré-remplir le
           // champ « Nouvelle provision » du bloc de décision d'un dépassement (groupe 0).
           const currentUncatProvision = provisionInForce(datedBudgets, currentMonth);
