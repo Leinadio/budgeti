@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { overspentLines, envelopeWrites, lineWrites, undoWrites, type BudgetWrite } from "../../src/lib/overspend-writes";
+import {
+  overspentLines, envelopeWrites, lineWrites, undoWrites,
+  amountAt, canDecidePermanent, normalizeWrites,
+  type BudgetWrite,
+} from "../../src/lib/overspend-writes";
 
 describe("lignes en dépassement", () => {
   const lignes = [
@@ -71,5 +75,64 @@ describe("annulation d'une décision permanente", () => {
 
   it("ne fait rien quand la décision n'avait rien écrit", () => {
     expect(undoWrites([], () => null)).toEqual({ restore: [], remove: [] });
+  });
+});
+
+describe("amountAt : montant exactement posé à un mois (pas « en vigueur »)", () => {
+  it("rend null quand la série est vide", () => {
+    expect(amountAt([], "2026-08")).toBeNull();
+  });
+
+  it("rend null quand seule une entrée ANTÉRIEURE existe : ce n'est pas le même avoir qu'« en vigueur »", () => {
+    // C'est cette subtilité qui fait que l'annulation d'une décision SUPPRIME
+    // l'entrée (au lieu de la restaurer à une valeur) quand rien n'avait été
+    // explicitement posé au mois exact avant la décision.
+    expect(amountAt([{ effectiveMonth: "2026-01", amount: 50 }], "2026-08")).toBeNull();
+  });
+
+  it("rend le montant quand une entrée existe exactement à ce mois", () => {
+    expect(amountAt([{ effectiveMonth: "2026-08", amount: 80 }], "2026-08")).toBe(80);
+  });
+
+  it("choisit la bonne entrée parmi plusieurs, dont une antérieure", () => {
+    const serie = [
+      { effectiveMonth: "2026-01", amount: 50 },
+      { effectiveMonth: "2026-08", amount: 80 },
+    ];
+    expect(amountAt(serie, "2026-08")).toBe(80);
+  });
+});
+
+describe("canDecidePermanent : refuse un récurrent sans ventilation par ligne", () => {
+  it("autorise une enveloppe, avec ou sans lignes fournies", () => {
+    expect(canDecidePermanent("envelope", undefined)).toBe(true);
+    expect(canDecidePermanent("envelope", [{ lineId: 101, amount: 50 }])).toBe(true);
+  });
+
+  it("refuse un récurrent sans ventilation par ligne", () => {
+    expect(canDecidePermanent("recurring", undefined)).toBe(false);
+  });
+
+  it("refuse un récurrent avec une ventilation vide", () => {
+    expect(canDecidePermanent("recurring", [])).toBe(false);
+  });
+
+  it("autorise un récurrent dès qu'une ventilation par ligne est fournie", () => {
+    expect(canDecidePermanent("recurring", [{ lineId: 101, amount: 50 }])).toBe(true);
+  });
+});
+
+describe("normalizeWrites : une décision qui n'a rien écrit ne garde jamais un tableau vide", () => {
+  it("rend null pour null", () => {
+    expect(normalizeWrites(null)).toBeNull();
+  });
+
+  it("rend null pour un tableau vide", () => {
+    expect(normalizeWrites([])).toBeNull();
+  });
+
+  it("garde les écritures telles quelles quand il y en a", () => {
+    const w: BudgetWrite[] = [{ target: "line", id: 101, month: "2026-08", amount: 151.84, before: null }];
+    expect(normalizeWrites(w)).toEqual(w);
   });
 });

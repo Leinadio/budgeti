@@ -60,3 +60,34 @@ export function undoWrites(
   }
   return { restore, remove };
 }
+
+// Montant posé EXACTEMENT à `month` dans une série d'entrées datées — distinct
+// de lineAmountInForce/budgetInForce, qui retombent sur la dernière entrée
+// <= month. Null si aucune entrée n'existe précisément à ce mois, même s'il en
+// existe une antérieure : c'est cette nuance qui fait que `undoWrites`
+// SUPPRIME (au lieu de restaurer une valeur) une écriture dont le `before`
+// avait été capturé alors qu'aucun montant n'était explicitement posé à ce
+// mois avant la décision.
+export function amountAt(serie: { effectiveMonth: string; amount: number }[], month: string): number | null {
+  return serie.find((e) => e.effectiveMonth === month)?.amount ?? null;
+}
+
+// Une décision « permanent » sur un récurrent n'a de sens que ventilée sur ses
+// lignes : un récurrent n'a pas de montant à lui (son budget est la somme de
+// ses lignes), il n'y a donc rien de sûr à écrire au niveau du groupe. Sans
+// ventilation fournie (lineAmounts absent ou vide), la décision doit être
+// refusée — plutôt que d'écrire un montant mort sur le groupe (jamais lu) ou
+// d'enregistrer une décision qui fait taire l'alerte sans rien relever.
+export function canDecidePermanent(
+  groupKind: "envelope" | "recurring",
+  lineAmounts: { lineId: number; amount: number }[] | undefined,
+): boolean {
+  return groupKind === "envelope" || !!lineAmounts?.length;
+}
+
+// Une décision qui ne pose aucune écriture ne doit jamais garder un tableau
+// vide : ça laisserait croire qu'une ventilation a été calculée alors qu'il ne
+// s'est rien passé. Normalise vers null dans ce cas.
+export function normalizeWrites(writes: BudgetWrite[] | null): BudgetWrite[] | null {
+  return writes && writes.length === 0 ? null : writes;
+}

@@ -14,9 +14,21 @@ export type OverspendDecision = {
 // Ligne brute lue en base : writes est encore du JSON, à désérialiser.
 type Row = Omit<OverspendDecision, "writes"> & { writesJson: string | null };
 
+// `writes` est une colonne libre (TEXT), pas contrainte par le schéma : un JSON
+// corrompu ne doit jamais faire planter la lecture (listOverspendDecisions est
+// appelé au chargement de /historique — une ligne corrompue ne doit pas casser
+// toute la page). On rend null dans ce cas, comme si rien n'avait été posé.
 function hydrate(row: Row): OverspendDecision {
   const { writesJson, ...rest } = row;
-  return { ...rest, writes: writesJson ? (JSON.parse(writesJson) as BudgetWrite[]) : null };
+  let writes: BudgetWrite[] | null = null;
+  if (writesJson) {
+    try {
+      writes = JSON.parse(writesJson) as BudgetWrite[];
+    } catch {
+      writes = null;
+    }
+  }
+  return { ...rest, writes };
 }
 
 export function listOverspendDecisions(db: Database.Database, accountId: string): OverspendDecision[] {

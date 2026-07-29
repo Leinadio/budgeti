@@ -20,6 +20,14 @@ export type GroupRow = {
   lines: GroupLineRow[];
 };
 
+// Nature d'un groupe (enveloppe ou récurrent), ou null s'il n'existe pas. Le
+// groupe 0 (non catégorisés) n'a pas de ligne dans `groups` : c'est à
+// l'appelant de le traiter comme une enveloppe (il a une provision, pas des lignes).
+export function getGroupKind(db: Database.Database, id: number): "envelope" | "recurring" | null {
+  const row = db.prepare(`SELECT kind FROM groups WHERE id = ?`).get(id) as { kind: "envelope" | "recurring" } | undefined;
+  return row ? row.kind : null;
+}
+
 export function listGroups(db: Database.Database): GroupRow[] {
   const groups = db
     .prepare(
