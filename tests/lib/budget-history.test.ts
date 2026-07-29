@@ -78,4 +78,16 @@ describe("protection du montant de départ contre la suppression", () => {
     expect(canRemoveBudgetChange(entries, "2026-08")).toBe(false);
     expect(canRemoveBudgetChange(entries, "2026-11")).toBe(true);
   });
+
+  it("protège aussi le montant de départ d'une ligne de récurrent (removeLineAmount réutilise la même fonction)", () => {
+    // Une ligne créée en juin puis relevée en juillet : la même règle doit
+    // interdire de retirer l'entrée de juin (la ligne se retrouverait sans
+    // montant, donc à 0) mais autoriser de retirer celle de juillet.
+    const entries = [
+      { effectiveMonth: "2026-06", amount: 12.14 },
+      { effectiveMonth: "2026-07", amount: 151.84 },
+    ];
+    expect(canRemoveBudgetChange(entries, "2026-06")).toBe(false);
+    expect(canRemoveBudgetChange(entries, "2026-07")).toBe(true);
+  });
 });

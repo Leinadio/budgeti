@@ -291,3 +291,17 @@ export async function removeGroupLine(lineId: number): Promise<void> {
   deleteLine(db(), lineId);
   await revalidate();
 }
+
+// Retire un changement de montant daté d'une ligne de récurrent (jamais le
+// montant de départ). Même garde-fou que removeGroupAmount, et pour la même
+// raison : une ligne sans entrée datée vaudrait 0, pas « pas de budget ». La
+// protection est revérifiée ici, côté serveur, sur les entrées réellement en
+// base — voir removeGroupAmount pour le détail du raisonnement.
+export async function removeLineAmount(lineId: number, month: string): Promise<void> {
+  if (!/^\d{4}-\d{2}$/.test(month)) return;
+  const database = db();
+  const entries = toDatedLineAmounts(listLineAmounts(database))[lineId] ?? [];
+  if (!canRemoveBudgetChange(entries, month)) return;
+  deleteLineAmount(database, lineId, month);
+  await revalidate();
+}

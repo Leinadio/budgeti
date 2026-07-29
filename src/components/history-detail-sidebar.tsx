@@ -8,6 +8,7 @@ import { monthLabel } from "@/lib/transactions-view";
 import { formatEur } from "@/lib/money";
 import { detailKey } from "@/lib/history-detail";
 import { flattenNodes, cellsForNode, cellsForTotal, TOTAL_ROW, type PanelRow } from "@/lib/history-nav";
+import { amountAtMonth, type BudgetChange } from "@/lib/budget-history";
 import {
   decideOverspend,
   undoOverspendDecision,
@@ -19,6 +20,7 @@ import {
   addGroupLine,
   editGroupLine,
   removeGroupLine,
+  removeLineAmount,
 } from "@/app/historique/actions";
 import { Sidebar, SidebarHeader, SidebarContent } from "@/components/ui/sidebar";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
@@ -185,44 +187,82 @@ function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
   );
 }
 
-// Une ligne d'un récurrent en édition : nom / montant / jour, avec son propre état
-// local (initialisé sur la ligne). « Enregistrer » applique editGroupLine, la
-// corbeille supprime la ligne (removeGroupLine).
-function LineRow({ line, busy, onSave, onRemove }: {
-  line: { id: number; name: string; amount: number; day: number };
+// Une ligne d'un récurrent en édition : nom / montant du mois affiché / jour, plus
+// la vie de son montant. Le nom et le jour valent pour tous les mois ; le montant
+// est daté, avec la même portée que celle d'une enveloppe.
+function LineRow({ line, month, busy, onSave, onRemove, onRemoveChange }: {
+  line: { id: number; name: string; amount: number; day: number; changes: BudgetChange[] };
+  month: string;
   busy: boolean;
-  onSave: (name: string, amount: number, day: number) => void;
+  onSave: (name: string, day: number, amount: number, scope: "once" | "ongoing") => void;
   onRemove: () => void;
+  onRemoveChange: (month: string) => void;
 }) {
   const [name, setName] = useState(line.name);
   const [amount, setAmount] = useState(String(line.amount));
   const [day, setDay] = useState(String(line.day));
+  const [scope, setScope] = useState<"ongoing" | "once">("ongoing");
   return (
-    <div className="flex items-end gap-2">
-      <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <Label className="text-muted-foreground text-xs font-normal">Nom</Label>
-        <Input value={name} onChange={(e) => setName(e.target.value)} className="h-8" />
+    <div className="flex flex-col gap-2 border-b pb-3 last:border-b-0">
+      <div className="flex items-end gap-2">
+        <div className="flex min-w-0 flex-1 flex-col gap-1">
+          <Label className="text-muted-foreground text-xs font-normal">Nom</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} className="h-8" />
+        </div>
+        <div className="flex w-20 flex-col gap-1">
+          <Label className="text-muted-foreground text-xs font-normal">Montant</Label>
+          <Input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} className="h-8 text-right tabular-nums" />
+        </div>
+        <div className="flex w-14 flex-col gap-1">
+          <Label className="text-muted-foreground text-xs font-normal">Jour</Label>
+          <Input type="number" min="1" max="31" value={day} onChange={(e) => setDay(e.target.value)} className="h-8 text-right tabular-nums" />
+        </div>
+        <Button type="button" size="icon-xs" variant="ghost" disabled={busy} aria-label="Supprimer la ligne" onClick={onRemove}>
+          <Trash2 className="text-muted-foreground size-4" />
+        </Button>
       </div>
-      <div className="flex w-20 flex-col gap-1">
-        <Label className="text-muted-foreground text-xs font-normal">Montant</Label>
-        <Input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} className="h-8 text-right tabular-nums" />
+      <div className="flex flex-wrap items-center gap-2">
+        <select
+          value={scope}
+          onChange={(e) => setScope(e.target.value as "ongoing" | "once")}
+          className="h-8 rounded-md border bg-transparent px-2 text-sm"
+        >
+          <option value="ongoing">À partir de ce mois</option>
+          <option value="once">Ce mois seulement</option>
+        </select>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled={busy || !name.trim()}
+          onClick={() => onSave(name.trim(), parseInt(day, 10) || 1, parseFloat(amount) || 0, scope)}
+        >
+          Enregistrer
+        </Button>
       </div>
-      <div className="flex w-14 flex-col gap-1">
-        <Label className="text-muted-foreground text-xs font-normal">Jour</Label>
-        <Input type="number" min="1" max="31" value={day} onChange={(e) => setDay(e.target.value)} className="h-8 text-right tabular-nums" />
-      </div>
-      <Button
-        type="button"
-        size="sm"
-        variant="secondary"
-        disabled={busy || !name.trim()}
-        onClick={() => onSave(name.trim(), parseFloat(amount) || 0, parseInt(day, 10) || 1)}
-      >
-        Enregistrer
-      </Button>
-      <Button type="button" size="icon-xs" variant="ghost" disabled={busy} aria-label="Supprimer la ligne" onClick={onRemove}>
-        <Trash2 className="text-muted-foreground size-4" />
-      </Button>
+      {line.changes.length > 0 && (
+        <ul className="text-muted-foreground flex flex-col gap-1 text-xs">
+          {line.changes.map((c) => (
+            <li key={c.month} className="flex items-center justify-between gap-2">
+              <span>{c.isStart ? "Montant de départ" : `À partir de ${monthLabel(c.month)}`}</span>
+              <span className="flex items-center gap-2">
+                <span className="tabular-nums">{formatEur(c.amount)}</span>
+                {!c.isStart && (
+                  <button
+                    type="button"
+                    disabled={busy}
+                    aria-label={`Supprimer le changement de ${monthLabel(c.month)}`}
+                    onClick={() => onRemoveChange(c.month)}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
+                    <Trash2 className="size-3" />
+                  </button>
+                )}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -356,9 +396,11 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
             {lines.map((l) => (
               <LineRow
                 key={l.id}
-                line={l}
+                line={{ ...l, amount: amountAtMonth(l.changes, info.month) }}
+                month={info.month}
                 busy={busy}
-                onSave={(n, a, d) => run(() => editGroupLine(l.id, n, d, info.month, a, "ongoing"))}
+                onSave={(n, d, a, s) => run(() => editGroupLine(l.id, n, d, info.month, a, s))}
+                onRemoveChange={(m) => run(() => removeLineAmount(l.id, m))}
                 onRemove={() =>
                   run(async () => {
                     await removeGroupLine(l.id);
