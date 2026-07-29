@@ -67,4 +67,29 @@ describe("repère de changement de budget", () => {
   it("rend une liste vide sans cellule", () => {
     expect(budgetChangePoints([])).toEqual([]);
   });
+
+  // La vie du groupe force le budget à 0 sur les mois morts (cf. src/lib/history.ts) :
+  // sans en tenir compte, le saut de 0 vers le vrai budget au mois de naissance se
+  // lirait à tort comme une hausse. Le repère ne doit jamais franchir un mois mort.
+  it("ne marque pas le mois de naissance d'une ligne née dans la fenêtre affichée", () => {
+    expect(
+      budgetChangePoints(
+        [{ budgeted: 0 }, { budgeted: 0 }, { budgeted: 250 }],
+        [false, false, true],
+      ),
+    ).toEqual([false, false, false]);
+  });
+
+  it("ne marque pas la reprise après une pause au milieu de la fenêtre", () => {
+    expect(
+      budgetChangePoints(
+        [{ budgeted: 250 }, { budgeted: 0 }, { budgeted: 300 }],
+        [true, false, true],
+      ),
+    ).toEqual([false, false, false]);
+  });
+
+  it("marque toujours un vrai changement entre deux mois vivants", () => {
+    expect(budgetChangePoints([{ budgeted: 250 }, { budgeted: 300 }], [true, true])).toEqual([false, true]);
+  });
 });

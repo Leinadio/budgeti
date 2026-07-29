@@ -391,7 +391,11 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
 }) {
   // Mois où le budget de cette ligne change par rapport au mois précédent, pour
   // poser un repère discret sur la case correspondante (cf. budgetChangePoints).
-  const changes = budgetChangePoints(cells);
+  // aliveMonths est transmis pour ne jamais marquer un mois de naissance ou de
+  // reprise (le budget y saute du 0 forcé des mois morts vers le vrai montant,
+  // sans qu'il ait vraiment changé) — absent pour les sous-lignes sans detailRow,
+  // où budgetChangePoints retombe alors sur « toujours vivant ».
+  const changes = budgetChangePoints(cells, detailRow?.aliveMonths);
   return (
     <>
       {cells.map((c, i) => {
