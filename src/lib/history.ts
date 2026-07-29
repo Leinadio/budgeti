@@ -6,7 +6,7 @@ import { type Group, type Txn, isGroupAlive } from "./forecast";
 // fonctions). Ré-exportés ici pour ne pas casser les consommateurs existants.
 export {
   lineAmountInForce, budgetInForce, provisionInForce, toDatedBudgets,
-  toDatedLineAmounts, onceBudgetWrites, lineStarted,
+  toDatedLineAmounts, onceBudgetWrites, lineStarted, budgetKey, budgetsByMonth,
   type DatedBudgets, type DatedLineAmounts,
 } from "./budget-in-force";
 import {
@@ -462,7 +462,8 @@ export function rowRevenus(r: HistoryRow, i: number, isCurrent: boolean): number
   return r.cells[i].budgeted;
 }
 
-// Budget de dépense d'une ligne (0 pour une entrée). budgeted est constant sur les mois.
+// Budget de dépense d'une ligne (0 pour une entrée), au mois d'index i : il varie
+// d'un mois à l'autre, chaque groupe portant une suite de montants datés.
 function rowBudget(r: HistoryRow, i: number): number {
   return r.direction === "out" ? r.cells[i].budgeted : 0;
 }

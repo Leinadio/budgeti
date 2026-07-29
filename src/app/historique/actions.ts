@@ -289,11 +289,13 @@ export async function editGroupLine(
   const trimmed = name.trim();
   const database = db();
   if (trimmed && /^\d{4}-\d{2}$/.test(month) && Number.isFinite(amount) && amount >= 0) {
-    // updateLine écrit encore group_lines.amount : plus lu par les calculs de
-    // budget, mais toujours lu par listGroups (affichage) et par la migration de
-    // reprise (migrateSeedDatedAmounts) tant qu'aucune entrée datée n'existe
-    // encore pour cette ligne. On lui passe donc le montant courant pour ne pas
-    // laisser un champ incohérent en base.
+    // updateLine porte le nom et le jour, qui valent pour tous les mois. Il écrit
+    // aussi group_lines.amount, que plus aucun calcul de budget ne lit : en portée
+    // « ce mois seulement », c'est donc le montant exceptionnel qui y atterrit, et
+    // non le montant courant de la ligne. Sans conséquence — la reprise de données
+    // ne relit cette colonne que pour une ligne encore dépourvue d'entrée datée, ce
+    // que setLineAmount ci-dessous exclut aussitôt — mais la colonne ne doit pas
+    // être prise pour une source de vérité.
     updateLine(database, lineId, trimmed, amount, day);
     if (scope === "once") {
       const existantes = toDatedLineAmounts(listLineAmounts(database))[lineId] ?? [];

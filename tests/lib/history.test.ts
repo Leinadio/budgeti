@@ -1,5 +1,5 @@
 import { expect, describe, it } from "vitest";
-import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde, computePlannedSoldes, budgetInForce, lineAmountInForce, toDatedBudgets, toDatedLineAmounts, computeOverspends, onceBudgetWrites, rowRevenus, rowOverspend, uncatOverspend, uncatOverspendOf, type HistoryRow, type DatedBudgets } from "../../src/lib/history";
+import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde, computePlannedSoldes, budgetInForce, lineAmountInForce, toDatedBudgets, toDatedLineAmounts, computeOverspends, onceBudgetWrites, budgetKey, budgetsByMonth, rowRevenus, rowOverspend, uncatOverspend, uncatOverspendOf, type HistoryRow, type DatedBudgets } from "../../src/lib/history";
 import { isGroupAlive, type Group, type Txn } from "../../src/lib/forecast";
 import { budgetChangePoints } from "../../src/lib/history-columns";
 import { seedDated, mergeDated } from "./dated-fixtures";
@@ -1070,5 +1070,60 @@ describe("montant en vigueur", () => {
     // dépassement d'août a disparu se lit dans pendingByMonth, qui couvre aussi le
     // mois courant. Sans entrée pour août, aucun dépassement n'y a été classé.
     expect(r.pendingByMonth["2026-08"]).toBeUndefined();
+  });
+});
+
+// Budgets pré-remplis du formulaire « Permanent » d'un dépassement. Le montant
+// proposé se calcule au mois DU DÉPASSEMENT, qui peut être ancien : le prendre au
+// mois courant proposerait un montant faux dès que le budget a changé depuis.
+describe("budgets par mois pour un dépassement", () => {
+  const courses: Group = {
+    id: 1, accountId: "a1", name: "Courses", direction: "out", kind: "envelope",
+    monthlyAmount: null, lines: [], startMonth: "2026-01", endMonth: null,
+  };
+  const abo: Group = {
+    id: 2, accountId: "a1", name: "Abonnements", direction: "out", kind: "recurring",
+    monthlyAmount: null, startMonth: "2026-01", endMonth: null,
+    lines: [{ id: 11, name: "Spotify", amount: 10, day: 3 }],
+  };
+  // Budget relevé de 300 à 500 en juin : trancher un dépassement de mars doit
+  // proposer 300, pas 500.
+  const dated = toDatedBudgets([
+    { groupId: 1, effectiveMonth: "2026-01", amount: 300 },
+    { groupId: 1, effectiveMonth: "2026-06", amount: 500 },
+    { groupId: 0, effectiveMonth: "2026-01", amount: 20 },
+    { groupId: 0, effectiveMonth: "2026-06", amount: 40 },
+  ]);
+  const datedLines = toDatedLineAmounts([
+    { lineId: 11, effectiveMonth: "2026-01", amount: 10 },
+    { lineId: 11, effectiveMonth: "2026-06", amount: 15 },
+  ]);
+
+  it("rend le budget du mois demandé, pas celui du mois courant", () => {
+    const b = budgetsByMonth([courses], ["2026-03", "2026-07"], dated, datedLines);
+    expect(b[budgetKey(1, "2026-03")]).toBe(300);
+    expect(b[budgetKey(1, "2026-07")]).toBe(500);
+  });
+
+  it("couvre la provision des non catégorisés au même titre", () => {
+    const b = budgetsByMonth([], ["2026-03", "2026-07"], dated, datedLines);
+    expect(b[budgetKey(0, "2026-03")]).toBe(20);
+    expect(b[budgetKey(0, "2026-07")]).toBe(40);
+  });
+
+  it("somme les lignes du mois demandé pour un récurrent", () => {
+    const b = budgetsByMonth([abo], ["2026-03", "2026-07"], dated, datedLines);
+    expect(b[budgetKey(2, "2026-03")]).toBe(10);
+    expect(b[budgetKey(2, "2026-07")]).toBe(15);
+  });
+
+  it("ne rend rien pour un mois qu'on ne lui a pas demandé", () => {
+    const b = budgetsByMonth([courses], ["2026-03"], dated, datedLines);
+    expect(b[budgetKey(1, "2026-07")]).toBeUndefined();
+  });
+
+  it("dédoublonne les mois demandés deux fois", () => {
+    const b = budgetsByMonth([courses], ["2026-03", "2026-03"], dated, datedLines);
+    expect(Object.keys(b).filter((k) => k.startsWith("1::"))).toEqual([budgetKey(1, "2026-03")]);
   });
 });

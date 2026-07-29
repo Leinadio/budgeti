@@ -4,7 +4,7 @@ import { ArrowUpRight, ArrowDownRight, ChevronDown, ChevronRight, Plus, Pencil }
 import { cn } from "@/lib/utils";
 import { monthLabel } from "@/lib/transactions-view";
 import type { AccountForecast } from "@/lib/forecast";
-import { type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn, type SoldeColumn, type PlannedSoldes, type PendingOverspend, type IgnoredBlock, uncatOverspend, uncatOverspendOf, computeTableEstimate, rowRevenus, rowOverspend } from "@/lib/history";
+import { type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn, type SoldeColumn, type PlannedSoldes, type PendingOverspend, type IgnoredBlock, uncatOverspend, uncatOverspendOf, computeTableEstimate, rowRevenus, rowOverspend, budgetKey } from "@/lib/history";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { TruncatedText } from "@/components/truncated-text";
@@ -358,7 +358,7 @@ function plannedSoldeCell(
 // detailRow : ligne de groupe (transactions/postes) permettant de construire le
 // détail cliquable des cellules. Absente pour les sous-lignes (postes d'un
 // récurrent) : ces cellules restent non cliquables (hors périmètre, cf. ci-dessous).
-function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, subtitleOf, detailRow, months, currentMonth, rowKey, selCellKey, prevDisp, incomeKind, accountId, decisionByKey, currentBudgets }: {
+function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, subtitleOf, detailRow, months, currentMonth, rowKey, selCellKey, prevDisp, incomeKind, accountId, decisionByKey, budgetsForOverspend }: {
   cells: MonthCell[];
   mode: "out" | "in" | "total";
   solde?: (number | null)[];
@@ -388,14 +388,17 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
   decisionByKey?: Map<string, "exceptional" | "permanent">;
   // Budgets courants par groupe (mois courant), pour pré-remplir le champ
   // « Nouveau budget » du bloc de décision. Absent pour les sous-lignes.
-  currentBudgets?: Record<number, number>;
+  // Budgets par groupe ET par mois (clé budgetKey) : le formulaire « Permanent »
+  // d'un dépassement se pré-remplit au mois DE CE dépassement, pas au mois courant.
+  budgetsForOverspend?: Record<string, number>;
 }) {
   // Mois où le budget de cette ligne change par rapport au mois précédent, pour
   // poser un repère discret sur la case correspondante (cf. budgetChangePoints).
   // aliveMonths est transmis pour ne jamais marquer un mois de naissance ou de
   // reprise (le budget y saute du 0 forcé des mois morts vers le vrai montant,
-  // sans qu'il ait vraiment changé) — absent pour les sous-lignes sans detailRow,
-  // où budgetChangePoints retombe alors sur « toujours vivant ».
+  // sans qu'il ait vraiment changé). Les lignes de groupe comme les sous-lignes en
+  // reçoivent un, chacune avec SA vie propre ; sans detailRow (totaux de section),
+  // budgetChangePoints retombe sur « toujours vivant » et le repère reste possible.
   const changes = budgetChangePoints(cells, detailRow?.aliveMonths);
   return (
     <>
@@ -452,7 +455,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
             month,
             amount: -c.balance,
             decision: decisionByKey?.get(`${r.id}::${month}`) ?? null,
-            currentBudget: currentBudgets?.[r.id] ?? null,
+            currentBudget: budgetsForOverspend?.[budgetKey(r.id, month)] ?? null,
             // Lignes de ce récurrent qui ont dépassé au mois de la case cliquée (vide
             // pour une enveloppe, dont subRows est toujours vide) — voir
             // overspentLinesOf dans src/lib/history-detail.ts.
@@ -634,7 +637,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
 // donc leur somme aussi) : toujours cliquable. Pour les non catégorisés, budget et
 // balance sont toujours à 0 : l'invariant ne tient que si dépensé == 0, donc en
 // pratique non cliquable (comme documenté au Task 3 pour ce cas).
-function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPrevu, planDepass, uncatInSec, selCellKey, prevDisp, accountId, decisionByKey, currentUncatProvision }: {
+function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPrevu, planDepass, uncatInSec, selCellKey, prevDisp, accountId, decisionByKey, budgetsForOverspend }: {
   sec: HistorySection;
   months: string[];
   currentMonth: string;
@@ -657,9 +660,10 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
   // la Balance non catégorisés en dépassement (section « out » uniquement).
   accountId?: string;
   decisionByKey?: Map<string, "exceptional" | "permanent">;
-  // Provision non catégorisés en vigueur au mois courant, pour pré-remplir le champ
-  // « Nouvelle provision » du bloc de décision (section non catégorisés uniquement).
-  currentUncatProvision?: number | null;
+  // Budgets par groupe ET par mois (clé budgetKey) : le groupe 0 y porte la provision
+  // des non catégorisés, pour pré-remplir le champ « Nouvelle provision » du bloc de
+  // décision au mois de la case cliquée (section non catégorisés uniquement).
+  budgetsForOverspend?: Record<string, number>;
 }) {
   const isUncat = sec.kind === "uncategorized";
   // Section « non catégorisés » côté reçus (affichée sous les rémunérations).
@@ -753,7 +757,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
             month,
             amount: -resteVal,
             decision: decisionByKey?.get(`0::${month}`) ?? null,
-            currentBudget: currentUncatProvision ?? null,
+            currentBudget: budgetsForOverspend?.[budgetKey(0, month)] ?? null,
             // Les non catégorisés n'ont pas de lignes (pas de récurrent) : jamais de
             // dépassement à ventiler.
             overspentLines: [],
@@ -1299,7 +1303,7 @@ function scrollableAncestor(el: HTMLElement, axis: "x" | "y"): HTMLElement | nul
   return null;
 }
 
-export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections, ignoredBlocks, overspend, grand, groups, solde, planned, onSelect, selected, anchor, accountId, decisions, pending, pendingByMonth, currentBudgets, currentUncatProvision }: {
+export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections, ignoredBlocks, overspend, grand, groups, solde, planned, onSelect, selected, anchor, accountId, decisions, pending, pendingByMonth, budgetsForOverspend }: {
   months: string[];
   currentMonth: string;
   // Borne haute de la frise : plage sélectionnable du mois de départ dans le
@@ -1333,10 +1337,11 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
   // Les mêmes dépassements non tranchés, groupés par mois : pastilles cliquables
   // sous l'en-tête de chaque mois (cf. Task 4).
   pendingByMonth?: Record<string, PendingOverspend[]>;
-  currentBudgets?: Record<number, number>;
+  // Budgets par groupe ET par mois (clé budgetKey) : le formulaire « Permanent »
+  // d'un dépassement se pré-remplit au mois DE CE dépassement, pas au mois courant.
+  budgetsForOverspend?: Record<string, number>;
   // Provision non catégorisés en vigueur au mois courant, pour pré-remplir le champ
   // « Nouvelle provision » du bloc de décision (groupe 0).
-  currentUncatProvision?: number | null;
 }) {
   // Décision déjà prise, indexée par « groupId::mois » : sert à attacher
   // overspendAction sur les Balances rouges (cf. AmountCells / SectionTotalsCells).
@@ -1507,7 +1512,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                   e.stopPropagation();
                   const p = pendingByGroup.get(r.id)!;
                   const idx = months.indexOf(p.month);
-                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null, currentBudgets?.[r.id] ?? null, overspentLinesOfPendingItem(p)));
+                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null, budgetsForOverspend?.[budgetKey(r.id, p.month)] ?? null, overspentLinesOfPendingItem(p)));
                 }}
                 className="ml-1 inline-block size-2 shrink-0 rounded-full bg-amber-500"
               />
@@ -1542,7 +1547,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
             incomeKind={r.incomeKind}
             accountId={accountId}
             decisionByKey={decisionByKey}
-            currentBudgets={currentBudgets}
+            budgetsForOverspend={budgetsForOverspend}
           />
         </TableRow>
         {gOpen && (
@@ -1674,7 +1679,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                   e.stopPropagation();
                   const p = pendingByGroup.get(0)!;
                   const idx = months.indexOf(p.month);
-                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null, currentUncatProvision ?? null, overspentLinesOfPendingItem(p)));
+                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null, budgetsForOverspend?.[budgetKey(0, p.month)] ?? null, overspentLinesOfPendingItem(p)));
                 }}
                 className="ml-1 inline-block size-2 shrink-0 rounded-full bg-amber-500"
               />
@@ -1693,7 +1698,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
             prevDisp={{ solde: prevDisplayedByCol.solde.get(rowKey), soldePrevu: prevDisplayedByCol.soldePrevu.get(rowKey), soldeDepass: prevDisplayedByCol.soldeDepass.get(rowKey) }}
             accountId={accountId}
             decisionByKey={decisionByKey}
-            currentUncatProvision={currentUncatProvision}
+            budgetsForOverspend={budgetsForOverspend}
           />
         </TableRow>
         {uOpen && sec.txns?.map((t) => (

@@ -9,7 +9,7 @@ import {
   computeHistory, grandTotals, monthlyOverspend, monthsWithData, computeSolde,
   computePlannedSoldes, addMonthsKey, monthRange, isMonthKey, clampMonth,
   sliceHistorySections, sliceSoldeColumn, slicePlannedSoldes, computeTableEstimate,
-  toDatedBudgets, toDatedLineAmounts, computeOverspends, budgetInForce, provisionInForce, computeIgnoredBlocks,
+  toDatedBudgets, toDatedLineAmounts, computeOverspends, budgetsByMonth, computeIgnoredBlocks,
 } from "../../lib/history";
 import { budgetChanges } from "../../lib/budget-history";
 import { computeForecast, type Group, type Txn } from "../../lib/forecast";
@@ -120,12 +120,17 @@ export default async function HistoriquePage({
           const soldeFull = computeSolde(sectionsFull, calcMonths, currentMonth, balance, estimateValue);
           const decisions = listOverspendDecisions(database, a.id);
           const overspends = computeOverspends(groups, txns, currentMonth, decisions, datedBudgets, datedLines);
-          const currentBudgets = Object.fromEntries(
-            groups.map((g) => [g.id, budgetInForce(g, currentMonth, datedBudgets, datedLines)]),
+          // Budgets servant à pré-remplir le formulaire « Permanent » d'un
+          // dépassement (groupe 0 = provision des non catégorisés). Le montant proposé
+          // se calcule au mois DU DÉPASSEMENT, qui peut être ancien et porter un tout
+          // autre budget que le mois courant : d'où un budget par mois et non un
+          // budget unique par groupe. Les mois couverts sont ceux affichés PLUS ceux
+          // des dépassements non tranchés, que les pastilles peuvent ouvrir alors
+          // qu'ils sont hors de la fenêtre.
+          const overspendMonths = overspends.pending.map((p) => p.month);
+          const budgetsForOverspend = budgetsByMonth(
+            groups, [...months, ...overspendMonths], datedBudgets, datedLines,
           );
-          // Provision non catégorisés en vigueur au mois courant, pour pré-remplir le
-          // champ « Nouvelle provision » du bloc de décision d'un dépassement (groupe 0).
-          const currentUncatProvision = provisionInForce(datedBudgets, currentMonth);
           const plannedFull = computePlannedSoldes(sectionsFull, calcMonths, currentMonth, soldeFull.openings, estimateValue, datedBudgets);
           const sections = sliceHistorySections(sectionsFull, calcMonths, k);
           const solde = sliceSoldeColumn(soldeFull, k);
@@ -173,8 +178,7 @@ export default async function HistoriquePage({
                   decisions={decisions.map(({ groupId, month, decision }) => ({ groupId, month, decision }))}
                   pending={overspends.pending}
                   pendingByMonth={overspends.pendingByMonth}
-                  currentBudgets={currentBudgets}
-                  currentUncatProvision={currentUncatProvision}
+                  budgetsForOverspend={budgetsForOverspend}
                 />
               )}
             </TabsContent>

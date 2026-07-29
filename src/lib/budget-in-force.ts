@@ -52,6 +52,33 @@ export function provisionInForce(dated: DatedBudgets | undefined, month: string)
   return amount;
 }
 
+// Clé d'un budget dans le dictionnaire par mois ci-dessous. Le groupe 0 désigne la
+// provision des non catégorisés, comme partout ailleurs.
+export function budgetKey(groupId: number, month: string): string {
+  return `${groupId}::${month}`;
+}
+
+// Budgets en vigueur, pour chaque groupe et chacun des mois demandés. Sert à
+// pré-remplir le formulaire « Permanent » d'un dépassement : le montant proposé se
+// calcule au mois DU DÉPASSEMENT, qui peut être ancien. Un simple budget par groupe
+// ne suffit pas — il porterait forcément un mois unique, et proposerait un montant
+// faux dès que le budget a changé entre ce mois et celui du dépassement.
+// Ce dictionnaire traverse la frontière serveur/client : il doit rester sérialisable,
+// d'où une table plate plutôt qu'une fonction de résolution.
+export function budgetsByMonth(
+  groups: Group[],
+  months: string[],
+  dated?: DatedBudgets,
+  datedLines?: DatedLineAmounts,
+): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const month of new Set(months)) {
+    for (const g of groups) out[budgetKey(g.id, month)] = budgetInForce(g, month, dated, datedLines);
+    out[budgetKey(0, month)] = provisionInForce(dated, month);
+  }
+  return out;
+}
+
 // Décale une clé « YYYY-MM » d'un mois (copie locale pour éviter le cycle avec
 // history.ts, qui importe ce module).
 function nextMonthKey(m: string): string {

@@ -45,10 +45,10 @@ export function HistoryWithDetail(props: {
   // Dépassements non tranchés groupés par mois : pastilles sous chaque en-tête de
   // mois dans la grille (Task 4).
   pendingByMonth?: Record<string, PendingOverspend[]>;
-  currentBudgets?: Record<number, number>;
-  // Provision non catégorisés en vigueur au mois courant, pour pré-remplir le champ
-  // « Nouvelle provision » du bloc de décision (Task 5).
-  currentUncatProvision?: number | null;
+  // Budgets par groupe ET par mois (clé budgetKey), pour pré-remplir le formulaire
+  // « Permanent » d'un dépassement au mois de CE dépassement. Le groupe 0 y porte la
+  // provision des non catégorisés.
+  budgetsForOverspend?: Record<string, number>;
 }) {
   const { setDetail, selected, anchor } = useDetailSidebar();
   // Bandeau : les dépassements à trancher de TOUS les mois affichés (mois courant
@@ -70,8 +70,7 @@ export function HistoryWithDetail(props: {
           items={bannerItems}
           accountId={props.accountId}
           months={props.months}
-          currentBudgets={props.currentBudgets}
-          currentUncatProvision={props.currentUncatProvision}
+          budgetsForOverspend={props.budgetsForOverspend}
           overspentLinesOf={(it) => overspentLinesOfPending(it, rowsById, props.months)}
         />
       )}

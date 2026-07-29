@@ -60,6 +60,8 @@ CREATE TABLE IF NOT EXISTS groups (
   name TEXT NOT NULL,
   direction TEXT NOT NULL CHECK (direction IN ('in', 'out')),
   kind TEXT NOT NULL CHECK (kind IN ('envelope', 'recurring')),
+  -- Vestige : plus lu par aucun calcul de budget (la vérité est dans budget_amounts).
+  -- Conservé parce que les INSERT existants le remplissent encore ; ne pas s'en servir.
   monthly_amount REAL,
   income_kind TEXT,                -- 'principal' | 'supplementary' | NULL (revenu)
   start_month TEXT,                -- 'YYYY-MM' : mois de départ (invisible avant)
@@ -70,6 +72,8 @@ CREATE TABLE IF NOT EXISTS group_lines (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   group_id INTEGER NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
+  -- Vestige, comme groups.monthly_amount : le budget d'une ligne vit dans
+  -- line_amounts. Encore lu par listGroups (affichage) et par la reprise de données.
   amount REAL NOT NULL,
   day INTEGER,
   keyword TEXT NOT NULL
@@ -87,9 +91,12 @@ CREATE TABLE IF NOT EXISTS reconcile_ignored (
   PRIMARY KEY (manual_id, synced_id)
 );
 
--- Budgets datés : montant d'un groupe à partir d'un mois donné. Le montant en
--- vigueur pour un mois M est celui de la ligne au plus grand effective_month <= M ;
--- sans ligne applicable, on retombe sur groups.monthly_amount.
+-- Budgets datés : montant d'un groupe à partir d'un mois donné. SEULE source de
+-- vérité du budget d'une enveloppe. Le montant en vigueur pour un mois M est celui
+-- de la ligne au plus grand effective_month <= M ; sans ligne applicable, le montant
+-- est 0 — on ne retombe sur AUCUN montant de base (cf. src/lib/budget-in-force.ts).
+-- La reprise de données (migrateSeedDatedAmounts) garantit une entrée au mois de
+-- départ de chaque enveloppe, et chaque création en pose une aussitôt.
 -- group_id = 0 = non catégorisés (provision) ; pas de FK volontairement (comme overspend_decisions).
 CREATE TABLE IF NOT EXISTS budget_amounts (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
