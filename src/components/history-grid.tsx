@@ -1855,7 +1855,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                       <button
                         key={`${it.groupId}-${it.month}`}
                         type="button"
-                        onClick={() => onSelect(overspendDecisionDetail(it, accountId, months.indexOf(it.month) === -1 ? null : months.indexOf(it.month), null, null, overspentLinesOfPendingItem(it)))}
+                        onClick={() => onSelect(overspendDecisionDetail(it, accountId, months.indexOf(it.month) === -1 ? null : months.indexOf(it.month), null, budgetsForOverspend?.[budgetKey(it.groupId, it.month)] ?? null, overspentLinesOfPendingItem(it)))}
                         className="rounded border border-amber-300 bg-amber-50 px-1 text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
                       >
                         {it.name} ({NUM.format(it.amount)} €)
