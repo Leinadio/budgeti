@@ -1,12 +1,22 @@
 import { expect, describe, it } from "vitest";
-import { computeIgnoredBlocks, computeHistory, grandTotals } from "../../src/lib/history";
-import type { Txn } from "../../src/lib/forecast";
+import { computeIgnoredBlocks, computeHistory, grandTotals, type DatedBudgets } from "../../src/lib/history";
+import type { Group, Txn } from "../../src/lib/forecast";
+import { seedDated, mergeDated } from "./dated-fixtures";
 
 function tx(p: Partial<Txn>): Txn {
   return { id: "t", date: "2026-07-05", amount: -10, label: "", accountId: "a1", groupId: null, ...p };
 }
 
 const months = ["2026-06", "2026-07"];
+
+// Enveloppe locale : sème les montants des fixtures comme le fait la reprise de
+// données (cf. tests/lib/history.test.ts).
+const hist = (
+  groups: Group[], txns: Txn[], monthList: string[], current: string, extra?: DatedBudgets,
+) => {
+  const { dated, datedLines } = seedDated(groups);
+  return computeHistory(groups, txns, monthList, current, mergeDated(dated, extra), datedLines);
+};
 
 describe("Section « Non comptabilisées » du tableau de l'historique", () => {
   it("devrait séparer les reçus des dépenses en deux blocs", () => {
@@ -50,10 +60,10 @@ describe("Section « Non comptabilisées » du tableau de l'historique", () => {
     // Les non comptabilisées n'entrent jamais dans computeHistory : le grand total
     // est identique qu'elles existent ou non.
     const compte = [tx({ id: "a", date: "2026-07-02", amount: -30 })];
-    const sections = computeHistory([], compte, months, "2026-07");
+    const sections = hist([], compte, months, "2026-07");
     const grand = grandTotals(sections, months.length);
     const blocks = computeIgnoredBlocks([tx({ id: "z", date: "2026-07-03", amount: -999 })], months);
     expect(blocks).toHaveLength(1);
-    expect(grandTotals(computeHistory([], compte, months, "2026-07"), months.length)).toEqual(grand);
+    expect(grandTotals(hist([], compte, months, "2026-07"), months.length)).toEqual(grand);
   });
 });

@@ -1,6 +1,7 @@
 import { expect, describe, it } from "vitest";
-import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde, computePlannedSoldes, budgetInForce, toDatedBudgets, computeOverspends, onceBudgetWrites, rowRevenus, rowOverspend, uncatOverspend, uncatOverspendOf, type HistoryRow } from "../../src/lib/history";
+import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde, computePlannedSoldes, budgetInForce, lineAmountInForce, toDatedBudgets, toDatedLineAmounts, computeOverspends, onceBudgetWrites, rowRevenus, rowOverspend, uncatOverspend, uncatOverspendOf, type HistoryRow, type DatedBudgets } from "../../src/lib/history";
 import { isGroupAlive, type Group, type Txn } from "../../src/lib/forecast";
+import { seedDated, mergeDated } from "./dated-fixtures";
 
 // Fixtures partagées : une enveloppe « Courses » avec un budget mensuel, un groupe
 // récurrent « Abonnements » fait de deux lignes, et une rémunération « Salaire ».
@@ -25,6 +26,24 @@ function tx(p: Partial<Txn>): Txn {
   return { id: "t", date: "2026-07-05", amount: -10, label: "", accountId: "a1", groupId: null, ...p };
 }
 
+// Enveloppes locales : sèment les montants des fixtures comme le fait la reprise
+// de données, pour que les tests continuent d'exprimer leurs montants dans les
+// fixtures plutôt que dans des tables datées écrites à la main.
+const hist = (
+  groups: Group[], txns: Txn[], months: string[], current: string, extra?: DatedBudgets,
+) => {
+  const { dated, datedLines } = seedDated(groups);
+  return computeHistory(groups, txns, months, current, mergeDated(dated, extra), datedLines);
+};
+const over = (
+  groups: Group[], txns: Txn[], current: string,
+  decided: { groupId: number; month: string; decision?: "exceptional" | "permanent" }[],
+  extra?: DatedBudgets,
+) => {
+  const { dated, datedLines } = seedDated(groups);
+  return computeOverspends(groups, txns, current, decided, mergeDated(dated, extra), datedLines);
+};
+
 describe("Montants affichés dans le tableau de l'historique", () => {
   it("devrait afficher, pour chaque groupe, ce qui a été dépensé chaque mois", () => {
     const txns = [
@@ -32,7 +51,7 @@ describe("Montants affichés dans le tableau de l'historique", () => {
       tx({ id: "2", date: "2026-07-10", amount: -50, label: "CARREFOUR", groupId: 1 }),
       tx({ id: "3", date: "2026-07-15", amount: -30, label: "CARREFOUR", groupId: 1 }),
     ];
-    const sections = computeHistory([courses], txns, ["2026-06", "2026-07"], "2026-07");
+    const sections = hist([courses], txns, ["2026-06", "2026-07"], "2026-07");
     const row = sections[0].rows[0];
     expect(row.cells[0].depense).toBe(120); // juin
     expect(row.cells[1].depense).toBe(80); // juillet 50 + 30
@@ -40,7 +59,7 @@ describe("Montants affichés dans le tableau de l'historique", () => {
 
   it("devrait budgéter une enveloppe par son montant mensuel, un récurrent par la somme de ses lignes, et afficher le reste", () => {
     const txns = [tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 })];
-    const sections = computeHistory([courses, abo], txns, ["2026-07"], "2026-07");
+    const sections = hist([courses, abo], txns, ["2026-07"], "2026-07");
     const env = sections.find((s) => s.kind === "envelope")!.rows[0];
     const rec = sections.find((s) => s.kind === "recurring")!.rows[0];
     expect(env.cells[0]).toEqual({ budgeted: 300, depense: 120, recu: 0, balance: 180 });
@@ -49,7 +68,7 @@ describe("Montants affichés dans le tableau de l'historique", () => {
 
   it("devrait ignorer les transactions exclues", () => {
     const txns = [tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", excluded: true })];
-    const sections = computeHistory([courses], txns, ["2026-07"], "2026-07");
+    const sections = hist([courses], txns, ["2026-07"], "2026-07");
     expect(sections[0].rows[0].cells[0].depense).toBe(0);
   });
 
@@ -59,14 +78,14 @@ describe("Montants affichés dans le tableau de l'historique", () => {
       tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
       tx({ id: "2", date: "2026-07-10", amount: -40, label: "LECLERC", groupId: 3 }),
     ];
-    const sections = computeHistory([courses, courses2], txns, ["2026-07"], "2026-07");
+    const sections = hist([courses, courses2], txns, ["2026-07"], "2026-07");
     expect(sections[0].totals[0]).toEqual({ budgeted: 400, depense: 160, recu: 0, balance: 240 });
   });
 
   it("devrait compter une rémunération comme argent reçu, jamais comme une dépense", () => {
     const income: Group = { id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "envelope", monthlyAmount: 2000, lines: [] };
     const txns = [tx({ id: "1", date: "2026-07-01", amount: 2000, label: "VIR REMU", groupId: 9 })];
-    const sections = computeHistory([income], txns, ["2026-07"], "2026-07");
+    const sections = hist([income], txns, ["2026-07"], "2026-07");
     expect(sections[0].rows[0].cells[0]).toEqual({ budgeted: 2000, depense: 0, recu: 2000, balance: 0 });
   });
 
@@ -79,7 +98,7 @@ describe("Montants affichés dans le tableau de l'historique", () => {
       tx({ id: "1", date: "2026-07-01", amount: 652.09, label: "VIR", groupId: 21 }),
       tx({ id: "2", date: "2026-07-05", amount: -10, label: "SPOTIFY", groupId: 2, lineId: 11 }),
     ];
-    const sections = computeHistory([remu, abo], txns, ["2026-07"], "2026-07");
+    const sections = hist([remu, abo], txns, ["2026-07"], "2026-07");
     // La rémunération vit dans son propre bloc, en tête.
     const income = sections.find((s) => s.kind === "income")!;
     const remuRow = income.rows[0];
@@ -105,7 +124,7 @@ describe("Montants affichés dans le tableau de l'historique", () => {
       tx({ id: "2", date: "2026-07-02", amount: 300, label: "PRIME", groupId: 31 }),
       tx({ id: "3", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
     ];
-    const sections = computeHistory([remuRec, remuEnv, courses], txns, ["2026-07"], "2026-07");
+    const sections = hist([remuRec, remuEnv, courses], txns, ["2026-07"], "2026-07");
     // Bloc rémunérations en tête, la principale avant la supplémentaire.
     expect(sections[0].kind).toBe("income");
     expect(sections[0].rows.map((r) => r.name)).toEqual(["Salaire", "Prime"]);
@@ -121,7 +140,7 @@ describe("Montants affichés dans le tableau de l'historique", () => {
       tx({ id: "1", date: "2026-07-01", amount: 500, label: "DIVERS", groupId: null }),
       tx({ id: "2", date: "2026-07-05", amount: -80, label: "DIVERS2", groupId: null }),
     ];
-    const sections = computeHistory([], txns, ["2026-07"], "2026-07");
+    const sections = hist([], txns, ["2026-07"], "2026-07");
     const uncatIn = sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in")!;
     expect(uncatIn.totals[0].balance).toBe(0);
   });
@@ -130,7 +149,7 @@ describe("Montants affichés dans le tableau de l'historique", () => {
     const dated = { 0: [{ effectiveMonth: "2026-07", amount: 200 }] };
     const txns = [tx({ id: "a", date: "2026-07-05", amount: -50, label: "SANS GROUPE" })];
     const months = ["2026-07"];
-    const sections = computeHistory([], txns, months, "2026-07", dated);
+    const sections = hist([], txns, months, "2026-07", dated);
     const uncatOut = sections.find((s) => s.kind === "uncategorized" && (s.uncatDirection ?? "out") === "out")!;
     // La provision s'affiche comme budget, et la Balance = provision − dépensé net (200 − 50 = 150).
     expect(uncatOut.totals[0].budgeted).toBeCloseTo(200, 2);
@@ -139,7 +158,7 @@ describe("Montants affichés dans le tableau de l'historique", () => {
 
   it("devrait laisser un mois à venir sans dépense, avec tout le budget encore disponible", () => {
     const txns = [tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 })];
-    const sections = computeHistory([courses], txns, ["2026-07", "2026-08"], "2026-07");
+    const sections = hist([courses], txns, ["2026-07", "2026-08"], "2026-07");
     const row = sections[0].rows[0];
     expect(row.cells[0]).toEqual({ budgeted: 300, depense: 120, recu: 0, balance: 180 }); // juillet, réel
     expect(row.cells[1]).toEqual({ budgeted: 300, depense: 0, recu: 0, balance: 300 }); // août : rien dépensé encore
@@ -148,7 +167,7 @@ describe("Montants affichés dans le tableau de l'historique", () => {
   it("devrait garder un dépassement du mois en cours hors des cellules des mois futurs", () => {
     // Le dépassement est gardé dans les chaînes du prévisionnel, pas dans les cellules du tableau.
     const txns = [tx({ id: "1", date: "2026-07-10", amount: -450, label: "CARREFOUR", groupId: 1 })]; // 450 > 300
-    const sections = computeHistory([courses], txns, ["2026-07", "2026-08"], "2026-07");
+    const sections = hist([courses], txns, ["2026-07", "2026-08"], "2026-07");
     const row = sections[0].rows[0];
     expect(row.cells[0]).toEqual({ budgeted: 300, depense: 450, recu: 0, balance: -150 }); // juillet, réel
     expect(row.cells[1]).toEqual({ budgeted: 300, depense: 0, recu: 0, balance: 300 }); // août : rien dépensé encore
@@ -160,7 +179,7 @@ describe("Montants affichés dans le tableau de l'historique", () => {
       tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
       tx({ id: "2", date: "2026-07-01", amount: 2000, label: "VIR REMU", groupId: 9 }),
     ];
-    const sections = computeHistory([courses, income], txns, ["2026-07"], "2026-07");
+    const sections = hist([courses, income], txns, ["2026-07"], "2026-07");
     const grand = grandTotals(sections, 1);
     expect(grand[0]).toEqual({ budgeted: 2300, depense: 120, recu: 2000, balance: 180 });
   });
@@ -173,7 +192,7 @@ describe("Montants affichés dans le tableau de l'historique", () => {
       tx({ id: "2", date: "2026-07-10", amount: -20, label: "LECLERC", groupId: 3 }), // budget 50 -> sous le budget, 0
       tx({ id: "3", date: "2026-07-01", amount: 2500, label: "VIR REMU", groupId: 9 }), // rémunération, ignorée
     ];
-    const sections = computeHistory([courses, c2, income], txns, ["2026-07"], "2026-07");
+    const sections = hist([courses, c2, income], txns, ["2026-07"], "2026-07");
     expect(monthlyOverspend(sections, 1)).toEqual([150]);
   });
 
@@ -182,7 +201,7 @@ describe("Montants affichés dans le tableau de l'historique", () => {
       id: 30, accountId: "a1", name: "Rémunération principale", direction: "in",
       kind: "envelope", monthlyAmount: 2000, lines: [], incomeKind: "principal",
     };
-    const sections = computeHistory([principal], [], ["2026-07", "2026-08"], "2026-07");
+    const sections = hist([principal], [], ["2026-07", "2026-08"], "2026-07");
     const row = sections.find((s) => s.kind === "income")!.rows[0];
     expect(row.incomeKind).toBe("principal");
     expect(row.cells[1].recu).toBe(0); // mois futur : rien de reçu encore
@@ -194,7 +213,7 @@ describe("Montants affichés dans le tableau de l'historique", () => {
       id: 31, accountId: "a1", name: "Rémunération supplémentaire", direction: "in",
       kind: "envelope", monthlyAmount: 500, lines: [], incomeKind: "supplementary",
     };
-    const sections = computeHistory([supp], [], ["2026-07", "2026-08"], "2026-07");
+    const sections = hist([supp], [], ["2026-07", "2026-08"], "2026-07");
     const row = sections.find((s) => s.kind === "income")!.rows[0];
     expect(row.incomeKind).toBe("supplementary");
     expect(row.cells[1].recu).toBe(0); // mois futur : rien
@@ -210,7 +229,7 @@ describe("Montants affichés dans le tableau de l'historique", () => {
       id: 41, accountId: "a1", name: "Rémunération supplémentaire", direction: "in",
       kind: "envelope", monthlyAmount: 500, lines: [], incomeKind: "supplementary",
     };
-    const sections = computeHistory([principal, supplementaire], [], ["2026-07"], "2026-07");
+    const sections = hist([principal, supplementaire], [], ["2026-07"], "2026-07");
     const income = sections.find((s) => s.kind === "income")!;
     // Le total du bloc rémunérations n'inclut que le budget de la principale.
     expect(income.totals[0].budgeted).toBe(2000);
@@ -225,7 +244,7 @@ describe("Répartition des transactions sous les groupes", () => {
       tx({ id: "1", date: "2026-07-03", amount: -10, label: "PRLV SPOTIFY", groupId: 2, lineId: 11 }),
       tx({ id: "2", date: "2026-07-08", amount: -15, label: "NETFLIX.COM", groupId: 2, lineId: 12 }),
     ];
-    const sections = computeHistory([abo], txns, ["2026-07"], "2026-07");
+    const sections = hist([abo], txns, ["2026-07"], "2026-07");
     const rec = sections.find((s) => s.kind === "recurring")!.rows[0];
     const spotify = rec.subRows.find((s) => s.id === 11)!;
     const netflix = rec.subRows.find((s) => s.id === 12)!;
@@ -237,7 +256,7 @@ describe("Répartition des transactions sous les groupes", () => {
 
   it("devrait ranger une transaction sous une ligne dès qu'on la lui assigne à la main, même sans mot-clé", () => {
     const txns = [tx({ id: "1", date: "2026-07-05", amount: -15, label: "PRLV DIVERS 4821", groupId: 2, lineId: 12 })];
-    const sections = computeHistory([abo], txns, ["2026-07"], "2026-07");
+    const sections = hist([abo], txns, ["2026-07"], "2026-07");
     const netflix = sections.find((s) => s.kind === "recurring")!.rows[0].subRows.find((s) => s.id === 12)!;
     expect(netflix.txns.map((t) => t.id)).toEqual(["1"]);
     expect(netflix.cells[0].depense).toBe(15);
@@ -245,7 +264,7 @@ describe("Répartition des transactions sous les groupes", () => {
 
   it("devrait afficher les transactions d'une enveloppe directement sous le groupe, sans sous-ligne", () => {
     const txns = [tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 })];
-    const sections = computeHistory([courses], txns, ["2026-07"], "2026-07");
+    const sections = hist([courses], txns, ["2026-07"], "2026-07");
     const env = sections[0].rows[0];
     expect(env.subRows).toEqual([]);
     expect(env.txns.map((t) => t.id)).toEqual(["1"]);
@@ -253,7 +272,7 @@ describe("Répartition des transactions sous les groupes", () => {
 
   it("devrait laisser une transaction de récurrent sans ligne correspondante directement sous le groupe", () => {
     const txns = [tx({ id: "1", date: "2026-07-10", amount: -40, label: "ACHAT INCONNU", groupId: 2 })];
-    const sections = computeHistory([abo], txns, ["2026-07"], "2026-07");
+    const sections = hist([abo], txns, ["2026-07"], "2026-07");
     const rec = sections.find((s) => s.kind === "recurring")!.rows[0];
     expect(rec.txns.map((t) => t.id)).toEqual(["1"]);
     expect(rec.subRows.every((s) => s.txns.length === 0)).toBe(true);
@@ -261,7 +280,7 @@ describe("Répartition des transactions sous les groupes", () => {
 
   it("devrait masquer les sections vides", () => {
     const txns = [tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 })];
-    const sections = computeHistory([courses], txns, ["2026-07"], "2026-07");
+    const sections = hist([courses], txns, ["2026-07"], "2026-07");
     expect(sections.map((s) => s.kind)).toEqual(["envelope"]);
   });
 
@@ -271,7 +290,7 @@ describe("Répartition des transactions sous les groupes", () => {
       tx({ id: "2", date: "2026-07-06", amount: 100, label: "REMBOURSEMENT" }), // non catégorisée, qui entre
       tx({ id: "3", date: "2026-07-07", amount: -25, label: "CARREFOUR", groupId: 1 }), // catégorisée
     ];
-    const sections = computeHistory([courses], txns, ["2026-07"], "2026-07");
+    const sections = hist([courses], txns, ["2026-07"], "2026-07");
     const uncatIn = sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in")!;
     const uncatOut = sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "out")!;
     // L'argent qui entre dans le bloc « in » (affiché sous les rémunérations)…
@@ -295,7 +314,7 @@ describe("Répartition des transactions sous les groupes", () => {
 
   it("devrait n'afficher aucun bloc de non catégorisés quand chaque transaction a déjà un groupe", () => {
     const txns = [tx({ id: "1", date: "2026-07-05", amount: -40, label: "X", groupId: 1 })];
-    const sections = computeHistory([courses], txns, ["2026-07"], "2026-07");
+    const sections = hist([courses], txns, ["2026-07"], "2026-07");
     expect(sections.some((s) => s.kind === "uncategorized")).toBe(false);
   });
 });
@@ -354,7 +373,7 @@ describe("La ligne de solde courant", () => {
       tx({ id: "2", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
     ];
     const months = ["2026-07"];
-    const sections = computeHistory([salaire, courses], txns, months, "2026-07");
+    const sections = hist([salaire, courses], txns, months, "2026-07");
     const solde = computeSolde(sections, months, "2026-07", 1500);
     // net juillet = 2000 - 120 = 1880 ; ouverture = 1500 - 1880 = -380
     expect(solde.closings[0]).toBe(1500);
@@ -371,7 +390,7 @@ describe("La ligne de solde courant", () => {
       tx({ id: "3", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
     ];
     const months = ["2026-06", "2026-07"];
-    const sections = computeHistory([salaire, courses], txns, months, "2026-07");
+    const sections = hist([salaire, courses], txns, months, "2026-07");
     const solde = computeSolde(sections, months, "2026-07", 1500);
     expect(solde.closings[1]).toBe(1500);
     expect(solde.openings[1]).toBe(-380); // 1500 - 1880
@@ -385,7 +404,7 @@ describe("La ligne de solde courant", () => {
       tx({ id: "2", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
     ];
     const months = ["2026-07", "2026-08"];
-    const sections = computeHistory([salaire, courses], txns, months, "2026-07");
+    const sections = hist([salaire, courses], txns, months, "2026-07");
     // Sans estimation : août s'ouvre sur la fin de juillet et n'a aucun mouvement réel.
     const solde = computeSolde(sections, months, "2026-07", 1500);
     expect(solde.openings[1]).toBe(1500); // = fin de juillet
@@ -402,7 +421,7 @@ describe("La ligne de solde courant", () => {
       tx({ id: "2", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
     ];
     const months = ["2026-08", "2026-09"];
-    const sections = computeHistory([salaire, courses], txns, months, "2026-07");
+    const sections = hist([salaire, courses], txns, months, "2026-07");
     const solde = computeSolde(sections, months, "2026-07", 1500);
     // Mois futurs : rien de réalisé, la chaîne reste plate sur le solde d'aujourd'hui.
     expect(solde.openings[0]).toBe(1500); // = solde d'aujourd'hui
@@ -422,7 +441,7 @@ describe("Les soldes prévisionnels", () => {
       tx({ id: "c", date: "2026-07-10", amount: -350, label: "CARREFOUR", groupId: 2 }),
     ];
     const months = ["2026-07", "2026-08"];
-    const sections = computeHistory([principal, courses2], txns, months, "2026-07");
+    const sections = hist([principal, courses2], txns, months, "2026-07");
     const solde = computeSolde(sections, months, "2026-07", 5000);
     const p = computePlannedSoldes(sections, months, "2026-07", solde.openings);
     const open = solde.openings[0]; // argent de départ réel du mois courant
@@ -449,7 +468,7 @@ describe("Les soldes prévisionnels", () => {
       tx({ id: "b", date: "2026-07-06", amount: 200, label: "REMBOURSEMENT" }),
     ];
     const months = ["2026-07", "2026-08"];
-    const sections = computeHistory([], txns, months, "2026-07");
+    const sections = hist([], txns, months, "2026-07");
     const solde = computeSolde(sections, months, "2026-07", 1000);
     const p = computePlannedSoldes(sections, months, "2026-07", solde.openings);
     const open = solde.openings[0];
@@ -471,7 +490,7 @@ describe("Les soldes prévisionnels", () => {
     const dated = { 0: [{ effectiveMonth: "2026-07", amount: 200 }] };
     const txns = [tx({ id: "a", date: "2026-07-05", amount: -50, label: "SANS GROUPE" })];
     const months = ["2026-07"];
-    const sections = computeHistory([], txns, months, "2026-07", dated);
+    const sections = hist([], txns, months, "2026-07", dated);
     const solde = computeSolde(sections, months, "2026-07", 1000);
     const p = computePlannedSoldes(sections, months, "2026-07", solde.openings, undefined, dated);
     const open = solde.openings[0];
@@ -486,7 +505,7 @@ describe("Les soldes prévisionnels", () => {
     const dated = { 0: [{ effectiveMonth: "2026-07", amount: 200 }] };
     const txns = [tx({ id: "a", date: "2026-07-05", amount: -500, label: "SANS GROUPE" })];
     const months = ["2026-07"];
-    const sections = computeHistory([], txns, months, "2026-07", dated);
+    const sections = hist([], txns, months, "2026-07", dated);
     const solde = computeSolde(sections, months, "2026-07", 1000);
     const p = computePlannedSoldes(sections, months, "2026-07", solde.openings, undefined, dated);
     const open = solde.openings[0];
@@ -498,7 +517,7 @@ describe("Les soldes prévisionnels", () => {
   it("devrait compter la rémunération supplémentaire dans le mois en cours, mais ne jamais la projeter dans le futur", () => {
     const supp: Group = { id: 3, accountId: "a1", name: "Rémunération supplémentaire", direction: "in", kind: "envelope", monthlyAmount: 500, lines: [], incomeKind: "supplementary" };
     const months = ["2026-07", "2026-08"];
-    const sections = computeHistory([supp], [], months, "2026-07");
+    const sections = hist([supp], [], months, "2026-07");
     const solde = computeSolde(sections, months, "2026-07", 1000);
     const p = computePlannedSoldes(sections, months, "2026-07", solde.openings);
     const open = solde.openings[0];
@@ -514,7 +533,7 @@ describe("Les soldes prévisionnels", () => {
       tx({ id: "c", date: "2026-07-10", amount: -350, label: "CARREFOUR", groupId: 2 }), // dépassement courant : 50
     ];
     const months = ["2026-07", "2026-08", "2026-09"];
-    const sections = computeHistory([principal, courses2], txns, months, "2026-07");
+    const sections = hist([principal, courses2], txns, months, "2026-07");
     const solde = computeSolde(sections, months, "2026-07", 5000);
     const open = solde.openings[0];
     const p = computePlannedSoldes(sections, months, "2026-07", solde.openings);
@@ -539,7 +558,7 @@ describe("Les soldes prévisionnels", () => {
       tx({ id: "u", date: "2026-07-12", amount: -40, label: "SANS GROUPE" }), // débordement non catégorisé : 40
     ];
     const months = ["2026-07"];
-    const sections = computeHistory([principal, loyer, courses2], txns, months, "2026-07");
+    const sections = hist([principal, loyer, courses2], txns, months, "2026-07");
     const solde = computeSolde(sections, months, "2026-07", 5000);
     const p = computePlannedSoldes(sections, months, "2026-07", solde.openings);
     // Le récurrent qui dépasse : son solde si dépassement = son solde prévu − ses 50.
@@ -557,7 +576,7 @@ describe("Budgets qui changent à partir d'un mois donné", () => {
   it("devrait appliquer le budget en vigueur mois par mois, sans toucher aux mois d'avant", () => {
     const dated = { 1: [{ effectiveMonth: "2026-08", amount: 400 }] };
     const txns = [tx({ id: "1", date: "2026-07-10", amount: -350, label: "CARREFOUR", groupId: 1 })];
-    const sections = computeHistory([courses], txns, ["2026-07", "2026-08"], "2026-07", dated);
+    const sections = hist([courses], txns, ["2026-07", "2026-08"], "2026-07", dated);
     const row = sections[0].rows[0];
     // Juillet garde l'ancien budget (300) : le dépassement de 50 reste visible.
     expect(row.cells[0]).toEqual({ budgeted: 300, depense: 350, recu: 0, balance: -50 });
@@ -565,13 +584,17 @@ describe("Budgets qui changent à partir d'un mois donné", () => {
     expect(row.cells[1]).toEqual({ budgeted: 400, depense: 0, recu: 0, balance: 400 });
   });
 
-  it("devrait prendre le dernier budget daté à cette date ou avant, et sinon revenir au montant de base", () => {
-    const dated = { 1: [{ effectiveMonth: "2026-08", amount: 400 }, { effectiveMonth: "2026-10", amount: 450 }] };
-    expect(budgetInForce(courses, "2026-07", dated)).toBe(300); // avant tout changement daté
-    expect(budgetInForce(courses, "2026-08", dated)).toBe(400);
-    expect(budgetInForce(courses, "2026-09", dated)).toBe(400);
-    expect(budgetInForce(courses, "2026-11", dated)).toBe(450);
-    expect(budgetInForce(courses, "2026-07")).toBe(300); // aucun changement daté
+  it("devrait prendre le dernier budget daté à cette date ou avant", () => {
+    // L'entrée de départ (semée par la reprise, cf. seedDated) porte le montant de la
+    // fixture ; le test y ajoute deux changements datés ultérieurs.
+    const { dated: base, datedLines } = seedDated([courses]);
+    const dated = mergeDated(base, { 1: [{ effectiveMonth: "2026-08", amount: 400 }, { effectiveMonth: "2026-10", amount: 450 }] });
+    expect(budgetInForce(courses, "2026-07", dated, datedLines)).toBe(300); // avant tout changement daté
+    expect(budgetInForce(courses, "2026-08", dated, datedLines)).toBe(400);
+    expect(budgetInForce(courses, "2026-09", dated, datedLines)).toBe(400);
+    expect(budgetInForce(courses, "2026-11", dated, datedLines)).toBe(450);
+    // Sans aucune entrée datée, il n'y a plus de montant de base sur lequel retomber : 0.
+    expect(budgetInForce(courses, "2026-07")).toBe(0);
   });
 
   it("devrait regrouper les changements de budget par groupe, dans l'ordre des mois", () => {
@@ -586,24 +609,25 @@ describe("Budgets qui changent à partir d'un mois donné", () => {
 });
 
 describe("Changer un budget pour un seul mois", () => {
-  const BASE = 100;
-
-  it("devrait poser le nouveau montant sur le mois choisi et remettre le montant de base le mois suivant", () => {
-    const { writes } = onceBudgetWrites([], BASE, "2026-08", 150);
+  it("devrait poser le nouveau montant sur le mois choisi et remettre 0 le mois suivant faute d'entrée antérieure", () => {
+    // Sans aucune entrée datée avant `month`, il n'y a plus de montant de base sur
+    // lequel retomber (baseBudget a disparu de onceBudgetWrites) : le mois suivant
+    // est restauré à 0.
+    const { writes } = onceBudgetWrites([], "2026-08", 150);
     expect(writes).toEqual([
       { effectiveMonth: "2026-08", amount: 150 },
-      { effectiveMonth: "2026-09", amount: 100 },
+      { effectiveMonth: "2026-09", amount: 0 },
     ]);
   });
 
-  it("devrait laisser le mois suivant sur le montant de base quand on remodifie le même mois", () => {
-    // État après le premier changement : un montant ponctuel à 2026-08 et la base remise à 2026-09.
+  it("devrait laisser le mois suivant intact quand on remodifie le même mois", () => {
+    // État après le premier changement : un montant ponctuel à 2026-08 et une entrée à 2026-09.
     const existing = [
       { effectiveMonth: "2026-08", amount: 150 },
       { effectiveMonth: "2026-09", amount: 100 },
     ];
-    const { writes } = onceBudgetWrites(existing, BASE, "2026-08", 200);
-    // Le mois est réécrit ; 2026-09 existe déjà → pas d'écriture, il garde la base 100
+    const { writes } = onceBudgetWrites(existing, "2026-08", 200);
+    // Le mois est réécrit ; 2026-09 existe déjà → pas d'écriture, il garde sa valeur
     // (l'ancien comportement aurait restauré 150, corrompant le mois suivant).
     expect(writes).toEqual([{ effectiveMonth: "2026-08", amount: 200 }]);
     expect(writes.some((w) => w.effectiveMonth === "2026-09")).toBe(false);
@@ -612,16 +636,16 @@ describe("Changer un budget pour un seul mois", () => {
   it("devrait ne pas écraser un changement de budget déjà prévu pour le mois suivant", () => {
     // Un vrai changement futur posé à 2026-09 (500), rien à 2026-08.
     const existing = [{ effectiveMonth: "2026-09", amount: 500 }];
-    const { writes } = onceBudgetWrites(existing, BASE, "2026-08", 150);
+    const { writes } = onceBudgetWrites(existing, "2026-08", 150);
     expect(writes).toEqual([{ effectiveMonth: "2026-08", amount: 150 }]);
     expect(writes.some((w) => w.effectiveMonth === "2026-09")).toBe(false);
   });
 
-  it("devrait remettre le mois suivant au montant qui était vraiment en vigueur, pas au montant de base", () => {
+  it("devrait remettre le mois suivant au montant qui était vraiment en vigueur, pas à 0", () => {
     // Une hausse durable à 2026-05 (300) ; un changement d'un mois à 2026-08 doit laisser
-    // le mois suivant revenir à 300 (le montant en vigueur), pas à la base.
+    // le mois suivant revenir à 300 (le montant en vigueur), pas à 0.
     const existing = [{ effectiveMonth: "2026-05", amount: 300 }];
-    const { writes } = onceBudgetWrites(existing, BASE, "2026-08", 150);
+    const { writes } = onceBudgetWrites(existing, "2026-08", 150);
     expect(writes).toEqual([
       { effectiveMonth: "2026-08", amount: 150 },
       { effectiveMonth: "2026-09", amount: 300 },
@@ -637,7 +661,7 @@ describe("Rappels d'argent dépensé au-delà du budget", () => {
       tx({ id: "3", date: "2026-06-05", amount: -120, label: "SANS GROUPE" }), // uncat juin : 120 dépensés
       tx({ id: "4", date: "2026-06-06", amount: 40, label: "REMBOURSEMENT" }), // uncat juin : 40 reçus -> net 80
     ];
-    const r = computeOverspends([courses], txns, "2026-07", []);
+    const r = over([courses], txns, "2026-07", []);
     // Mois terminés, non tranchés : Courses juin (50) et Non catégorisés juin (80).
     expect(r.pendingClosed).toEqual([
       { groupId: 1, name: "Courses", month: "2026-06", amount: 50, kind: "envelope" },
@@ -669,7 +693,7 @@ describe("Rappels d'argent dépensé au-delà du budget", () => {
       tx({ id: "1", date: "2026-06-10", amount: -350, label: "CARREFOUR", groupId: 1 }), // enveloppe : 50
       tx({ id: "2", date: "2026-06-05", amount: -130, label: "LOYER", groupId: 2 }), // récurrent : 30
     ];
-    const r = computeOverspends([courses, loyer], txns, "2026-07", []);
+    const r = over([courses, loyer], txns, "2026-07", []);
     expect(r.pendingClosed).toEqual([
       { groupId: 1, name: "Courses", month: "2026-06", amount: 50, kind: "envelope" },
       { groupId: 2, name: "Loyer", month: "2026-06", amount: 30, kind: "recurring" },
@@ -682,18 +706,18 @@ describe("Rappels d'argent dépensé au-delà du budget", () => {
       tx({ id: "2", date: "2026-07-10", amount: -380, label: "CARREFOUR", groupId: 1 }), // juillet (courant) : 80
     ];
     // Rien tranché : les deux dépassements attendent une décision.
-    const none = computeOverspends([courses], txns, "2026-07", []);
+    const none = over([courses], txns, "2026-07", []);
     expect(none.pendingClosed).toEqual([{ groupId: 1, name: "Courses", month: "2026-06", amount: 50, kind: "envelope" }]);
     expect(none.pending).toEqual([{ groupId: 1, name: "Courses", month: "2026-07", amount: 80, kind: "envelope" }]);
     // Juin tranché (permanent ou exceptionnel, peu importe la décision) : il quitte le
     // bandeau des mois terminés, sans effet sur le prévisionnel (plus de report).
-    const permJuin = computeOverspends([courses], txns, "2026-07", [{ groupId: 1, month: "2026-06", decision: "permanent" }]);
+    const permJuin = over([courses], txns, "2026-07", [{ groupId: 1, month: "2026-06", decision: "permanent" }]);
     expect(permJuin.pendingClosed).toEqual([]);
-    const excJuin = computeOverspends([courses], txns, "2026-07", [{ groupId: 1, month: "2026-06", decision: "exceptional" }]);
+    const excJuin = over([courses], txns, "2026-07", [{ groupId: 1, month: "2026-06", decision: "exceptional" }]);
     expect(excJuin.pendingClosed).toEqual([]);
     // Juillet tranché : quitte les pastilles (pending), qui retombent alors sur le
     // dépassement non tranché suivant (juin, toujours dans les rappels).
-    const permJuillet = computeOverspends([courses], txns, "2026-07", [{ groupId: 1, month: "2026-07", decision: "permanent" }]);
+    const permJuillet = over([courses], txns, "2026-07", [{ groupId: 1, month: "2026-07", decision: "permanent" }]);
     expect(permJuillet.pending).toEqual([{ groupId: 1, name: "Courses", month: "2026-06", amount: 50, kind: "envelope" }]);
     expect(permJuillet.pendingClosed).toEqual([{ groupId: 1, name: "Courses", month: "2026-06", amount: 50, kind: "envelope" }]);
   });
@@ -701,14 +725,14 @@ describe("Rappels d'argent dépensé au-delà du budget", () => {
   it("devrait, de bout en bout, ne plus reporter aucun dépassement sur le prévisionnel des mois à venir, même marqué permanent", () => {
     const txns = [tx({ id: "1", date: "2026-07-10", amount: -380, label: "CARREFOUR", groupId: 1 })]; // budget 300 -> dépassement 80
     const months = ["2026-07", "2026-08"];
-    const sections = computeHistory([courses], txns, months, "2026-07");
+    const sections = hist([courses], txns, months, "2026-07");
     const solde = computeSolde(sections, months, "2026-07", 1000);
     const estimate = solde.openings[0] - 380; // estimé de fin du mois courant, comme le fait la page Historique
     // Marquer le dépassement de juillet « permanent » ne change plus rien au
     // prévisionnel : computePlannedSoldes ne prend plus aucune information issue des
     // décisions (le paramètre `retained` a disparu, remplacé par `dated`, réservé à
     // la provision des non catégorisés).
-    computeOverspends([courses], txns, "2026-07", [{ groupId: 1, month: "2026-07", decision: "permanent" }]);
+    over([courses], txns, "2026-07", [{ groupId: 1, month: "2026-07", decision: "permanent" }]);
     const p = computePlannedSoldes(sections, months, "2026-07", solde.openings, estimate);
     // Le mois courant reste factuel : le dépassement réel de 80 est retiré.
     expect(p.prevuClosings[0]! - p.depassClosings[0]!).toBeCloseTo(80, 2);
@@ -731,7 +755,7 @@ describe("Durée de vie d'un groupe", () => {
   it("devrait donner un budget à un groupe ponctuel seulement le mois où il existe", () => {
     const ponctuel: Group = { ...courses, id: 50, name: "Cadeau", startMonth: "2026-07", endMonth: "2026-07" };
     const months = ["2026-06", "2026-07", "2026-08"];
-    const sections = computeHistory([ponctuel], [], months, "2026-07");
+    const sections = hist([ponctuel], [], months, "2026-07");
     const row = sections.flatMap((s) => s.rows).find((r) => r.id === 50)!;
     expect(row.cells[0].budgeted).toBe(0); // juin : pas encore actif
     expect(row.cells[1].budgeted).toBe(300); // juillet : actif
@@ -741,14 +765,14 @@ describe("Durée de vie d'un groupe", () => {
 
   it("devrait cacher un groupe qui n'est actif sur aucun des mois affichés", () => {
     const futur: Group = { ...courses, id: 51, name: "Futur", startMonth: "2026-10", endMonth: null };
-    const sections = computeHistory([futur], [], ["2026-07", "2026-08"], "2026-07");
+    const sections = hist([futur], [], ["2026-07", "2026-08"], "2026-07");
     expect(sections.flatMap((s) => s.rows).some((r) => r.id === 51)).toBe(false);
   });
 
   it("devrait renvoyer une transaction dans les non catégorisés quand elle tombe un mois où le groupe n'existe plus", () => {
     const ponctuel: Group = { ...courses, id: 52, name: "Cadeau", startMonth: "2026-07", endMonth: "2026-07" };
     const txn: Txn = { id: "t1", date: "2026-08-05", amount: -40, label: "x", accountId: "a1", groupId: 52 };
-    const sections = computeHistory([ponctuel], [txn], ["2026-07", "2026-08"], "2026-07");
+    const sections = hist([ponctuel], [txn], ["2026-07", "2026-08"], "2026-07");
     const uncatOut = sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "out");
     expect(uncatOut?.totals[1].depense).toBe(40); // août : la dépense retombe en non catégorisés
     const row = sections.flatMap((s) => s.rows).find((r) => r.id === 52)!;
@@ -758,7 +782,7 @@ describe("Durée de vie d'un groupe", () => {
   it("devrait mettre aussi à zéro les lignes d'un récurrent les mois où le groupe n'est pas actif", () => {
     const aboBorne: Group = { ...abo, id: 53, name: "Abonnements bornés", startMonth: "2026-07", endMonth: "2026-08" };
     const months = ["2026-06", "2026-07", "2026-08", "2026-09"];
-    const sections = computeHistory([aboBorne], [], months, "2026-07");
+    const sections = hist([aboBorne], [], months, "2026-07");
     const row = sections.flatMap((s) => s.rows).find((r) => r.id === 53)!;
     const spotify = row.subRows.find((s) => s.id === 11)!;
     const netflix = row.subRows.find((s) => s.id === 12)!;
@@ -780,7 +804,7 @@ describe("Durée de vie d'un groupe", () => {
     const ponctuel: Group = { ...courses, id: 60, name: "Cadeau", startMonth: "2026-06", endMonth: "2026-06" };
     // dépense en juillet, un mois où le groupe n'est plus actif : elle est non catégorisée, pas un dépassement de groupe
     const txn: Txn = { id: "t1", date: "2026-07-10", amount: -500, label: "x", accountId: "a1", groupId: 60 };
-    const r = computeOverspends([ponctuel], [txn], "2026-07", []);
+    const r = over([ponctuel], [txn], "2026-07", []);
     expect(r.pending.some((p) => p.groupId === 60)).toBe(false);
     expect(r.pendingClosed.some((p) => p.groupId === 60)).toBe(false);
   });
@@ -791,11 +815,11 @@ describe("Durée de vie d'un groupe", () => {
       tx({ id: "b", date: "2026-06-06", amount: 40, label: "REMB" }), // reçu 40 -> net 260
     ];
     // Sans provision : dépassement = 260.
-    const sans = computeOverspends([], txns, "2026-07", []);
+    const sans = over([], txns, "2026-07", []);
     expect(sans.pendingClosed).toEqual([{ groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 260, kind: "envelope" }]);
     // Provision de 100 en vigueur en juin (budget daté du groupe 0) : dépassement = 160.
     const dated = { 0: [{ effectiveMonth: "2026-06", amount: 100 }] };
-    const avec = computeOverspends([], txns, "2026-07", [], dated);
+    const avec = over([], txns, "2026-07", [], dated);
     expect(avec.pendingClosed).toEqual([{ groupId: 0, name: "Non catégorisés", month: "2026-06", amount: 160, kind: "envelope" }]);
   });
 });
@@ -858,7 +882,7 @@ describe("La Balance des non catégorisés, telle que le tableau la lit", () => 
       tx({ id: "a", date: "2026-07-05", amount: -180, label: "SANS GROUPE" }),
       tx({ id: "b", date: "2026-07-06", amount: 40, label: "REMBOURSEMENT" }),
     ];
-    const sections = computeHistory([], txns, ["2026-07"], "2026-07", dated);
+    const sections = hist([], txns, ["2026-07"], "2026-07", dated);
     const out = sections.find((s) => s.kind === "uncategorized" && (s.uncatDirection ?? "out") === "out")!;
     const inSec = sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in")!;
     // 100 de provision + 40 remboursés − 180 dépensés = −40.
@@ -871,7 +895,7 @@ describe("La Balance des non catégorisés, telle que le tableau la lit", () => 
 
   it("devrait laisser la Balance des reçus sans groupe à zéro : ils n'ont pas de budget", () => {
     const txns = [tx({ id: "b", date: "2026-07-06", amount: 40, label: "REMBOURSEMENT" })];
-    const sections = computeHistory([], txns, ["2026-07"], "2026-07");
+    const sections = hist([], txns, ["2026-07"], "2026-07");
     const inSec = sections.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in")!;
     expect(inSec.totals[0].balance).toBe(0);
   });
@@ -911,5 +935,72 @@ describe("Le débordement des dépenses sans groupe", () => {
 
   it("ne devrait rien voir déborder quand il n'y a aucune dépense sans groupe", () => {
     expect(uncatOverspendOf(undefined, undefined)).toBe(0);
+  });
+});
+
+describe("montant en vigueur", () => {
+  const spotify = { id: 11, name: "Spotify", amount: 10, day: 3 };
+  const netflix = { id: 12, name: "Netflix", amount: 15, day: 8 };
+  const recurrent: Group = {
+    id: 2, accountId: "a1", name: "Abonnements", direction: "out", kind: "recurring",
+    monthlyAmount: null, lines: [spotify, netflix], startMonth: "2026-01", endMonth: null,
+  };
+  const enveloppe: Group = {
+    id: 1, accountId: "a1", name: "Courses", direction: "out", kind: "envelope",
+    monthlyAmount: 300, lines: [], startMonth: "2026-01", endMonth: null,
+  };
+
+  it("rend 0 quand aucune entrée n'existe", () => {
+    expect(budgetInForce(enveloppe, "2026-07", {}, {})).toBe(0);
+    expect(lineAmountInForce(11, "2026-07", {})).toBe(0);
+  });
+
+  it("rend 0 pour les mois antérieurs à la première entrée", () => {
+    const { dated, datedLines } = seedDated([enveloppe]);
+    expect(budgetInForce(enveloppe, "2025-12", dated, datedLines)).toBe(0);
+    expect(budgetInForce(enveloppe, "2026-01", dated, datedLines)).toBe(300);
+  });
+
+  it("rend la dernière entrée dont le mois est atteint", () => {
+    const dated = toDatedBudgets([
+      { groupId: 1, effectiveMonth: "2026-01", amount: 300 },
+      { groupId: 1, effectiveMonth: "2026-08", amount: 400 },
+      { groupId: 1, effectiveMonth: "2026-11", amount: 450 },
+    ]);
+    expect(budgetInForce(enveloppe, "2026-07", dated, {})).toBe(300);
+    expect(budgetInForce(enveloppe, "2026-08", dated, {})).toBe(400);
+    expect(budgetInForce(enveloppe, "2026-10", dated, {})).toBe(400);
+    expect(budgetInForce(enveloppe, "2026-11", dated, {})).toBe(450);
+  });
+
+  it("fait du budget d'un récurrent la somme de ses lignes du mois", () => {
+    const { dated, datedLines } = seedDated([recurrent]);
+    expect(budgetInForce(recurrent, "2026-07", dated, datedLines)).toBe(25);
+  });
+
+  it("suit une hausse posée sur une seule ligne", () => {
+    const datedLines = toDatedLineAmounts([
+      { lineId: 11, effectiveMonth: "2026-01", amount: 10 },
+      { lineId: 12, effectiveMonth: "2026-01", amount: 15 },
+      { lineId: 12, effectiveMonth: "2026-08", amount: 20 },
+    ]);
+    expect(budgetInForce(recurrent, "2026-07", {}, datedLines)).toBe(25);
+    expect(budgetInForce(recurrent, "2026-08", {}, datedLines)).toBe(30);
+    expect(lineAmountInForce(12, "2026-08", datedLines)).toBe(20);
+  });
+
+  it("ignore un montant daté posé sur un groupe récurrent", () => {
+    const dated = toDatedBudgets([{ groupId: 2, effectiveMonth: "2026-01", amount: 999 }]);
+    const { datedLines } = seedDated([recurrent]);
+    expect(budgetInForce(recurrent, "2026-07", dated, datedLines)).toBe(25);
+  });
+
+  it("compte une ligne créée après le départ du groupe seulement à partir de son entrée", () => {
+    const datedLines = toDatedLineAmounts([
+      { lineId: 11, effectiveMonth: "2026-01", amount: 10 },
+      { lineId: 12, effectiveMonth: "2026-06", amount: 15 },
+    ]);
+    expect(budgetInForce(recurrent, "2026-05", {}, datedLines)).toBe(10);
+    expect(budgetInForce(recurrent, "2026-06", {}, datedLines)).toBe(25);
   });
 });

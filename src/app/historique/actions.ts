@@ -10,12 +10,10 @@ import {
   insertLine,
   updateLine,
   deleteLine,
-  listGroups,
   hasIncomeGroup,
 } from "../../db/repositories/groups";
-import { toDatedBudgets, budgetInForce, onceBudgetWrites, addMonthsKey } from "../../lib/history";
+import { toDatedBudgets, onceBudgetWrites, addMonthsKey } from "../../lib/history";
 import { monthKey } from "../../lib/money";
-import type { Group } from "../../lib/forecast";
 import { revalidatePath } from "next/cache";
 
 // Enregistre la décision de l'utilisateur sur un dépassement (groupId 0 = non
@@ -142,13 +140,8 @@ export async function setGroupAmount(
   if (!/^\d{4}-\d{2}$/.test(month) || !Number.isFinite(amount) || amount < 0) return;
   const database = db();
   if (scope === "once") {
-    const g = listGroups(database).find((x) => x.id === groupId);
-    if (!g) return;
-    const grp = g as unknown as Group;
     const datedForGroup = toDatedBudgets(listBudgetAmounts(database))[groupId] ?? [];
-    // Budget de base du groupe (sans aucune entrée datée), pour la restauration à month+1.
-    const base = budgetInForce(grp, month, {});
-    const { writes } = onceBudgetWrites(datedForGroup, base, month, amount);
+    const { writes } = onceBudgetWrites(datedForGroup, month, amount);
     for (const w of writes) setBudgetAmount(database, groupId, w.effectiveMonth, w.amount);
   } else {
     setBudgetAmount(database, groupId, month, amount);
@@ -156,11 +149,9 @@ export async function setGroupAmount(
   await revalidate();
 }
 
-// Fixe la provision des non catégorisés (budget daté du groupe 0, qui n'a pas de
-// ligne dans `groups` : setGroupAmount échouerait car listGroups().find(0) ne
-// renvoie rien) pour un mois, avec la même sémantique once/ongoing que
-// setGroupAmount. Le budget de base (sans entrée datée) est toujours 0 pour les
-// non catégorisés (cf. provisionInForce).
+// Fixe la provision des non catégorisés (budget daté du groupe 0, une case
+// virtuelle sans ligne dans `groups`) pour un mois, avec la même sémantique
+// once/ongoing que setGroupAmount, gardée comme une action à part pour ce motif.
 export async function setUncatProvision(
   month: string,
   amount: number,
@@ -170,7 +161,7 @@ export async function setUncatProvision(
   const database = db();
   if (scope === "once") {
     const datedForGroup = toDatedBudgets(listBudgetAmounts(database))[0] ?? [];
-    const { writes } = onceBudgetWrites(datedForGroup, 0, month, amount);
+    const { writes } = onceBudgetWrites(datedForGroup, month, amount);
     for (const w of writes) setBudgetAmount(database, 0, w.effectiveMonth, w.amount);
   } else {
     setBudgetAmount(database, 0, month, amount);

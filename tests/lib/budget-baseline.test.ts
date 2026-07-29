@@ -1,6 +1,15 @@
 import { describe, it, expect } from "vitest";
 import { computeHistory } from "../../src/lib/history";
 import type { Group, Txn } from "../../src/lib/forecast";
+import { seedDated } from "./dated-fixtures";
+
+// Enveloppe locale : sème les montants des fixtures comme le fait la reprise de
+// données (cf. tests/lib/history.test.ts). Les valeurs attendues ci-dessous ne
+// changent pas : seule la façon de les fournir à computeHistory change.
+const hist = (groups: Group[], txns: Txn[], months: string[], current: string) => {
+  const { dated, datedLines } = seedDated(groups);
+  return computeHistory(groups, txns, months, current, dated, datedLines);
+};
 
 // Jeu calqué sur la vraie base : deux récurrents (Abonnements, Impôts), trois
 // enveloppes de dépense (Carburant, Activités, Vêtement) et une rémunération.
@@ -76,7 +85,7 @@ const ATTENDU_LIGNES: Record<number, number[]> = {
 };
 
 function budgetsParGroupe() {
-  const sections = computeHistory(GROUPS, txns, MONTHS, "2026-07");
+  const sections = hist(GROUPS, txns, MONTHS, "2026-07");
   const out: Record<number, number[]> = {};
   const outLignes: Record<number, number[]> = {};
   for (const s of sections) {
@@ -104,7 +113,7 @@ describe("budgets de référence (ne doivent jamais bouger)", () => {
   });
 
   it("garde le dépensé et le reste du mois écoulé", () => {
-    const sections = computeHistory(GROUPS, txns, MONTHS, "2026-07");
+    const sections = hist(GROUPS, txns, MONTHS, "2026-07");
     const ligne = (id: number) => sections.flatMap((s) => s.rows).find((r) => r.id === id)!;
     // Abonnements : 215,96 dépensés pour 170,94 budgétés, soit 45,02 de dépassement.
     expect(ligne(13).cells[0].depense).toBeCloseTo(215.96, 2);
