@@ -100,3 +100,44 @@ test("removeLineAmount accepte de supprimer un changement postérieur au montant
   const datedLines = toDatedLineAmounts(listLineAmounts(db));
   expect(lineAmountInForce(lid, "2026-06", datedLines)).toBe(10); // retombe sur le montant de départ
 });
+
+// Le panneau « Gérer le groupe » garde son propre état (detail-sidebar.tsx :
+// figé au clic) : router.refresh() ne le remplace pas. Ces actions renvoient donc
+// la vie du budget à jour (Vie du budget affichée, champ montant), pour que le
+// composant puisse la réafficher sans recalculer les écritures lui-même (une
+// seconde fois, avec le risque de diverger de ce que le serveur vient de poser).
+test("setGroupAmount renvoie la vie du budget à jour du groupe", async () => {
+  const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  setBudgetAmount(db, gid, "2026-01", 300);
+
+  const changes = await setGroupAmount(gid, "2026-06", 350, "ongoing");
+
+  expect(changes).toEqual([
+    { month: "2026-01", amount: 300, isStart: true },
+    { month: "2026-06", amount: 350, isStart: false },
+  ]);
+});
+
+test("removeGroupAmount renvoie la vie du budget à jour du groupe, y compris quand la suppression est refusée", async () => {
+  const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  setBudgetAmount(db, gid, "2026-01", 300);
+  setBudgetAmount(db, gid, "2026-06", 350);
+
+  const changes = await removeGroupAmount(gid, "2026-06");
+  expect(changes).toEqual([{ month: "2026-01", amount: 300, isStart: true }]);
+
+  // Refusé (montant de départ) : la vie du budget renvoyée reste quand même à jour,
+  // pour que le panneau ne se retrouve jamais désynchronisé après un refus silencieux.
+  const apresRefus = await removeGroupAmount(gid, "2026-01");
+  expect(apresRefus).toEqual([{ month: "2026-01", amount: 300, isStart: true }]);
+});
+
+test("removeLineAmount renvoie la vie du budget à jour de la ligne", async () => {
+  const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-01", null);
+  const lid = await addGroupLine(gid, "Spotify", 10, 3, "2026-01");
+  await editGroupLine(lid, "Spotify", 3, "2026-06", 15, "ongoing");
+
+  const changes = await removeLineAmount(lid, "2026-06");
+
+  expect(changes).toEqual([{ month: "2026-01", amount: 10, isStart: true }]);
+});

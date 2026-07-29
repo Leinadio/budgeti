@@ -13,6 +13,7 @@ import {
   soldeActuelDetail,
   overspendDecisionDetail,
   overspentLinesOf,
+  overspentLinesOfPending,
   detailKey,
 } from "../../src/lib/history-detail";
 import type { DetailNode } from "../../src/lib/history-explain";
@@ -225,8 +226,8 @@ describe("Les transactions et les postes d'une ligne", () => {
       name: "Loyer",
       kind: "recurring",
       subRows: [
-        { id: 21, name: "Loyer", cells: [cell({ budgeted: 800 }), cell({ budgeted: 800 })], txns: [] },
-        { id: 22, name: "Assurance", cells: [cell(), cell()], txns: [] },
+        { id: 21, name: "Loyer", cells: [cell({ budgeted: 800 }), cell({ budgeted: 800 })], aliveMonths: [true, true], txns: [] },
+        { id: 22, name: "Assurance", cells: [cell(), cell()], aliveMonths: [true, true], txns: [] },
       ],
     };
     const nodes = budgetNodes(loyer, 1)!;
@@ -258,12 +259,14 @@ describe("overspentLinesOf : lignes d'un récurrent en dépassement à un mois p
           cell({ budgeted: 81.84, depense: 151.84 }),
           cell({ budgeted: 81.84, depense: 81.84 }),
         ],
+        aliveMonths: [true, true, true],
         txns: [],
       },
       {
         id: 3,
         name: "Sosh Internet",
         cells: [cell({ budgeted: 30.99, depense: 30.99 }), cell({ budgeted: 30.99, depense: 30.99 }), cell({ budgeted: 30.99, depense: 30.99 })],
+        aliveMonths: [true, true, true],
         txns: [],
       },
     ],
@@ -393,8 +396,57 @@ describe("Le dépassement ouvert depuis un bandeau ou une pastille", () => {
     expect(overspendDecisionDetail(item, "a1", 1, null, 300, lignes).overspendAction!.overspentLines).toEqual(lignes);
   });
 
-  it("devrait rendre une liste vide de lignes en dépassement quand rien n'est transmis", () => {
-    expect(overspendDecisionDetail(item, "a1", 1, null).overspendAction!.overspentLines).toEqual([]);
+  it("ne devrait pas affirmer qu'aucune ligne n'a dépassé quand rien n'est transmis : le défaut est « inconnu », pas « vide »", () => {
+    // [] affirme un fait (aucune ligne n'a dépassé) ; null dit qu'on ne sait pas.
+    // Un appelant distrait qui oublie le 6e argument ne doit jamais affirmer par
+    // omission — voir le bandeau de dépassements, qui faisait exactement ça.
+    expect(overspendDecisionDetail(item, "a1", 1, null).overspendAction!.overspentLines).toBeNull();
+  });
+});
+
+describe("overspentLinesOfPending : lignes en dépassement d'un item PendingOverspend", () => {
+  const abonnements: HistoryRow = {
+    id: 13,
+    name: "Abonnements",
+    kind: "recurring",
+    direction: "out",
+    incomeKind: null,
+    cells: [cell(), cell()],
+    aliveMonths: [true, true],
+    subRows: [
+      {
+        id: 2,
+        name: "Direct Assurance voiture",
+        cells: [cell({ budgeted: 81.84, depense: 81.84 }), cell({ budgeted: 81.84, depense: 151.84 })],
+        aliveMonths: [true, true],
+        txns: [],
+      },
+    ],
+    txns: [],
+  };
+  const rowsById = new Map<number, HistoryRow>([[13, abonnements]]);
+  const months = ["2026-06", "2026-07"];
+
+  it("devrait rendre [] pour une enveloppe, sans même chercher la ligne", () => {
+    const item = { groupId: 99, name: "Courses", month: "2026-07", amount: 50, kind: "envelope" as const };
+    expect(overspentLinesOfPending(item, rowsById, months)).toEqual([]);
+  });
+
+  it("devrait rendre les lignes en dépassement d'un récurrent au bon mois", () => {
+    const item = { groupId: 13, name: "Abonnements", month: "2026-07", amount: 70, kind: "recurring" as const };
+    expect(overspentLinesOfPending(item, rowsById, months)).toEqual([
+      { lineId: 2, name: "Direct Assurance voiture", budget: 81.84, spent: 151.84 },
+    ]);
+  });
+
+  it("devrait rendre null quand le mois du dépassement n'est pas dans la fenêtre affichée", () => {
+    const item = { groupId: 13, name: "Abonnements", month: "2025-01", amount: 70, kind: "recurring" as const };
+    expect(overspentLinesOfPending(item, rowsById, months)).toBeNull();
+  });
+
+  it("devrait rendre null quand le groupe n'est pas dans les lignes affichées", () => {
+    const item = { groupId: 404, name: "Fantôme", month: "2026-07", amount: 70, kind: "recurring" as const };
+    expect(overspentLinesOfPending(item, rowsById, months)).toBeNull();
   });
 });
 

@@ -16,7 +16,7 @@ import {
   getGroupKind,
 } from "../../db/repositories/groups";
 import { toDatedBudgets, toDatedLineAmounts, onceBudgetWrites, nextMonthKey } from "../../lib/history";
-import { canRemoveBudgetChange } from "../../lib/budget-history";
+import { canRemoveBudgetChange, budgetChanges, type BudgetChange } from "../../lib/budget-history";
 import { envelopeWrites, lineWrites, undoWrites, amountAt, canDecidePermanent, normalizeWrites, isValidLineAmount, type BudgetWrite } from "../../lib/overspend-writes";
 import { revalidatePath } from "next/cache";
 
@@ -76,11 +76,15 @@ export async function decideOverspend(
 
   let writes: BudgetWrite[] | null = null;
   if (decision === "permanent") {
+    // Mois d'effet, déterminé une seule fois ici : envelopeWrites/lineWrites le
+    // reçoivent tel quel, sans le recalculer (cf. overspend-writes.ts). C'est
+    // aussi ce même `cible` qui sert à capturer `before`, juste en dessous — les
+    // deux visent donc toujours, par construction, le même mois.
     const cible = nextMonthKey(month);
     if (lineAmounts?.length) {
       const datedLines = toDatedLineAmounts(listLineAmounts(database));
       writes = lineWrites(
-        month,
+        cible,
         lineAmounts
           .filter(isValidLineAmount)
           .map((l) => ({
@@ -93,7 +97,7 @@ export async function decideOverspend(
     } else if (newBudget != null && Number.isFinite(newBudget) && newBudget > 0) {
       const dated = toDatedBudgets(listBudgetAmounts(database));
       const before = amountAt(dated[groupId] ?? [], cible);
-      writes = envelopeWrites(groupId, month, newBudget, before);
+      writes = envelopeWrites(groupId, cible, newBudget, before);
       for (const w of writes) setBudgetAmount(database, w.id, w.month, w.amount);
     }
     writes = normalizeWrites(writes);
@@ -199,36 +203,46 @@ export async function deleteGroupAction(groupId: number): Promise<void> {
 // « à partir de ce mois » (ongoing) écrit un seul montant daté à `month`. « ce mois
 // seulement » (once) écrit le montant à `month` et restaure le montant précédent au
 // mois suivant, pour ne pas propager le changement aux mois d'après.
+// Rend la vie du budget à jour du groupe : le panneau « Gérer le groupe » garde son
+// propre état, figé au clic (detail-sidebar.tsx), que router.refresh() ne remplace
+// pas (voir GroupManageBlock côté client) — le rendu lui sert à se resynchroniser
+// sans recalculer les écritures une seconde fois, avec le risque de diverger.
 export async function setGroupAmount(
   groupId: number,
   month: string,
   amount: number,
   scope: "once" | "ongoing",
-): Promise<void> {
-  if (!/^\d{4}-\d{2}$/.test(month) || !Number.isFinite(amount) || amount < 0) return;
+): Promise<BudgetChange[]> {
   const database = db();
-  if (scope === "once") {
-    const datedForGroup = toDatedBudgets(listBudgetAmounts(database))[groupId] ?? [];
-    const { writes } = onceBudgetWrites(datedForGroup, month, amount);
-    for (const w of writes) setBudgetAmount(database, groupId, w.effectiveMonth, w.amount);
-  } else {
-    setBudgetAmount(database, groupId, month, amount);
+  if (/^\d{4}-\d{2}$/.test(month) && Number.isFinite(amount) && amount >= 0) {
+    if (scope === "once") {
+      const datedForGroup = toDatedBudgets(listBudgetAmounts(database))[groupId] ?? [];
+      const { writes } = onceBudgetWrites(datedForGroup, month, amount);
+      for (const w of writes) setBudgetAmount(database, groupId, w.effectiveMonth, w.amount);
+    } else {
+      setBudgetAmount(database, groupId, month, amount);
+    }
+    await revalidate();
   }
-  await revalidate();
+  return budgetChanges(toDatedBudgets(listBudgetAmounts(database))[groupId] ?? []);
 }
 
 // Retire un changement de budget daté (jamais le montant de départ : le panneau
 // ne propose la corbeille que sur les autres). La protection est revérifiée ici,
 // côté serveur, sur les entrées réellement en base : le panneau ne masque la
 // corbeille sur le montant de départ qu'à l'affichage, ça ne suffit pas à
-// empêcher un appel direct de cette action avec ce mois-là.
-export async function removeGroupAmount(groupId: number, month: string): Promise<void> {
-  if (!/^\d{4}-\d{2}$/.test(month)) return;
+// empêcher un appel direct de cette action avec ce mois-là. Rend la vie du budget
+// à jour dans tous les cas, y compris un refus silencieux (mois invalide ou
+// suppression refusée) : le panneau ne doit jamais rester sur une vue périmée.
+export async function removeGroupAmount(groupId: number, month: string): Promise<BudgetChange[]> {
   const database = db();
   const entries = toDatedBudgets(listBudgetAmounts(database))[groupId] ?? [];
-  if (!canRemoveBudgetChange(entries, month)) return;
-  deleteBudgetAmount(database, groupId, month);
-  await revalidate();
+  if (/^\d{4}-\d{2}$/.test(month) && canRemoveBudgetChange(entries, month)) {
+    deleteBudgetAmount(database, groupId, month);
+    await revalidate();
+    return budgetChanges(toDatedBudgets(listBudgetAmounts(database))[groupId] ?? []);
+  }
+  return budgetChanges(entries);
 }
 
 // Fixe la provision des non catégorisés (budget daté du groupe 0, une case
@@ -267,28 +281,31 @@ export async function addGroupLine(
 }
 
 // Modifie une ligne : le nom et le jour changent pour tous les mois (ce sont des
-// propriétés de la ligne), le montant est daté selon la portée choisie.
+// propriétés de la ligne), le montant est daté selon la portée choisie. Rend la
+// vie du budget à jour de la ligne — même motif que setGroupAmount ci-dessus.
 export async function editGroupLine(
   lineId: number, name: string, day: number, month: string, amount: number, scope: "once" | "ongoing",
-): Promise<void> {
+): Promise<BudgetChange[]> {
   const trimmed = name.trim();
-  if (!trimmed || !/^\d{4}-\d{2}$/.test(month) || !Number.isFinite(amount) || amount < 0) return;
   const database = db();
-  // updateLine écrit encore group_lines.amount : plus lu par les calculs de
-  // budget, mais toujours lu par listGroups (affichage) et par la migration de
-  // reprise (migrateSeedDatedAmounts) tant qu'aucune entrée datée n'existe
-  // encore pour cette ligne. On lui passe donc le montant courant pour ne pas
-  // laisser un champ incohérent en base.
-  updateLine(database, lineId, trimmed, amount, day);
-  if (scope === "once") {
-    const existantes = toDatedLineAmounts(listLineAmounts(database))[lineId] ?? [];
-    for (const w of onceBudgetWrites(existantes, month, amount).writes) {
-      setLineAmount(database, lineId, w.effectiveMonth, w.amount);
+  if (trimmed && /^\d{4}-\d{2}$/.test(month) && Number.isFinite(amount) && amount >= 0) {
+    // updateLine écrit encore group_lines.amount : plus lu par les calculs de
+    // budget, mais toujours lu par listGroups (affichage) et par la migration de
+    // reprise (migrateSeedDatedAmounts) tant qu'aucune entrée datée n'existe
+    // encore pour cette ligne. On lui passe donc le montant courant pour ne pas
+    // laisser un champ incohérent en base.
+    updateLine(database, lineId, trimmed, amount, day);
+    if (scope === "once") {
+      const existantes = toDatedLineAmounts(listLineAmounts(database))[lineId] ?? [];
+      for (const w of onceBudgetWrites(existantes, month, amount).writes) {
+        setLineAmount(database, lineId, w.effectiveMonth, w.amount);
+      }
+    } else {
+      setLineAmount(database, lineId, month, amount);
     }
-  } else {
-    setLineAmount(database, lineId, month, amount);
+    await revalidate();
   }
-  await revalidate();
+  return budgetChanges(toDatedLineAmounts(listLineAmounts(database))[lineId] ?? []);
 }
 
 export async function removeGroupLine(lineId: number): Promise<void> {
@@ -300,12 +317,15 @@ export async function removeGroupLine(lineId: number): Promise<void> {
 // montant de départ). Même garde-fou que removeGroupAmount, et pour la même
 // raison : une ligne sans entrée datée vaudrait 0, pas « pas de budget ». La
 // protection est revérifiée ici, côté serveur, sur les entrées réellement en
-// base — voir removeGroupAmount pour le détail du raisonnement.
-export async function removeLineAmount(lineId: number, month: string): Promise<void> {
-  if (!/^\d{4}-\d{2}$/.test(month)) return;
+// base — voir removeGroupAmount pour le détail du raisonnement, y compris pour
+// la vie du budget rendue même en cas de refus.
+export async function removeLineAmount(lineId: number, month: string): Promise<BudgetChange[]> {
   const database = db();
   const entries = toDatedLineAmounts(listLineAmounts(database))[lineId] ?? [];
-  if (!canRemoveBudgetChange(entries, month)) return;
-  deleteLineAmount(database, lineId, month);
-  await revalidate();
+  if (/^\d{4}-\d{2}$/.test(month) && canRemoveBudgetChange(entries, month)) {
+    deleteLineAmount(database, lineId, month);
+    await revalidate();
+    return budgetChanges(toDatedLineAmounts(listLineAmounts(database))[lineId] ?? []);
+  }
+  return budgetChanges(entries);
 }

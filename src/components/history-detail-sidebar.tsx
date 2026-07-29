@@ -364,6 +364,18 @@ function LineRow({ line, busy, onSave, onRemove, onRemoveChange }: {
   const [amount, setAmount] = useState(String(line.amount));
   const [day, setDay] = useState(String(line.day));
   const [scope, setScope] = useState<"ongoing" | "once">("ongoing");
+  // line.amount vient de amountAtMonth(line.changes, mois) côté GroupManageBlock :
+  // il change quand ses changes sont resynchronisés après « Enregistrer » ou une
+  // suppression dans la Vie du budget, sans que ce composant soit remonté (même
+  // clé). Resynchronisation pendant le rendu (motif « ajuster un state depuis les
+  // props », react.dev/learn/you-might-not-need-an-effect), pas un useEffect :
+  // sans ça, le champ garderait la valeur affichée à l'ouverture du panneau —
+  // exactement le défaut relevé en relecture d'ensemble.
+  const [prevLineAmount, setPrevLineAmount] = useState(line.amount);
+  if (prevLineAmount !== line.amount) {
+    setPrevLineAmount(line.amount);
+    setAmount(String(line.amount));
+  }
   return (
     <div className="flex flex-col gap-2 border-b pb-3 last:border-b-0">
       <div className="flex items-end gap-2">
@@ -415,7 +427,6 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState(info.name);
-  const [amount, setAmount] = useState(() => String(info.currentAmount));
   const [scope, setScope] = useState<"ongoing" | "once">("ongoing");
   const [newName, setNewName] = useState("");
   const [newAmount, setNewAmount] = useState("");
@@ -425,12 +436,33 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
   // jour. On la maintient ici pour que l'ajout / la suppression se reflètent tout de
   // suite (la vraie valeur sera rechargée à la prochaine ouverture du panneau).
   const [lines, setLines] = useState(info.lines);
-  const run = async (fn: () => Promise<void>) => {
+  // Vie du budget du groupe (enveloppe), même état local optimiste — mais
+  // resynchronisée avec la vraie donnée renvoyée par setGroupAmount /
+  // removeGroupAmount plutôt que recalculée ici : recalculer la sémantique
+  // once/ongoing côté client dupliquerait onceBudgetWrites, avec le risque de
+  // diverger de ce que le serveur vient réellement de poser (voir le rapport de
+  // relecture d'ensemble). C'est ce défaut, précisément, que « Vie du budget »
+  // rendait visible : sans ça, la corbeille et « Appliquer » n'affichaient jamais
+  // leur effet tant que le panneau restait ouvert.
+  const [changes, setChanges] = useState(info.changes);
+  const currentAmount = amountAtMonth(changes, info.month);
+  const [amount, setAmount] = useState(String(currentAmount));
+  // Resynchronisation pendant le rendu, pas un useEffect — même motif et même
+  // raison que LineRow ci-dessus.
+  const [prevCurrentAmount, setPrevCurrentAmount] = useState(currentAmount);
+  if (prevCurrentAmount !== currentAmount) {
+    setPrevCurrentAmount(currentAmount);
+    setAmount(String(currentAmount));
+  }
+  const run = async <T,>(fn: () => Promise<T>): Promise<T> => {
     setBusy(true);
-    await fn();
+    const result = await fn();
     setBusy(false);
     router.refresh();
+    return result;
   };
+  const updateLineChanges = (lineId: number, newChanges: BudgetChange[]) =>
+    setLines((cur) => cur.map((l) => (l.id === lineId ? { ...l, changes: newChanges } : l)));
   return (
     <>
       <SidebarHeader className="gap-0 border-b p-4">
@@ -488,7 +520,7 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
                 size="sm"
                 variant="secondary"
                 disabled={busy || !(parseFloat(amount) >= 0)}
-                onClick={() => run(() => setGroupAmount(info.groupId, info.month, parseFloat(amount), scope))}
+                onClick={() => run(() => setGroupAmount(info.groupId, info.month, parseFloat(amount), scope)).then(setChanges)}
               >
                 Appliquer
               </Button>
@@ -497,13 +529,13 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
         )}
 
         {/* Vie du budget : ce qui s'applique et depuis quand. */}
-        {info.kind === "envelope" && info.changes.length > 0 && (
+        {info.kind === "envelope" && changes.length > 0 && (
           <div className="flex flex-col gap-2">
             <Label className="font-normal">Vie du budget</Label>
             <BudgetChangesList
-              changes={info.changes}
+              changes={changes}
               busy={busy}
-              onRemoveChange={(m) => run(() => removeGroupAmount(info.groupId, m))}
+              onRemoveChange={(m) => run(() => removeGroupAmount(info.groupId, m)).then(setChanges)}
               size="sm"
             />
           </div>
@@ -519,8 +551,8 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
                 key={l.id}
                 line={{ ...l, amount: amountAtMonth(l.changes, info.month) }}
                 busy={busy}
-                onSave={(n, d, a, s) => run(() => editGroupLine(l.id, n, d, info.month, a, s))}
-                onRemoveChange={(m) => run(() => removeLineAmount(l.id, m))}
+                onSave={(n, d, a, s) => run(() => editGroupLine(l.id, n, d, info.month, a, s)).then((nc) => updateLineChanges(l.id, nc))}
+                onRemoveChange={(m) => run(() => removeLineAmount(l.id, m)).then((nc) => updateLineChanges(l.id, nc))}
                 onRemove={() =>
                   run(async () => {
                     await removeGroupLine(l.id);

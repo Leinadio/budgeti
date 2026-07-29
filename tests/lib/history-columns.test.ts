@@ -68,10 +68,15 @@ describe("repère de changement de budget", () => {
     expect(budgetChangePoints([])).toEqual([]);
   });
 
-  // La vie du groupe force le budget à 0 sur les mois morts (cf. src/lib/history.ts) :
-  // sans en tenir compte, le saut de 0 vers le vrai budget au mois de naissance se
-  // lirait à tort comme une hausse. Le repère ne doit jamais franchir un mois mort.
-  it("ne marque pas le mois de naissance d'une ligne née dans la fenêtre affichée", () => {
+  // budgetChangePoints ne sait rien de « groupe » ou « ligne » : il ne fait que
+  // suivre le tableau `alive` qu'on lui donne. La vie du groupe force le budget à
+  // 0 sur ses mois morts (cf. src/lib/history.ts), et une ligne a désormais la
+  // sienne propre, distincte (cf. HistorySubRow.aliveMonths, testé dans
+  // tests/lib/history.test.ts) : dans les deux cas, sans en tenir compte, le saut
+  // de 0 vers le vrai budget à la reprise se lirait à tort comme une hausse. Ce
+  // test-ci ne prouve que le mécanisme générique ; il ne prouve pas qu'une ligne
+  // reçoit la bonne vie — c'est le test de history.test.ts qui ferme cette boucle.
+  it("ne marque pas un changement quand l'un des deux mois comparés est mort (mécanisme générique, utilisé aussi bien pour un groupe que pour une ligne)", () => {
     expect(
       budgetChangePoints(
         [{ budgeted: 0 }, { budgeted: 0 }, { budgeted: 250 }],

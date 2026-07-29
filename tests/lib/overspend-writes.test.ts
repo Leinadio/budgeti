@@ -32,26 +32,31 @@ describe("lignes en dépassement", () => {
 });
 
 describe("écritures d'une décision permanente", () => {
-  it("relève une enveloppe au mois qui suit le dépassement", () => {
-    expect(envelopeWrites(16, "2026-07", 468.19, 250)).toEqual([
+  // Le mois d'effet (mois du dépassement + 1) n'est déterminé qu'à un seul
+  // endroit : decideOverspend (actions.ts), qui calcule `nextMonthKey(month)`
+  // une fois et le passe ici tel quel — à la fois pour capturer `before` au bon
+  // mois et pour écrire la nouvelle valeur. envelopeWrites/lineWrites ne
+  // recalculent plus rien : elles reçoivent directement le mois d'effet déjà
+  // déterminé et l'utilisent tel quel, sans lui appliquer nextMonthKey une
+  // seconde fois. La preuve : un mois d'effet identique au mois qu'on leur donne
+  // ressort inchangé (s'il y avait un second nextMonthKey caché ici, il
+  // avancerait encore d'un mois).
+  it("relève une enveloppe exactement au mois d'effet reçu, sans le recalculer", () => {
+    expect(envelopeWrites(16, "2026-08", 468.19, 250)).toEqual([
       { target: "group", id: 16, month: "2026-08", amount: 468.19, before: 250 },
     ]);
   });
 
   it("garde before à null quand aucun montant n'existait à ce mois", () => {
-    expect(envelopeWrites(16, "2026-07", 300, null)).toEqual([
+    expect(envelopeWrites(16, "2026-08", 300, null)).toEqual([
       { target: "group", id: 16, month: "2026-08", amount: 300, before: null },
     ]);
   });
 
-  it("relève chaque ligne choisie au mois qui suit le dépassement", () => {
-    expect(lineWrites("2026-07", [{ lineId: 101, amount: 151.84, before: null }])).toEqual([
+  it("relève chaque ligne choisie exactement au mois d'effet reçu, sans le recalculer", () => {
+    expect(lineWrites("2026-08", [{ lineId: 101, amount: 151.84, before: null }])).toEqual([
       { target: "line", id: 101, month: "2026-08", amount: 151.84, before: null },
     ]);
-  });
-
-  it("passe correctement d'une année à l'autre", () => {
-    expect(envelopeWrites(1, "2026-12", 100, null)[0].month).toBe("2027-01");
   });
 });
 

@@ -1,7 +1,9 @@
 "use client";
+import { useMemo } from "react";
 import type { AccountForecast } from "@/lib/forecast";
 import type { MonthCell, HistorySection, SoldeColumn, PlannedSoldes, PendingOverspend, IgnoredBlock } from "@/lib/history";
 import type { BudgetChange } from "@/lib/budget-history";
+import { overspentLinesOfPending } from "@/lib/history-detail";
 import { CenterScroll } from "@/components/center-scroll";
 import { HistoryGrid } from "@/components/history-grid";
 import { OverspendBanner } from "@/components/overspend-banner";
@@ -56,6 +58,11 @@ export function HistoryWithDetail(props: {
   const bannerItems = props.pendingByMonth
     ? props.months.flatMap((m) => props.pendingByMonth![m] ?? [])
     : [];
+  // Lignes de groupe du tableau, indexées par id : sert à retrouver, pour chaque
+  // item du bandeau, ses lignes en dépassement (overspentLinesOfPending). Comme
+  // bannerItems ne contient que des mois affichés, le résultat n'est jamais null
+  // ici — la fenêtre couvre toujours le mois de chaque item.
+  const rowsById = useMemo(() => new Map(props.sections.flatMap((s) => s.rows).map((r) => [r.id, r])), [props.sections]);
   return (
     <div className="flex flex-col gap-3">
       {bannerItems.length > 0 && (
@@ -65,6 +72,7 @@ export function HistoryWithDetail(props: {
           months={props.months}
           currentBudgets={props.currentBudgets}
           currentUncatProvision={props.currentUncatProvision}
+          overspentLinesOf={(it) => overspentLinesOfPending(it, rowsById, props.months)}
         />
       )}
       <CenterScroll>

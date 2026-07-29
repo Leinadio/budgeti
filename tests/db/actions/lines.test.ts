@@ -56,3 +56,17 @@ test("le nom et le jour changent pour tous les mois, indépendamment de la port�
   const row = db.prepare(`SELECT name, day FROM group_lines WHERE id = ?`).get(lid) as { name: string; day: number };
   expect(row).toEqual({ name: "Spotify Famille", day: 15 });
 });
+
+// Le panneau de gestion garde son propre état, figé au clic (voir amounts.test.ts
+// pour le détail) : editGroupLine renvoie donc la vie du budget à jour de la
+// ligne, pour que le panneau la réaffiche sans la recalculer lui-même.
+test("editGroupLine renvoie la vie du budget à jour de la ligne", async () => {
+  const lid = await addGroupLine(gid, "Spotify", 10, 3, "2026-01");
+
+  const changes = await editGroupLine(lid, "Spotify", 3, "2026-07", 12, "ongoing");
+
+  expect(changes).toEqual([
+    { month: "2026-01", amount: 10, isStart: true },
+    { month: "2026-07", amount: 12, isStart: false },
+  ]);
+});

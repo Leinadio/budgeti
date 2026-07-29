@@ -18,6 +18,16 @@ export function lineAmountInForce(lineId: number, month: string, datedLines?: Da
   return amount;
 }
 
+// Vrai si une ligne a déjà au moins une entrée datée à `month` ou avant : la ligne
+// « existe » à ce mois. Une ligne n'a pas de startMonth/endMonth comme un groupe —
+// sa vie propre se lit uniquement dans sa suite de montants (addGroupLine pose la
+// première entrée au mois de création, pas au début du groupe). Sans ça, un mois
+// sans entrée (lineAmountInForce = 0 par repli) serait indiscernable d'une ligne
+// dont le montant vaut vraiment 0 ce mois-là.
+export function lineStarted(lineId: number, month: string, datedLines?: DatedLineAmounts): boolean {
+  return (datedLines?.[lineId] ?? []).some((b) => b.effectiveMonth <= month);
+}
+
 // Budget en vigueur d'un groupe à `month`. Un récurrent n'a pas de montant à lui :
 // son budget est la somme de ses lignes telles qu'elles sont ce mois-là. Les
 // entrées éventuellement posées sur un groupe récurrent sont donc ignorées.

@@ -1,6 +1,7 @@
 import { expect, describe, it } from "vitest";
 import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde, computePlannedSoldes, budgetInForce, lineAmountInForce, toDatedBudgets, toDatedLineAmounts, computeOverspends, onceBudgetWrites, rowRevenus, rowOverspend, uncatOverspend, uncatOverspendOf, type HistoryRow, type DatedBudgets } from "../../src/lib/history";
 import { isGroupAlive, type Group, type Txn } from "../../src/lib/forecast";
+import { budgetChangePoints } from "../../src/lib/history-columns";
 import { seedDated, mergeDated } from "./dated-fixtures";
 
 // Fixtures partagées : une enveloppe « Courses » avec un budget mensuel, un groupe
@@ -798,6 +799,33 @@ describe("Durée de vie d'un groupe", () => {
     expect(netflix.cells[1].budgeted).toBe(15); // juillet : actif
     expect(netflix.cells[2].budgeted).toBe(15); // août : actif
     expect(netflix.cells[3].budgeted).toBe(0); // septembre : pas actif
+  });
+
+  it("devrait donner à une ligne sa propre vie, distincte de celle de son groupe : une ligne ajoutée après coup, dans un groupe qui n'est jamais mort, n'a pas de repère de changement à sa naissance", () => {
+    // Abonnements n'a pas de startMonth : le groupe est vivant sur toute la
+    // fenêtre. Netflix, elle, ne reçoit sa première entrée datée qu'en août —
+    // exactement ce qui se passe quand une ligne est ajoutée en cours de route
+    // (addGroupLine pose sa première entrée au mois choisi, pas au début du
+    // groupe). Avant août, lineAmountInForce rend 0 : pas encore de budget, la
+    // ligne n'existait pas, ce n'est pas un vrai changement.
+    const months = ["2026-06", "2026-07", "2026-08"];
+    const { dated, datedLines } = seedDated([abo]);
+    const datedLinesNetflixLater = { ...datedLines, 12: [{ effectiveMonth: "2026-08", amount: 15 }] };
+    const sections = computeHistory([abo], [], months, "2026-07", dated, datedLinesNetflixLater);
+    const row = sections.flatMap((s) => s.rows).find((r) => r.id === 2)!;
+    const netflix = row.subRows.find((s) => s.id === 12)!;
+    expect(netflix.cells.map((c) => c.budgeted)).toEqual([0, 0, 15]);
+    // Le groupe est vivant partout : sans vie propre à la ligne, son repère de
+    // changement retomberait sur celui du groupe et confondrait la naissance de
+    // la ligne avec une vraie hausse.
+    expect(row.aliveMonths).toEqual([true, true, true]);
+    expect(netflix.aliveMonths).toEqual([false, false, true]);
+    // La preuve qui referme la boucle : nourri de la vie de la LIGNE, le repère
+    // ne marque pas sa naissance. Nourri (à tort) de la vie du GROUPE — le bug
+    // relevé en relecture, où history-grid passait r.aliveMonths à la sous-ligne
+    // — le même saut se lirait à tort comme un changement réel en août.
+    expect(budgetChangePoints(netflix.cells, netflix.aliveMonths)).toEqual([false, false, false]);
+    expect(budgetChangePoints(netflix.cells, row.aliveMonths)).toEqual([false, false, true]);
   });
 
   it("devrait ne signaler aucun dépassement pour un groupe qui n'est plus actif", () => {

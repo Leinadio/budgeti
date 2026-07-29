@@ -1,5 +1,3 @@
-import { nextMonthKey } from "./history";
-
 // Une écriture de montant posée par une décision « permanent ». `before` est le
 // montant qui existait à ce mois avant la décision (null s'il n'y en avait aucun) :
 // c'est lui qui permet d'annuler exactement, sans écraser un montant saisi depuis.
@@ -28,19 +26,23 @@ export function overspentLines(
 
 // Hausse permanente d'une enveloppe : elle prend effet au mois qui SUIT celui du
 // dépassement. Le mois du dépassement garde son budget réel, c'est un fait passé.
+// `cible` (le mois d'effet) est déterminé une seule fois par l'appelant
+// (decideOverspend, dans actions.ts, via nextMonthKey(month)) : c'est aussi lui
+// qui sert à capturer `before` avant d'écrire ici. Le recalculer une seconde fois
+// ici referait diverger silencieusement les deux si l'un des deux calculs
+// changeait sans l'autre — rien ne tsc ne le verrait.
 export function envelopeWrites(
-  groupId: number, month: string, amount: number, before: number | null,
+  groupId: number, cible: string, amount: number, before: number | null,
 ): BudgetWrite[] {
-  return [{ target: "group", id: groupId, month: nextMonthKey(month), amount, before }];
+  return [{ target: "group", id: groupId, month: cible, amount, before }];
 }
 
-// Hausse permanente d'un récurrent : une écriture par ligne retenue, au mois qui
-// suit le dépassement.
+// Hausse permanente d'un récurrent : une écriture par ligne retenue, au même
+// mois d'effet déjà déterminé par l'appelant (voir envelopeWrites ci-dessus).
 export function lineWrites(
-  month: string, choix: { lineId: number; amount: number; before: number | null }[],
+  cible: string, choix: { lineId: number; amount: number; before: number | null }[],
 ): BudgetWrite[] {
-  const m = nextMonthKey(month);
-  return choix.map((c) => ({ target: "line", id: c.lineId, month: m, amount: c.amount, before: c.before }));
+  return choix.map((c) => ({ target: "line", id: c.lineId, month: cible, amount: c.amount, before: c.before }));
 }
 
 // Défait des écritures : on ne touche qu'aux entrées dont le montant est encore

@@ -71,6 +71,26 @@ export function overspentLinesOf(r: HistoryRow, i: number): OverspendActionInfo[
   );
 }
 
+// Lignes d'un récurrent en dépassement au mois d'un dépassement en attente, à
+// partir des lignes de groupe déjà calculées (rowsById, indexées par groupId) :
+// [] si le groupe est une enveloppe (jamais de lignes) ou si aucune ligne n'a
+// dépassé ; null si le mois du dépassement n'est pas dans la fenêtre affichée —
+// rowsById/months ne portent alors pas les données de ce mois, donc on ne PEUT
+// PAS savoir, ce qui n'est pas la même chose que « aucune ligne n'a dépassé ».
+// Un dépassement en attente peut viser un mois plus ancien que la fenêtre par
+// défaut (mois courant + projections) : le cas n'est pas rare.
+export function overspentLinesOfPending(
+  item: PendingOverspend,
+  rowsById: Map<number, HistoryRow>,
+  months: string[],
+): OverspendActionInfo["overspentLines"] {
+  if (item.kind === "envelope") return [];
+  const row = rowsById.get(item.groupId);
+  const i = months.indexOf(item.month);
+  if (!row || i === -1) return null;
+  return overspentLinesOf(row, i);
+}
+
 // Un groupe comme nœud d'un calcul de section/total : montant = sa contribution
 // (signée) pour la colonne demandée, enfants = ses transactions du mois (sauf pour
 // « budget », qui n'a pas de transactions).
@@ -187,7 +207,7 @@ export function overspendDecisionDetail(
   monthIdx: number | null,
   decision: "exceptional" | "permanent" | null,
   currentBudget: number | null = null,
-  overspentLines: OverspendActionInfo["overspentLines"] = [],
+  overspentLines: OverspendActionInfo["overspentLines"] = null,
 ): CellDetail {
   return {
     title: "Dépassement",

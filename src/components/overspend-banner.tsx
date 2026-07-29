@@ -3,13 +3,14 @@ import { TriangleAlert } from "lucide-react";
 import { monthLabel } from "@/lib/transactions-view";
 import type { PendingOverspend } from "@/lib/history";
 import { overspendDecisionDetail } from "@/lib/history-detail";
+import type { OverspendActionInfo } from "@/lib/history-explain";
 import { useDetailSidebar } from "@/components/detail-sidebar";
 
 const NUM = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // Bandeau « dépassements à traiter » : listé par mois terminé, chaque élément
 // ouvre le side panel de décision du bon groupe et du bon mois.
-export function OverspendBanner({ items, accountId, months, currentBudgets, currentUncatProvision }: {
+export function OverspendBanner({ items, accountId, months, currentBudgets, currentUncatProvision, overspentLinesOf }: {
   items: PendingOverspend[];
   accountId: string;
   months: string[]; // mois affichés, pour retrouver l'index de la colonne
@@ -17,6 +18,10 @@ export function OverspendBanner({ items, accountId, months, currentBudgets, curr
   // pour pré-remplir le champ « Permanent » du bloc de décision.
   currentBudgets?: Record<number, number>;
   currentUncatProvision?: number | null;
+  // Lignes en dépassement d'un item, pour un récurrent (voir overspentLinesOfPending
+  // dans src/lib/history-detail.ts) : le bandeau ne connaît que les items eux-mêmes,
+  // pas les lignes de groupe du tableau, donc le calcul lui est fourni tout fait.
+  overspentLinesOf: (item: PendingOverspend) => OverspendActionInfo["overspentLines"];
 }) {
   const { setDetail } = useDetailSidebar();
   if (items.length === 0) return null;
@@ -38,6 +43,7 @@ export function OverspendBanner({ items, accountId, months, currentBudgets, curr
                 months.indexOf(it.month) === -1 ? null : months.indexOf(it.month),
                 null,
                 currentBudgetOf(it.groupId),
+                overspentLinesOf(it),
               ),
             )
           }

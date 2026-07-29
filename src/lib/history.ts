@@ -6,11 +6,11 @@ import { type Group, type Txn, isGroupAlive } from "./forecast";
 // fonctions). Ré-exportés ici pour ne pas casser les consommateurs existants.
 export {
   lineAmountInForce, budgetInForce, provisionInForce, toDatedBudgets,
-  toDatedLineAmounts, onceBudgetWrites,
+  toDatedLineAmounts, onceBudgetWrites, lineStarted,
   type DatedBudgets, type DatedLineAmounts,
 } from "./budget-in-force";
 import {
-  lineAmountInForce, budgetInForce, provisionInForce,
+  lineAmountInForce, budgetInForce, provisionInForce, lineStarted,
   type DatedBudgets, type DatedLineAmounts,
 } from "./budget-in-force";
 
@@ -35,6 +35,13 @@ export type HistorySubRow = {
   id: number;
   name: string;
   cells: MonthCell[]; // alignées sur les mois
+  // Aligné sur les mois : la ligne a-t-elle déjà un montant à elle ce mois-là
+  // (au moins une entrée datée à ou avant), ET son groupe est-il vivant ce
+  // mois-là. Distinct de l'aliveMonths du groupe : une ligne ajoutée après le
+  // début d'un groupe encore vivant n'est « vivante » qu'à partir de sa propre
+  // première entrée (cf. lineStarted) — sinon son repère de changement (Task 2,
+  // budgetChangePoints) confondrait sa naissance avec une vraie hausse.
+  aliveMonths: boolean[];
   txns: HistoryTxn[]; // transactions rattachées à cette ligne
 };
 export type HistoryRow = {
@@ -194,6 +201,7 @@ export function computeHistory(
         id: l.id,
         name: l.name,
         cells: cellsFor((m) => (isGroupAlive(g, m) ? lineAmountInForce(l.id, m, datedLines) : 0), isOut, realizedOf),
+        aliveMonths: months.map((m) => isGroupAlive(g, m) && lineStarted(l.id, m, datedLines)),
         txns: lineTxns.filter(inRange).map(toHistoryTxn),
       };
     });
@@ -497,7 +505,7 @@ export function sliceHistorySections(sections: HistorySection[], calcMonths: str
       ...r,
       cells: r.cells.slice(k),
       aliveMonths: r.aliveMonths.slice(k),
-      subRows: r.subRows.map((s) => ({ ...s, cells: s.cells.slice(k), txns: s.txns.filter((t) => keep.has(t.month)) })),
+      subRows: r.subRows.map((s) => ({ ...s, cells: s.cells.slice(k), aliveMonths: s.aliveMonths.slice(k), txns: s.txns.filter((t) => keep.has(t.month)) })),
       txns: r.txns.filter((t) => keep.has(t.month)),
     })),
     totals: sec.totals.slice(k),

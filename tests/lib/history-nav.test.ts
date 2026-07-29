@@ -37,7 +37,7 @@ describe("Retrouver ce qu'il faut déplier pour montrer une ligne choisie dans l
     // les deux niveaux, sinon la surbrillance vise une ligne qui n'existe pas.
     const sec: HistorySection = {
       kind: "recurring",
-      rows: [row({ id: 2, kind: "recurring", subRows: [{ id: 21, name: "Spotify", cells: [cell()], txns: [txn("t2")] }] })],
+      rows: [row({ id: 2, kind: "recurring", subRows: [{ id: 21, name: "Spotify", cells: [cell()], aliveMonths: [true], txns: [txn("t2")] }] })],
       totals: [cell()],
     };
     const keys = computeRevealKeys([sec]);
