@@ -175,7 +175,7 @@ export default async function HistoriquePage({
                   solde={solde}
                   planned={planned}
                   accountId={a.id}
-                  decisions={decisions.map(({ groupId, month, decision }) => ({ groupId, month, decision }))}
+                  decisions={decisions.map(({ groupId, lineId, month, decision }) => ({ groupId, lineId, month, decision }))}
                   pending={overspends.pending}
                   pendingByMonth={overspends.pendingByMonth}
                   budgetsForOverspend={budgetsForOverspend}

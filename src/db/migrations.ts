@@ -185,6 +185,98 @@ export function migrateBudgetAmountsDropGroupFk(db: Database.Database): void {
   })();
 }
 
+// Ajoute la LIGNE à la clé d'une décision de dépassement. Un récurrent n'a pas de
+// budget à lui : ce sont ses lignes qui en portent un, donc c'est chaque ligne qui
+// déborde, et c'est sur elle que la décision se prend. Sans line_id dans la clé,
+// trancher Sosh Internet ferait taire Sosh Mobile.
+//
+// line_id = 0 signifie « le groupe lui-même » (une enveloppe, ou les non catégorisés) —
+// même convention que group_id = 0 ailleurs dans ce schéma, et surtout PAS NULL : SQLite
+// tient deux NULL pour distincts dans une contrainte d'unicité, ce qui laisserait
+// s'empiler des doublons sur une même enveloppe au lieu de remplacer sa décision.
+//
+// Les décisions déjà prises restent au niveau du groupe (line_id = 0) : celles des
+// enveloppes et des non catégorisés gardent tout leur sens. Idempotent.
+export function migrateOverspendDecisionLine(db: Database.Database): void {
+  const cols = db.prepare(`PRAGMA table_info(overspend_decisions)`).all() as { name: string }[];
+  if (cols.some((c) => c.name === "line_id")) return;
+  db.transaction(() => {
+    db.exec(`
+      CREATE TABLE overspend_decisions_lined (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        account_id TEXT NOT NULL REFERENCES accounts(id),
+        group_id INTEGER NOT NULL,
+        line_id INTEGER NOT NULL DEFAULT 0,
+        month TEXT NOT NULL,
+        decision TEXT NOT NULL CHECK (decision IN ('exceptional', 'permanent')),
+        decided_at TEXT NOT NULL,
+        writes TEXT,
+        UNIQUE(account_id, group_id, line_id, month)
+      );
+      INSERT INTO overspend_decisions_lined (id, account_id, group_id, line_id, month, decision, decided_at, writes)
+        SELECT id, account_id, group_id, 0, month, decision, decided_at, writes FROM overspend_decisions;
+      DROP TABLE overspend_decisions;
+      ALTER TABLE overspend_decisions_lined RENAME TO overspend_decisions;
+    `);
+  })();
+}
+
+// Ajoute la PORTÉE aux montants datés : un montant vaut soit à partir de son mois
+// (« ongoing »), soit pour son seul mois (« once »). Avant, la seconde sémantique
+// était bricolée à l'écriture — appliquer un montant « ce mois seulement » posait EN
+// PLUS une restauration de l'ancien montant au mois suivant. Cette écriture touchait
+// un mois que personne n'avait demandé à changer, et se relisait ensuite comme un
+// changement qu'on n'avait jamais fait. La portée dans la donnée rend cette béquille
+// inutile : un montant ponctuel s'écrit une fois, dans son mois.
+//
+// L'unicité passe de (cible, mois) à (cible, mois, portée) : les deux portées peuvent
+// coexister au même mois — relever durablement à partir de juillet ET faire une
+// exception pour juillet. Sans ça, appliquer l'une effacerait silencieusement l'autre,
+// et les mois suivants retomberaient sur un montant plus ancien que le bon.
+//
+// Tout ce qui est déjà en base devient « ongoing » : c'était la seule sémantique
+// possible jusqu'ici, la reclasser autrement changerait des chiffres déjà affichés.
+// Idempotent : la présence de la colonne suffit à savoir que c'est fait.
+export function migrateBudgetAmountScope(db: Database.Database): void {
+  const aScope = (table: string) =>
+    (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).some((c) => c.name === "scope");
+  if (aScope("budget_amounts") && aScope("line_amounts")) return;
+  db.transaction(() => {
+    if (!aScope("budget_amounts")) {
+      db.exec(`
+        CREATE TABLE budget_amounts_scoped (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          group_id INTEGER NOT NULL,
+          effective_month TEXT NOT NULL,
+          amount REAL NOT NULL,
+          scope TEXT NOT NULL DEFAULT 'ongoing',
+          UNIQUE(group_id, effective_month, scope)
+        );
+        INSERT INTO budget_amounts_scoped (id, group_id, effective_month, amount, scope)
+          SELECT id, group_id, effective_month, amount, 'ongoing' FROM budget_amounts;
+        DROP TABLE budget_amounts;
+        ALTER TABLE budget_amounts_scoped RENAME TO budget_amounts;
+      `);
+    }
+    if (!aScope("line_amounts")) {
+      db.exec(`
+        CREATE TABLE line_amounts_scoped (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          line_id INTEGER NOT NULL REFERENCES group_lines(id) ON DELETE CASCADE,
+          effective_month TEXT NOT NULL,
+          amount REAL NOT NULL,
+          scope TEXT NOT NULL DEFAULT 'ongoing',
+          UNIQUE(line_id, effective_month, scope)
+        );
+        INSERT INTO line_amounts_scoped (id, line_id, effective_month, amount, scope)
+          SELECT id, line_id, effective_month, amount, 'ongoing' FROM line_amounts;
+        DROP TABLE line_amounts;
+        ALTER TABLE line_amounts_scoped RENAME TO line_amounts;
+      `);
+    }
+  })();
+}
+
 // Matérialise les montants « de base » en première entrée datée, au mois de
 // départ du groupe : chaque enveloppe dans budget_amounts, chaque ligne de
 // récurrent dans line_amounts. Après passage, plus aucun calcul n'a besoin de

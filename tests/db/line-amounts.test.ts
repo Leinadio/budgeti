@@ -15,9 +15,9 @@ function seed() {
 test("setLineAmount pose un montant daté, puis l'écrase au même mois", () => {
   const { db, lid } = seed();
   setLineAmount(db, lid, "2026-08", 13.5);
-  expect(listLineAmounts(db)).toEqual([{ lineId: lid, effectiveMonth: "2026-08", amount: 13.5 }]);
+  expect(listLineAmounts(db)).toEqual([{ lineId: lid, effectiveMonth: "2026-08", amount: 13.5, scope: "ongoing" }]);
   setLineAmount(db, lid, "2026-08", 14);
-  expect(listLineAmounts(db)).toEqual([{ lineId: lid, effectiveMonth: "2026-08", amount: 14 }]);
+  expect(listLineAmounts(db)).toEqual([{ lineId: lid, effectiveMonth: "2026-08", amount: 14, scope: "ongoing" }]);
 });
 
 test("listLineAmounts trie par ligne puis par mois croissant", () => {

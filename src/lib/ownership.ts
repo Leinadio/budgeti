@@ -32,3 +32,15 @@ export function resolveOwnership(txn: OwnedTxn, groups: OwnableGroup[]): Ownersh
   }
   return { status: "none" };
 }
+
+// Un récurrent n'est pas une destination : ses dépenses appartiennent à une de ses
+// lignes (Direct Assurance, Sosh Internet…), jamais au groupe lui-même. Une enveloppe,
+// qui n'a pas de lignes, se rattache directement.
+//
+// Ce n'est pas une préférence d'affichage mais l'invariant qui tient le dépassement
+// d'un récurrent : son budget est la somme de ses lignes, donc une dépense posée sur le
+// groupe le ferait déborder sans venir d'aucune ligne — et ce dépassement n'aurait
+// nulle part où se trancher, puisque les décisions se prennent sur les lignes.
+export function canAttachToGroup(kind: "envelope" | "recurring", lineId: number | null): boolean {
+  return kind === "envelope" || lineId !== null;
+}

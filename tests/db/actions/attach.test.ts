@@ -1,0 +1,95 @@
+// Teste setGroup (src/app/transactions/actions.ts) réellement appelée, base en
+// mémoire (voir ./setup).
+//
+// Un récurrent n'est pas une destination : ses dépenses appartiennent à une de ses
+// lignes, jamais au groupe lui-même. Le sélecteur ne le propose plus, mais masquer une
+// option n'empêche pas d'appeler l'action directement : la règle est tenue ici.
+import { beforeEach, expect, test, vi } from "vitest";
+import type Database from "better-sqlite3";
+import { freshDb } from "./setup";
+import { setGroup } from "../../../src/app/transactions/actions";
+import { revalidatePath } from "next/cache";
+import { insertEnvelopeGroup, insertRecurringGroup, insertLine } from "../../../src/db/repositories/groups";
+import { insertManualTransaction } from "../../../src/db/repositories/transactions";
+
+let db: Database.Database;
+beforeEach(() => {
+  db = freshDb();
+  vi.mocked(revalidatePath).mockClear();
+});
+
+const nouvelleTxn = () =>
+  insertManualTransaction(db, {
+    accountId: "a1", date: "2026-07-23", amount: -20, label: "PAIEMENT CB REVOLUT",
+    groupId: null, lineId: null, incomeKind: null,
+  });
+
+const rattachement = (id: string) =>
+  db.prepare(`SELECT group_id AS groupId, line_id AS lineId FROM transactions WHERE id = ?`).get(id);
+
+test("refuse de rattacher une transaction à un récurrent sans ligne", async () => {
+  const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-01", null);
+  insertLine(db, gid, "Sosh Internet", 30.99, 12);
+  const id = nouvelleTxn();
+
+  await setGroup(id, gid, null);
+
+  expect(rattachement(id)).toEqual({ groupId: null, lineId: null });
+});
+
+test("accepte le rattachement à une ligne d'un récurrent, groupe parent compris", async () => {
+  const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-01", null);
+  const lid = insertLine(db, gid, "Sosh Internet", 30.99, 12);
+  const id = nouvelleTxn();
+
+  await setGroup(id, gid, lid);
+
+  expect(rattachement(id)).toEqual({ groupId: gid, lineId: lid });
+});
+
+// Une enveloppe n'a pas de lignes : elle se rattache directement, comme avant.
+test("accepte le rattachement direct à une enveloppe", async () => {
+  const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const id = nouvelleTxn();
+
+  await setGroup(id, gid, null);
+
+  expect(rattachement(id)).toEqual({ groupId: gid, lineId: null });
+});
+
+test("laisse toujours remettre une transaction en non catégorisée", async () => {
+  const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const id = nouvelleTxn();
+  await setGroup(id, gid, null);
+
+  await setGroup(id, null, null);
+
+  expect(rattachement(id)).toEqual({ groupId: null, lineId: null });
+});
+
+// Un refus ne doit pas non plus défaire ce qui était en place : la transaction garde
+// son rattachement précédent plutôt que de se retrouver nulle part par accident.
+test("un refus laisse le rattachement précédent intact", async () => {
+  const env = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const rec = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-01", null);
+  insertLine(db, rec, "Sosh Internet", 30.99, 12);
+  const id = nouvelleTxn();
+  await setGroup(id, env, null);
+
+  await setGroup(id, rec, null);
+
+  expect(rattachement(id)).toEqual({ groupId: env, lineId: null });
+});
+
+// Une ligne qui n'appartient pas au groupe visé n'est pas une destination valide :
+// l'accepter écrirait un couple (groupe, ligne) incohérent, que plus rien ne relit.
+test("refuse une ligne qui n'appartient pas au groupe visé", async () => {
+  const a = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-01", null);
+  const b = insertRecurringGroup(db, "a1", "Impôts", "out", null, "2026-01", null);
+  const ligneDeB = insertLine(db, b, "Impôts", 49, 15);
+  const id = nouvelleTxn();
+
+  await setGroup(id, a, ligneDeB);
+
+  expect(rattachement(id)).toEqual({ groupId: null, lineId: null });
+});

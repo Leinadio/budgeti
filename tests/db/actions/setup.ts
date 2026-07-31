@@ -17,6 +17,14 @@ import { upsertAccount } from "../../../src/db/repositories/accounts";
 // réassignerait directement (la factory garderait alors sa valeur `null` d'origine).
 export const ctx: { db: Database.Database | null } = { db: null };
 
+// Mois « courant » de tous les tests d'actions. Le verrou des mois passés
+// (src/lib/month-lock.ts) fait dépendre plusieurs actions de la date du jour :
+// sans horloge figée, ces tests passeraient aujourd'hui et échoueraient le mois
+// suivant, en accusant le code au lieu du calendrier. Choisi assez tôt pour que
+// tous les mois manipulés par ces suites (2025-02 et après) restent ouverts ; un
+// test qui veut un mois clos avance l'horloge lui-même.
+export const NOW_MONTH = "2025-01";
+
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("../../../src/db/index", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../src/db/index")>();
@@ -36,7 +44,20 @@ vi.mock("../../../src/db/index", async (importOriginal) => {
 // import en premier suffit, sans avoir besoin d'un vi.mock recopié dans chaque
 // fichier (qui bénéficierait, lui, du hoisting automatique de Vitest — mais c'est
 // justement ce qu'on évite de dupliquer).
+// Fige aussi l'horloge à NOW_MONTH (voir ci-dessus). Seul `Date` est simulé, pas
+// les minuteries : les actions sont asynchrones, fausser setTimeout les ferait
+// attendre pour rien.
+// Place l'horloge au milieu d'un mois. Un test qui touche à un budget doit dire
+// quand il se place : le verrou fait dépendre le résultat du mois courant. Sert
+// aussi à arranger un test — ce qu'on veut avoir en base avant d'éprouver un refus
+// a forcément été écrit à une époque où son mois était encore ouvert.
+export function at(month: string): void {
+  vi.setSystemTime(new Date(`${month}-15T12:00:00Z`));
+}
+
 export function freshDb(): Database.Database {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(`${NOW_MONTH}-05T12:00:00Z`));
   const database = getDb(":memory:");
   upsertAccount(database, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
   ctx.db = database;

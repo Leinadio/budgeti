@@ -10,6 +10,8 @@ import {
   ignoreMatch as ignoreMatchRepo,
 } from "../../db/repositories/transactions";
 import { isValidManualForm, toManualInput, type ManualFormInput } from "@/lib/manual-txn";
+import { canAttachToGroup } from "@/lib/ownership";
+import { getGroupKind, getLineGroupId } from "../../db/repositories/groups";
 import { revalidatePath } from "next/cache";
 
 function revalidateAll() {
@@ -18,6 +20,14 @@ function revalidateAll() {
   revalidatePath("/");
 }
 
+// Rattache une transaction (groupId null = non catégorisée). Un récurrent n'est pas
+// une destination : ses dépenses appartiennent à une de ses lignes, jamais au groupe
+// lui-même (canAttachToGroup). Le sélecteur ne le propose plus, mais masquer une option
+// n'empêche pas d'appeler cette action directement — la règle est donc tenue ici, comme
+// le verrou des mois passés l'est dans les actions de budget.
+//
+// Un rattachement refusé ne défait rien : la transaction garde ce qu'elle avait, plutôt
+// que de se retrouver nulle part par accident.
 export async function setGroup(
   txnId: string,
   groupId: number | null,
@@ -25,7 +35,15 @@ export async function setGroup(
 ) {
   const gid = groupId !== null && Number.isFinite(groupId) ? groupId : null;
   const lid = lineId !== null && Number.isFinite(lineId) ? lineId : null;
-  setTransactionGroup(db(), txnId, gid, false, lid);
+  const database = db();
+  if (gid !== null) {
+    const kind = getGroupKind(database, gid);
+    if (kind === null || !canAttachToGroup(kind, lid)) return;
+    // Une ligne d'un AUTRE groupe écrirait un couple (groupe, ligne) incohérent, que
+    // plus aucun calcul ne relit correctement.
+    if (lid !== null && getLineGroupId(database, lid) !== gid) return;
+  }
+  setTransactionGroup(database, txnId, gid, false, lid);
   revalidateAll();
 }
 

@@ -9,7 +9,7 @@ import {
   type CellDetail,
   type DetailNode,
   type Col,
-  type OverspendActionInfo,
+  type BudgetEditInfo,
   cellKey,
   openingRow,
   sectionRow,
@@ -19,7 +19,8 @@ import {
   makeDetail,
   txnNode,
 } from "./history-explain";
-import { overspentLines } from "./overspend-writes";
+import { amountAtMonth, type BudgetChange } from "./budget-history";
+import { isMonthClosed } from "./month-lock";
 
 // Nature du montant porté par un nœud : les trois colonnes chiffrées du tableau,
 // plus le « net » (recu − depense) que lisent les chaînes de solde.
@@ -57,38 +58,6 @@ export function budgetNodes(r: HistoryRow, i: number): DetailNode[] | undefined 
     .map((s): DetailNode => ({ label: s.name, amount: s.cells[i].budgeted, ref: cellKey(subRow(s.id), "budget", i) }))
     .filter((n) => n.amount !== 0);
   return nodes.length > 0 ? nodes : undefined;
-}
-
-// Lignes d'un récurrent en dépassement au mois i, pour pré-remplir le formulaire
-// « Permanent » par ligne (Task 11) : à partir des cellules déjà calculées de
-// chaque ligne (budgeted / depense), sans recalcul depuis les transactions.
-// Toujours vide pour une enveloppe (subRows y est toujours vide).
-export function overspentLinesOf(r: HistoryRow, i: number): OverspendActionInfo["overspentLines"] {
-  return overspentLines(
-    r.subRows.map((sr) => ({ id: sr.id, name: sr.name })),
-    (id) => r.subRows.find((sr) => sr.id === id)!.cells[i].budgeted,
-    (id) => r.subRows.find((sr) => sr.id === id)!.cells[i].depense,
-  );
-}
-
-// Lignes d'un récurrent en dépassement au mois d'un dépassement en attente, à
-// partir des lignes de groupe déjà calculées (rowsById, indexées par groupId) :
-// [] si le groupe est une enveloppe (jamais de lignes) ou si aucune ligne n'a
-// dépassé ; null si le mois du dépassement n'est pas dans la fenêtre affichée —
-// rowsById/months ne portent alors pas les données de ce mois, donc on ne PEUT
-// PAS savoir, ce qui n'est pas la même chose que « aucune ligne n'a dépassé ».
-// Un dépassement en attente peut viser un mois plus ancien que la fenêtre par
-// défaut (mois courant + projections) : le cas n'est pas rare.
-export function overspentLinesOfPending(
-  item: PendingOverspend,
-  rowsById: Map<number, HistoryRow>,
-  months: string[],
-): OverspendActionInfo["overspentLines"] {
-  if (item.kind === "envelope") return [];
-  const row = rowsById.get(item.groupId);
-  const i = months.indexOf(item.month);
-  if (!row || i === -1) return null;
-  return overspentLinesOf(row, i);
 }
 
 // Un groupe comme nœud d'un calcul de section/total : montant = sa contribution
@@ -207,28 +176,83 @@ export function overspendDecisionDetail(
   monthIdx: number | null,
   decision: "exceptional" | "permanent" | null,
   currentBudget: number | null = null,
-  overspentLines: OverspendActionInfo["overspentLines"] = null,
 ): CellDetail {
   return {
     title: "Dépassement",
     subtitle: `${item.name} · ${monthLabel(item.month)}`,
     nodes: [],
     result: item.amount,
+    // La case visée est celle de ce qui déborde : la Balance de la LIGNE pour un
+    // récurrent, celle du groupe pour une enveloppe, celle de la section pour les non
+    // catégorisés. Viser le groupe surlignerait une case qui n'est plus décidable.
     cellRef:
       monthIdx != null
-        ? cellKey(item.groupId === 0 ? sectionRow("uncategorized") : groupRow(item.groupId), "reste", monthIdx)
+        ? cellKey(
+            item.lineId !== null
+              ? subRow(item.lineId)
+              : item.groupId === 0
+                ? sectionRow("uncategorized")
+                : groupRow(item.groupId),
+            "reste",
+            monthIdx,
+          )
         : undefined,
     overspendAction: {
       accountId,
       groupId: item.groupId,
       groupName: item.name,
       groupKind: item.kind,
+      lineId: item.lineId,
       month: item.month,
       amount: item.amount,
       decision,
       currentBudget,
-      overspentLines,
     },
+  };
+}
+
+// Ce qu'une case « Budget dép. » de ligne de groupe laisse modifier. Une enveloppe
+// porte son propre montant : la case s'édite, au mois de sa colonne. Un récurrent
+// n'en a pas — son budget est la somme de ses lignes, il n'y a rien à écrire au
+// niveau du groupe : sa case reste en lecture, et c'est chaque ligne qui se modifie
+// dans SA case (budgetEditOfLine ci-dessous).
+// Rend null aussi sur un mois clos : le serveur refuserait l'écriture (month-lock),
+// la case ne doit donc pas proposer de formulaire — et sur un groupe inconnu, où il
+// n'y aurait ni frise ni montant à proposer.
+export function budgetEditOfGroup(
+  group: { id: number; name: string; kind: "envelope" | "recurring"; changes: BudgetChange[] } | undefined,
+  month: string,
+  currentMonth: string,
+): BudgetEditInfo | null {
+  if (!group || group.kind !== "envelope" || isMonthClosed(month, currentMonth)) return null;
+  return {
+    target: "group",
+    id: group.id,
+    name: group.name,
+    month,
+    amount: amountAtMonth(group.changes, month),
+    changes: group.changes,
+    currentMonth,
+  };
+}
+
+// Même chose pour une ligne de récurrent, qui porte son montant daté comme une
+// enveloppe. Une ligne n'a pas de nature : il n'y a rien à écarter d'autre qu'un
+// mois clos ou une ligne inconnue.
+export function budgetEditOfLine(
+  line: { id: number; name: string; changes: BudgetChange[] } | undefined,
+  month: string,
+  currentMonth: string,
+): BudgetEditInfo | null {
+  if (!line || isMonthClosed(month, currentMonth)) return null;
+  return {
+    target: "line",
+    id: line.id,
+    name: line.name,
+    month,
+    amount: amountAtMonth(line.changes, month),
+    changes: line.changes,
+    currentMonth,
   };
 }
 
@@ -237,7 +261,14 @@ export function overspendDecisionDetail(
 // identifié par la CASE qui l'a ouvert : deux cases différentes qui affichent le
 // même montant restent deux détails distincts.
 export function detailKey(d: CellDetail): string {
+  // Le mois ET la nature de la cible entrent dans la clé : deux cases de budget
+  // différentes sont deux panneaux distincts, sinon le montant saisi et la portée
+  // choisie survivraient d'une case à l'autre. Un groupe et une ligne peuvent porter
+  // le même identifiant, d'où `target` dans la clé.
+  if (d.budgetEdit) return `budget:${d.budgetEdit.target}:${d.budgetEdit.id}:${d.budgetEdit.month}`;
   if (d.groupManage) return `manage:${d.groupManage.groupId}:${d.groupManage.month}`;
+  // Une ligne et un groupe peuvent porter le même identifiant : le préfixe les sépare.
+  if (d.lineManage) return `line:${d.lineManage.lineId}`;
   if (d.uncatProvision) return `provision:${d.uncatProvision.month}`;
   if (d.description) return `info:${d.title}`;
   return d.cellRef ?? `${d.title}·${d.subtitle ?? ""}·${d.result}`;

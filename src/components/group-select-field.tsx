@@ -5,7 +5,7 @@ import { setGroup } from "@/app/transactions/actions";
 import { cn } from "@/lib/utils";
 
 type LineOpt = { id: number; name: string };
-type GroupOpt = { id: number; name: string; lines: LineOpt[] };
+type GroupOpt = { id: number; name: string; kind: "envelope" | "recurring"; lines: LineOpt[] };
 
 // Retrait des lignes sous leur groupe, avec des espaces insécables pour que le
 // menu déroulant ne les collapse pas.
@@ -77,14 +77,26 @@ export function GroupSelectField({
       }}
     >
       <option value="">Non catégorisé</option>
-      {groups.map((g) => (
-        <Fragment key={g.id}>
-          <option value={`g:${g.id}`}>{g.name}</option>
-          {g.lines.map((l) => (
-            <option key={l.id} value={`l:${l.id}`}>{INDENT + l.name}</option>
-          ))}
-        </Fragment>
-      ))}
+      {groups.map((g) =>
+        // Un récurrent n'est pas une destination : ses dépenses appartiennent à une de
+        // ses lignes (Direct Assurance, Sosh Internet…), jamais au groupe lui-même. Son
+        // nom reste affiché, mais comme un titre non sélectionnable — d'où optgroup,
+        // qui dit exactement ça au navigateur comme aux lecteurs d'écran.
+        g.kind === "recurring" ? (
+          <optgroup key={g.id} label={g.name}>
+            {g.lines.map((l) => (
+              <option key={l.id} value={`l:${l.id}`}>{l.name}</option>
+            ))}
+          </optgroup>
+        ) : (
+          <Fragment key={g.id}>
+            <option value={`g:${g.id}`}>{g.name}</option>
+            {g.lines.map((l) => (
+              <option key={l.id} value={`l:${l.id}`}>{INDENT + l.name}</option>
+            ))}
+          </Fragment>
+        ),
+      )}
     </select>
   );
 }

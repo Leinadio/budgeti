@@ -1,28 +1,52 @@
 import type { Group } from "./forecast";
 
-// Budgets datés : pour chaque groupe, la liste de ses montants avec leur mois
-// d'entrée en vigueur (triée par mois croissant). Le montant en vigueur pour un
-// mois M est celui de la dernière entrée dont effectiveMonth <= M. Sans entrée
-// applicable, le montant est 0 : il n'existe PLUS de montant de base sur lequel
-// retomber, c'est ce repli qui faisait diverger l'affichage et le calcul.
-// La reprise de données garantit une entrée au mois de départ de chaque groupe.
-export type DatedBudgets = Record<number, { effectiveMonth: string; amount: number }[]>;
+// --- Budgets datés ----------------------------------------------------------
+// Un budget n'est pas un nombre : c'est une suite de montants, chacun daté du mois
+// où il prend effet ET portant sa PORTÉE.
+//   « ongoing » (le défaut quand rien n'est dit) : vaut à partir de son mois, et pour
+//     tous les suivants, jusqu'au prochain montant permanent.
+//   « once » : ne vaut que pour SON mois, et pour lui seul.
+//
+// C'est la portée qui remplace l'ancien bricolage : appliquer un montant « ce mois
+// seulement » posait, en plus, une restauration de l'ancien montant au mois SUIVANT.
+// Cette seconde écriture touchait un mois que personne n'avait demandé à changer, et
+// se lisait ensuite dans la frise comme un changement qu'on n'avait jamais fait.
+// Maintenant, un montant ponctuel s'écrit une fois, dans son mois, et rien ailleurs.
+//
+// Sans aucune entrée applicable, le montant est 0 : il n'existe PAS de montant de base
+// sur lequel retomber. La reprise de données garantit une entrée au mois de départ de
+// chaque groupe.
+export type BudgetScope = "ongoing" | "once";
+export type DatedEntry = { effectiveMonth: string; amount: number; scope?: BudgetScope };
+export type DatedBudgets = Record<number, DatedEntry[]>;
 
 // Même chose pour les lignes d'un récurrent, indexé par identifiant de ligne.
-export type DatedLineAmounts = Record<number, { effectiveMonth: string; amount: number }[]>;
+export type DatedLineAmounts = Record<number, DatedEntry[]>;
+
+// Montant en vigueur à `month` dans une suite d'entrées datées (triée par mois
+// croissant). Un montant ponctuel posé exactement à `month` l'emporte : c'est une
+// exception, elle bat la règle. Sinon on prend le dernier montant permanent atteint.
+// Les deux portées peuvent cohabiter au même mois (relever durablement à partir de
+// juillet ET faire une exception pour juillet) : l'exception gagne juillet, le
+// permanent vaut pour la suite.
+export function amountInForce(entries: DatedEntry[], month: string): number {
+  const exception = entries.find((e) => e.scope === "once" && e.effectiveMonth === month);
+  if (exception) return exception.amount;
+  let amount = 0;
+  for (const e of entries) if (e.scope !== "once" && e.effectiveMonth <= month) amount = e.amount;
+  return amount;
+}
 
 // Montant en vigueur d'une ligne de récurrent à `month`, 0 par défaut.
 export function lineAmountInForce(lineId: number, month: string, datedLines?: DatedLineAmounts): number {
-  let amount = 0;
-  for (const b of datedLines?.[lineId] ?? []) if (b.effectiveMonth <= month) amount = b.amount;
-  return amount;
+  return amountInForce(datedLines?.[lineId] ?? [], month);
 }
 
 // Vrai si une ligne a déjà au moins une entrée datée à `month` ou avant : la ligne
 // « existe » à ce mois. Une ligne n'a pas de startMonth/endMonth comme un groupe —
 // sa vie propre se lit uniquement dans sa suite de montants (addGroupLine pose la
 // première entrée au mois de création, pas au début du groupe). Sans ça, un mois
-// sans entrée (lineAmountInForce = 0 par repli) serait indiscernable d'une ligne
+// sans entrée (amountInForce = 0 par repli) serait indiscernable d'une ligne
 // dont le montant vaut vraiment 0 ce mois-là.
 export function lineStarted(lineId: number, month: string, datedLines?: DatedLineAmounts): boolean {
   return (datedLines?.[lineId] ?? []).some((b) => b.effectiveMonth <= month);
@@ -40,16 +64,12 @@ export function budgetInForce(
   if (g.kind === "recurring") {
     return g.lines.reduce((s, l) => s + lineAmountInForce(l.id, month, datedLines), 0);
   }
-  let amount = 0;
-  for (const b of dated?.[g.id] ?? []) if (b.effectiveMonth <= month) amount = b.amount;
-  return amount;
+  return amountInForce(dated?.[g.id] ?? [], month);
 }
 
 // Provision (budget daté du groupe 0 = non catégorisés) en vigueur à `month`, 0 par défaut.
 export function provisionInForce(dated: DatedBudgets | undefined, month: string): number {
-  let amount = 0;
-  for (const b of dated?.[0] ?? []) if (b.effectiveMonth <= month) amount = b.amount;
-  return amount;
+  return amountInForce(dated?.[0] ?? [], month);
 }
 
 // Clé d'un budget dans le dictionnaire par mois ci-dessous. Le groupe 0 désigne la
@@ -79,55 +99,22 @@ export function budgetsByMonth(
   return out;
 }
 
-// Décale une clé « YYYY-MM » d'un mois (copie locale pour éviter le cycle avec
-// history.ts, qui importe ce module).
-function nextMonthKey(m: string): string {
-  const [y, mo] = m.split("-").map(Number);
-  const d = new Date(Date.UTC(y, mo - 1, 1));
-  d.setUTCMonth(d.getUTCMonth() + 1);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
-// Écritures datées d'un changement de budget « ce mois seulement » (once).
-// À partir des entrées datées existantes du groupe, du mois visé et du nouveau
-// montant, renvoie la ou les écritures à poser :
-//   - le nouveau montant à `month` ;
-//   - la restauration du montant sous-jacent réel à `month+1`, UNIQUEMENT s'il
-//     n'existe pas déjà une entrée datée exactement à `month+1`.
-// Le montant sous-jacent réel est calculé en IGNORANT toute entrée datée dont
-// effectiveMonth === month : réappliquer « once » sur le même mois ne restaure donc
-// jamais la valeur ponctuelle précédente (qui corromprait le mois suivant), mais bien
-// la valeur de base sous-jacente. Ne jamais écraser une entrée future légitime à month+1.
-// Il n'y a plus de « montant de base » vers lequel retomber : sans entrée antérieure
-// à `month`, la valeur sous-jacente restaurée à `month+1` est 0, comme partout ailleurs.
-export function onceBudgetWrites(
-  datedForGroup: { effectiveMonth: string; amount: number }[],
-  month: string,
-  amount: number,
-): { writes: { effectiveMonth: string; amount: number }[] } {
-  const next = nextMonthKey(month);
-  // Valeur en vigueur à `month`, en ignorant une éventuelle entrée déjà posée
-  // exactement à `month` (la précédente application « ce mois seulement »).
-  let prev = 0;
-  for (const b of datedForGroup) if (b.effectiveMonth !== month && b.effectiveMonth <= month) prev = b.amount;
-  const writes = [{ effectiveMonth: month, amount }];
-  // On ne restaure `prev` à month+1 que si aucun changement futur légitime n'y est déjà posé.
-  if (!datedForGroup.some((b) => b.effectiveMonth === next)) writes.push({ effectiveMonth: next, amount: prev });
-  return { writes };
-}
-
-// Regroupe les lignes du repository par groupe, en conservant le tri par mois.
-export function toDatedBudgets(rows: { groupId: number; effectiveMonth: string; amount: number }[]): DatedBudgets {
+// Regroupe les lignes du repository par groupe, en conservant le tri par mois. La
+// portée est transportée telle quelle : c'est elle qui décide, à la lecture, si un
+// montant vaut pour son seul mois ou pour les suivants (voir amountInForce).
+export function toDatedBudgets(
+  rows: { groupId: number; effectiveMonth: string; amount: number; scope?: BudgetScope }[],
+): DatedBudgets {
   const out: DatedBudgets = {};
-  for (const r of rows) (out[r.groupId] ??= []).push({ effectiveMonth: r.effectiveMonth, amount: r.amount });
+  for (const r of rows) (out[r.groupId] ??= []).push({ effectiveMonth: r.effectiveMonth, amount: r.amount, scope: r.scope });
   return out;
 }
 
 // Regroupe les montants de lignes par ligne, en conservant le tri par mois.
 export function toDatedLineAmounts(
-  rows: { lineId: number; effectiveMonth: string; amount: number }[],
+  rows: { lineId: number; effectiveMonth: string; amount: number; scope?: BudgetScope }[],
 ): DatedLineAmounts {
   const out: DatedLineAmounts = {};
-  for (const r of rows) (out[r.lineId] ??= []).push({ effectiveMonth: r.effectiveMonth, amount: r.amount });
+  for (const r of rows) (out[r.lineId] ??= []).push({ effectiveMonth: r.effectiveMonth, amount: r.amount, scope: r.scope });
   return out;
 }

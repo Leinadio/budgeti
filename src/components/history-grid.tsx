@@ -4,7 +4,8 @@ import { ArrowUpRight, ArrowDownRight, ChevronDown, ChevronRight, Plus, Pencil }
 import { cn } from "@/lib/utils";
 import { monthLabel } from "@/lib/transactions-view";
 import type { AccountForecast } from "@/lib/forecast";
-import { type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn, type SoldeColumn, type PlannedSoldes, type PendingOverspend, type IgnoredBlock, uncatOverspend, uncatOverspendOf, computeTableEstimate, rowRevenus, rowOverspend, budgetKey } from "@/lib/history";
+import { type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn, type SoldeColumn, type PlannedSoldes, type PendingOverspend, type IgnoredBlock, uncatOverspend, uncatOverspendOf, computeTableEstimate, rowRevenus, rowOverspend, budgetKey, decisionKey, groupsWithPending } from "@/lib/history";
+import { isMonthClosed } from "@/lib/month-lock";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { TruncatedText } from "@/components/truncated-text";
@@ -27,13 +28,14 @@ import {
   sectionNode,
   soldeActuelDetail,
   overspendDecisionDetail,
-  overspentLinesOf,
-  overspentLinesOfPending,
+  budgetEditOfGroup,
+  budgetEditOfLine,
 } from "@/lib/history-detail";
 import {
   type CellDetail,
   type DetailNode,
   type Col,
+  type BudgetEditInfo,
   cellKey,
   openingRow,
   sectionRow,
@@ -44,11 +46,12 @@ import {
   makeInfo,
   txnNode,
 } from "@/lib/history-explain";
-import { type BudgetChange, amountAtMonth } from "@/lib/budget-history";
+import { type BudgetChange } from "@/lib/budget-history";
 
 // Décision déjà prise sur un dépassement (groupId, mois), telle que chargée en page
 // (Task 4). groupId = 0 pour les non catégorisés.
-type OverspendDecisionInfo = { groupId: number; month: string; decision: "exceptional" | "permanent" };
+// lineId : la ligne tranchée, null pour une enveloppe et les non catégorisés.
+type OverspendDecisionInfo = { groupId: number; lineId: number | null; month: string; decision: "exceptional" | "permanent" };
 
 // Groupes du compte, pour le menu de (ré)assignation sur chaque transaction et la
 // gestion d'un groupe (Task 6 : kind + lignes complètes pour alimenter le side panel).
@@ -358,7 +361,7 @@ function plannedSoldeCell(
 // detailRow : ligne de groupe (transactions/postes) permettant de construire le
 // détail cliquable des cellules. Absente pour les sous-lignes (postes d'un
 // récurrent) : ces cellules restent non cliquables (hors périmètre, cf. ci-dessous).
-function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, subtitleOf, detailRow, months, currentMonth, rowKey, selCellKey, prevDisp, incomeKind, accountId, decisionByKey, budgetsForOverspend }: {
+function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, subtitleOf, detailRow, months, currentMonth, rowKey, selCellKey, prevDisp, incomeKind, accountId, decisionByKey, budgetsForOverspend, budgetEditOf, overspendTarget, signalePending }: {
   cells: MonthCell[];
   mode: "out" | "in" | "total";
   solde?: (number | null)[];
@@ -391,6 +394,18 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
   // Budgets par groupe ET par mois (clé budgetKey) : le formulaire « Permanent »
   // d'un dépassement se pré-remplit au mois DE CE dépassement, pas au mois courant.
   budgetsForOverspend?: Record<string, number>;
+  // Ce que la case « Budget dép. » de cette ligne laisse modifier, au mois donné, ou
+  // null si rien (mois clos, groupe récurrent dont le budget est une somme). Calculé
+  // par l'appelant, seul à savoir s'il rend une enveloppe, un récurrent ou une de ses
+  // lignes — voir budgetEditOfGroup / budgetEditOfLine.
+  budgetEditOf?: (month: string) => BudgetEditInfo | null;
+  // Ce que la Balance de cette ligne permet de trancher : le groupe (enveloppe) ou une
+  // ligne de récurrent. Absent = rien à trancher ici (groupe récurrent, sous-total).
+  overspendTarget?: { groupId: number; lineId: number | null };
+  // Reste-t-il, ce mois-là, quelque chose à trancher CHEZ cette ligne de groupe ? Vrai
+  // pour un récurrent dont une ligne attend une décision : sa case n'est pas décidable,
+  // mais elle garde l'étiquette « à trancher » — replié, rien d'autre ne le dirait.
+  signalePending?: (month: string) => boolean;
 }) {
   // Mois où le budget de cette ligne change par rapport au mois précédent, pour
   // poser un repère discret sur la case correspondante (cf. budgetChangePoints).
@@ -443,23 +458,35 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
                 { subtitle, result: c.balance },
               )
             : null;
-        // Bloc de décision : uniquement sur une Balance en dépassement d'un mois
-        // passé ou courant (les mois futurs n'ont rien de réel à trancher).
-        const isOverspendDecision = mode === "out" && month <= currentMonth && c.balance < -0.005 && !!r && !!accountId;
-        if (resteDetail && isOverspendDecision && r && accountId) {
+        // Bloc de décision : uniquement sur une Balance en dépassement d'un mois passé
+        // ou courant (les mois futurs n'ont rien de réel à trancher), et seulement sur
+        // une case qui porte un budget à elle — d'où overspendTarget, fourni par
+        // l'appelant. La case d'un GROUPE récurrent n'en reçoit pas : son budget est la
+        // somme de ses lignes, il n'y a rien à y écrire, ce sont ses lignes qui se
+        // tranchent chacune de leur côté.
+        const isOverspendDecision =
+          mode === "out" && month <= currentMonth && c.balance < -0.005 && !!r && !!accountId && !!overspendTarget;
+        // Décision déjà prise sur CETTE case, lue une seule fois : elle sert au bloc du
+        // side panel et à l'étiquette posée sous le montant. Deux lectures, c'étaient
+        // deux occasions de composer la clé à la main — et c'est exactement ce qui est
+        // arrivé : l'étiquette a continué de chercher une clé sans ligne après que la
+        // ligne y est entrée, et n'a plus jamais rien trouvé.
+        const decisionPrise = overspendTarget
+          ? decisionByKey?.get(decisionKey(overspendTarget.groupId, overspendTarget.lineId, month))
+          : undefined;
+        if (resteDetail && isOverspendDecision && r && accountId && overspendTarget) {
+          const { groupId, lineId } = overspendTarget;
           resteDetail.overspendAction = {
             accountId,
-            groupId: r.id,
+            groupId,
             groupName: r.name,
             groupKind: r.kind,
+            lineId,
             month,
             amount: -c.balance,
-            decision: decisionByKey?.get(`${r.id}::${month}`) ?? null,
-            currentBudget: budgetsForOverspend?.[budgetKey(r.id, month)] ?? null,
-            // Lignes de ce récurrent qui ont dépassé au mois de la case cliquée (vide
-            // pour une enveloppe, dont subRows est toujours vide) — voir
-            // overspentLinesOf dans src/lib/history-detail.ts.
-            overspentLines: overspentLinesOf(r, i),
+            decision: decisionPrise ?? null,
+            closed: isMonthClosed(month, currentMonth),
+            currentBudget: lineId !== null ? c.budgeted : (budgetsForOverspend?.[budgetKey(groupId, month)] ?? null),
           };
         }
 
@@ -493,6 +520,13 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
           budgetRemVal != null && r
             ? makeDetail("Budget rémunération", [{ label: r.name, amount: budgetRemVal, ref: ck("revenus") }], { subtitle, result: budgetRemVal })
             : null;
+        // Une rémunération est une enveloppe comme une autre, en entrée : son montant
+        // est daté et se modifie donc, lui aussi, dans SA case — celle-ci, puisqu'une
+        // ligne d'entrée n'a pas de case « Budget dép. ». Sans ça, retirer le montant du
+        // panneau du crayon aurait supprimé tout moyen de fixer un revenu.
+        if (budgetRemDetail && !dead) {
+          budgetRemDetail.budgetEdit = budgetEditOf?.(month) ?? undefined;
+        }
 
         // Budget dépense (ce qui sort) : budget d'enveloppe / récurrent ; — pour une
         // entrée. Postes du récurrent si présents, sinon un nœud unique (enveloppe).
@@ -501,6 +535,12 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
           budgetDepVal != null && r
             ? makeDetail("Budget dépense", budgetNodes(r, i) ?? [{ label: r.name, amount: c.budgeted, ref: ck("budget") }], { subtitle, result: c.budgeted })
             : null;
+        // Bloc d'édition du montant sous la décomposition : c'est ici, au mois de la
+        // colonne, que le budget se modifie. Sur un mois mort (la ligne n'existe pas
+        // encore ou plus) il n'y a rien à fixer : la case est vide, pas à 0.
+        if (budgetDepDetail && !dead) {
+          budgetDepDetail.budgetEdit = budgetEditOf?.(month) ?? undefined;
+        }
 
         // Mouvement prévu du mois de cette ligne = revenus projeté − budget (même
         // net que la chaîne « solde prévu »).
@@ -604,9 +644,9 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
                     {/* Conteneur flex : il force le retour à la ligne sous le montant et,
                         parce qu'il ouvre un contexte de formatage indépendant, il empêche
                         le soulignement de survol de la case de déborder sur l'étiquette. */}
-                    {isOverspendDecision && (
+                    {(isOverspendDecision || signalePending?.(month)) && (
                       <span className="mt-0.5 flex justify-end">
-                        <OverspendTag decision={decisionByKey?.get(`${r!.id}::${month}`)} />
+                        <OverspendTag decision={decisionPrise} />
                       </span>
                     )}
                   </>
@@ -748,19 +788,22 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
         // dépassement, sur un mois passé ou courant. Pas d'option « permanent »
         // pour ce groupe (les non catégorisés n'ont pas de budget).
         const isOverspendDecision = isUncat && !uncatIn && resteVal < -0.005 && month <= currentMonth && !!accountId;
+        // Même lecture unique que dans AmountCells, et pour la même raison.
+        const decisionPrise = decisionByKey?.get(decisionKey(0, null, month));
         if (isOverspendDecision && accountId) {
           resteDetail.overspendAction = {
             accountId,
             groupId: 0,
             groupName: "Non catégorisés",
             groupKind: "envelope",
+            // Les non catégorisés n'ont pas de lignes : leur provision se tranche
+            // au niveau de la section, comme une enveloppe.
+            lineId: null,
             month,
             amount: -resteVal,
-            decision: decisionByKey?.get(`0::${month}`) ?? null,
+            decision: decisionPrise ?? null,
+            closed: isMonthClosed(month, currentMonth),
             currentBudget: budgetsForOverspend?.[budgetKey(0, month)] ?? null,
-            // Les non catégorisés n'ont pas de lignes (pas de récurrent) : jamais de
-            // dépassement à ventiler.
-            overspentLines: [],
           };
         }
 
@@ -868,7 +911,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
                 {fmt(resteVal)}
                 {isOverspendDecision && (
                   <span className="mt-0.5 flex justify-end">
-                    <OverspendTag decision={decisionByKey?.get(`0::${month}`)} />
+                    <OverspendTag decision={decisionPrise} />
                   </span>
                 )}
               </CellAmount>
@@ -1346,17 +1389,31 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
   // Décision déjà prise, indexée par « groupId::mois » : sert à attacher
   // overspendAction sur les Balances rouges (cf. AmountCells / SectionTotalsCells).
   const decisionByKey = useMemo(
-    () => new Map((decisions ?? []).map((d) => [`${d.groupId}::${d.month}`, d.decision])),
+    () => new Map((decisions ?? []).map((d) => [decisionKey(d.groupId, d.lineId ?? null, d.month), d.decision])),
     [decisions],
   );
-  // Toutes les lignes de groupe du tableau, indexées par id : sert à retrouver la
-  // ligne d'un dépassement affiché via une pastille (bandeau / en-tête de mois),
-  // pour lui associer ses lignes en dépassement (overspentLinesOfPending, dans
-  // src/lib/history-detail.ts — même logique que le bandeau en tête de page).
-  const rowsById = useMemo(() => new Map(sections.flatMap((s) => s.rows).map((r) => [r.id, r])), [sections]);
-  const overspentLinesOfPendingItem = (item: PendingOverspend) => overspentLinesOfPending(item, rowsById, months);
-  // Un dépassement non tranché par groupe (le plus récent, mois courant inclus),
-  // pour la pastille : chaque élément qui dépasse et attend une décision est marqué.
+  // Le dépassement à trancher d'une LIGNE, pour sa pastille : la décision se prend là.
+  const pendingByLine = useMemo(() => {
+    const m = new Map<number, PendingOverspend>();
+    for (const p of pending ?? []) if (p.lineId !== null && !m.has(p.lineId)) m.set(p.lineId, p);
+    return m;
+  }, [pending]);
+  // Pastille d'une ligne de GROUPE. Pour une enveloppe, c'est son propre dépassement,
+  // qui se tranche sur place. Pour un récurrent, il n'y a rien à trancher au niveau du
+  // groupe : la pastille n'est qu'un signal — « il y a à faire là-dedans » — et le clic
+  // ouvre la première ligne concernée, puisque c'est elle qui porte la décision. Sans
+  // ce signal, un groupe replié ne montrerait rien.
+  // Budget en vigueur de ce qui déborde, pour pré-remplir « Permanent ». Pour une ligne,
+  // il se lit dans sa propre case du mois : budgetsForOverspend ne connaît que les
+  // groupes, il proposerait 0 pour une ligne et donc un montant faux.
+  const budgetOfPending = (p: PendingOverspend, idx: number): number | null => {
+    if (p.lineId === null) return budgetsForOverspend?.[budgetKey(p.groupId, p.month)] ?? null;
+    if (idx === -1) return null;
+    const row = sections.flatMap((sec) => sec.rows).find((r) => r.id === p.groupId);
+    return row?.subRows.find((sr) => sr.id === p.lineId)?.cells[idx]?.budgeted ?? null;
+  };
+  // Groupes qui ont encore quelque chose à trancher, par mois (clé « groupe::mois »).
+  const groupePending = useMemo(() => groupsWithPending(pendingByMonth ?? {}), [pendingByMonth]);
   const pendingByGroup = useMemo(() => {
     const m = new Map<number, PendingOverspend>();
     for (const p of pending ?? []) if (!m.has(p.groupId)) m.set(p.groupId, p);
@@ -1470,9 +1527,11 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
     // teinté pour le distinguer du bloc entrant (Rémunérations) au-dessus — cf. OUT_TINT.
     const outTint = !topLevel && r.direction === "out";
     // Détail « gestion du groupe » ouvert par l'icône au survol. Le mois visé est le
-    // mois courant s'il est affiché, sinon le premier mois de la frise (jamais dans
-    // le passé pour un montant appliqué « à partir de ce mois »). Nature et lignes
-    // viennent du SelectGroup enrichi (pas de requête supplémentaire).
+    // mois courant s'il est affiché, sinon le premier mois de la frise (jamais dans le
+    // passé : c'est le mois où prendra effet le montant de départ d'une ligne ajoutée,
+    // et le passé est verrouillé). Nature et lignes viennent du SelectGroup enrichi
+    // (pas de requête supplémentaire), réduites à ce qui ne dépend pas du mois : les
+    // montants ne se modifient plus ici mais dans leur case (cf. BudgetEditBlock).
     const sg = groups.find((g) => g.id === r.id);
     const manageMonth = months.includes(currentMonth) ? currentMonth : months[0] >= currentMonth ? months[0] : currentMonth;
     const manageDetail: CellDetail = {
@@ -1484,14 +1543,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
         name: r.name,
         kind: sg?.kind ?? "envelope",
         month: manageMonth,
-        // Le montant du mois visé, pas celui du mois courant : manageMonth peut
-        // être le premier mois de la frise quand le mois courant n'est pas affiché.
-        currentAmount:
-          sg?.kind === "recurring"
-            ? (sg?.lines ?? []).reduce((s, l) => s + amountAtMonth(l.changes, manageMonth), 0)
-            : amountAtMonth(sg?.changes ?? [], manageMonth),
-        changes: sg?.changes ?? [],
-        lines: sg?.lines ?? [],
+        lines: (sg?.lines ?? []).map((l) => ({ id: l.id, name: l.name, day: l.day })),
       },
     };
     return (
@@ -1512,7 +1564,10 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                   e.stopPropagation();
                   const p = pendingByGroup.get(r.id)!;
                   const idx = months.indexOf(p.month);
-                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null, budgetsForOverspend?.[budgetKey(r.id, p.month)] ?? null, overspentLinesOfPendingItem(p)));
+                  // La décision d'un récurrent se prend sur une de ses lignes : on
+                  // déplie le groupe, sinon le panneau viserait une case invisible.
+                  if (p.lineId !== null && !gOpen) toggle(gKey);
+                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null, budgetOfPending(p, idx)));
                 }}
                 className="ml-1 inline-block size-2 shrink-0 rounded-full bg-amber-500"
               />
@@ -1548,6 +1603,9 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
             accountId={accountId}
             decisionByKey={decisionByKey}
             budgetsForOverspend={budgetsForOverspend}
+            budgetEditOf={(m) => budgetEditOfGroup(sg, m, currentMonth)}
+            overspendTarget={sg?.kind === "recurring" ? undefined : { groupId: r.id, lineId: null }}
+            signalePending={(m) => groupePending.has(`${r.id}::${m}`)}
           />
         </TableRow>
         {gOpen && (
@@ -1574,11 +1632,50 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                 subRows: [],
                 txns: sub.txns,
               };
+              const sgLine = sg?.lines.find((l) => l.id === sub.id);
               return (
                 <Fragment key={sub.id}>
-                  <TableRow className={cn("text-sm", subHasTxns && "hover:bg-muted/50")}>
+                  <TableRow className={cn("group text-sm", subHasTxns && "hover:bg-muted/50")}>
                     <NameCell indent={1} expandable={subHasTxns} expanded={lOpen} onToggle={subHasTxns ? () => toggle(lKey) : undefined}>
                       <span className="min-w-0 truncate">{sub.name}</span>
+                      {/* Dépassement à trancher DE CETTE LIGNE : c'est elle qui porte un
+                          budget, donc elle qui déborde et qui se tranche. */}
+                      {pendingByLine.has(sub.id) && (
+                        <button
+                          type="button"
+                          aria-label="Dépassement à traiter"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const p = pendingByLine.get(sub.id)!;
+                            const idx = months.indexOf(p.month);
+                            onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null, budgetOfPending(p, idx)));
+                          }}
+                          className="ml-1 inline-block size-2 shrink-0 rounded-full bg-amber-500"
+                        />
+                      )}
+                      {/* Gérer la ligne : même crayon discret que sur la ligne de
+                          groupe, révélé au survol. Une ligne est un poste à part
+                          entière (Sosh Internet n'est pas Sosh Mobile) : on la renomme
+                          là où on la voit, pas en la cherchant dans une liste. Le jour
+                          suit le nom ; son montant, daté, se fixe dans sa case. */}
+                      <button
+                        type="button"
+                        aria-label="Gérer la ligne"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSelect({
+                            title: sub.name,
+                            nodes: [],
+                            result: 0,
+                            // Le jour vient du SelectGroup : une HistorySubRow ne porte
+                            // que des chiffres par mois, pas les propriétés de la ligne.
+                            lineManage: { lineId: sub.id, name: sub.name, day: sgLine?.day ?? 1 },
+                          });
+                        }}
+                        className="text-muted-foreground hover:text-foreground ml-1 shrink-0 opacity-0 group-hover:opacity-100"
+                      >
+                        <Pencil className="size-3.5" />
+                      </button>
                     </NameCell>
                     {/* Sous-ligne (poste d'un récurrent) : cellules désormais cliquables
                         (détail dérivé du poste). Les cases Solde restent vides. */}
@@ -1593,6 +1690,10 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                       rowKey={subRow(sub.id)}
                       selCellKey={selCellKey}
                       incomeKind={r.incomeKind}
+                      budgetEditOf={(m) => budgetEditOfLine(sgLine, m, currentMonth)}
+                      accountId={accountId}
+                      decisionByKey={decisionByKey}
+                      overspendTarget={{ groupId: r.id, lineId: sub.id }}
                     />
                   </TableRow>
                   {lOpen && sub.txns.map((t) => (
@@ -1679,7 +1780,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                   e.stopPropagation();
                   const p = pendingByGroup.get(0)!;
                   const idx = months.indexOf(p.month);
-                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null, budgetsForOverspend?.[budgetKey(0, p.month)] ?? null, overspentLinesOfPendingItem(p)));
+                  onSelect(overspendDecisionDetail(p, accountId, idx === -1 ? null : idx, null, budgetsForOverspend?.[budgetKey(0, p.month)] ?? null));
                 }}
                 className="ml-1 inline-block size-2 shrink-0 rounded-full bg-amber-500"
               />
@@ -1855,7 +1956,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                       <button
                         key={`${it.groupId}-${it.month}`}
                         type="button"
-                        onClick={() => onSelect(overspendDecisionDetail(it, accountId, months.indexOf(it.month) === -1 ? null : months.indexOf(it.month), null, budgetsForOverspend?.[budgetKey(it.groupId, it.month)] ?? null, overspentLinesOfPendingItem(it)))}
+                        onClick={() => onSelect(overspendDecisionDetail(it, accountId, months.indexOf(it.month) === -1 ? null : months.indexOf(it.month), null, budgetOfPending(it, months.indexOf(it.month))))}
                         className="rounded border border-amber-300 bg-amber-50 px-1 text-amber-800 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950 dark:text-amber-200"
                       >
                         {it.name} ({NUM.format(it.amount)} €)

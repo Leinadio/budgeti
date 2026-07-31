@@ -43,23 +43,54 @@ export type DetailNode = { label: string; amount: number; children?: DetailNode[
 // uncatProvision : présent quand le détail vient de la case « Budget dép. » des non
 // catégorisés. Pilote le bloc d'édition de la provision (montant daté du groupe 0,
 // voir UncatProvisionBlock) au lieu d'un calcul.
-export type CellDetail = { title: string; subtitle?: string; nodes: DetailNode[]; result: number; note?: string; cellRef?: string; description?: string[]; overspendAction?: OverspendActionInfo; groupManage?: GroupManageInfo; uncatProvision?: UncatProvisionInfo };
+export type CellDetail = { title: string; subtitle?: string; nodes: DetailNode[]; result: number; note?: string; cellRef?: string; description?: string[]; overspendAction?: OverspendActionInfo; groupManage?: GroupManageInfo; lineManage?: LineManageInfo; uncatProvision?: UncatProvisionInfo; budgetEdit?: BudgetEditInfo };
 
 // Info nécessaire à la vue de gestion d'un groupe dans le side panel : quel groupe,
-// son nom, sa nature (enveloppe = un montant unique / récurrent = des lignes), le
-// mois sélectionné (pour le montant daté), le budget en vigueur ce mois-là (pré-
-// remplissage), la vie du budget (ce qui s'applique et depuis quand) et, pour un
-// récurrent, ses lignes.
+// son nom, sa nature (une enveloppe n'a pas de lignes, un récurrent si), le mois où le
+// panneau se place (pour poser le montant de départ d'une ligne qu'on ajoute) et, pour
+// un récurrent, ses lignes réduites à ce qui vaut pour tous les mois : nom et jour.
+// Aucun montant existant : un montant est daté, ce panneau n'affiche aucun mois, il ne
+// pourrait donc en montrer qu'un, vrai pour un seul mois — voir BudgetEditInfo.
 export type GroupManageInfo = {
   groupId: number;
   name: string;
   kind: "envelope" | "recurring";
-  month: string;          // mois affiché sélectionné (pour le montant daté)
-  currentAmount: number;  // budget en vigueur ce mois (pré-remplissage)
-  changes: BudgetChange[]; // vie du budget ; le panneau ne l'affiche que pour une
-                            // enveloppe, mais le champ n'est pas garanti vide pour
-                            // un récurrent (calculé sans regarder `kind`, voir page.tsx)
-  lines: { id: number; name: string; amount: number; day: number; changes: BudgetChange[] }[];
+  month: string; // mois où le panneau se place (montant de départ d'une ligne ajoutée)
+  lines: { id: number; name: string; day: number }[];
+};
+
+// Info nécessaire à la vue de gestion d'une ligne de récurrent, ouverte par le crayon
+// au survol de la ligne. Une ligne a son propre crayon parce qu'elle est un poste à
+// part entière : Sosh Internet n'est pas Sosh Mobile, et les renommer depuis le
+// panneau du groupe obligeait à chercher la bonne parmi toutes les autres.
+// Nom et jour seulement : ce sont ses deux propriétés qui valent pour tous les mois.
+// Son montant est daté et se fixe depuis sa case du tableau (voir BudgetEditInfo) —
+// même règle que pour une enveloppe, et pour la même raison.
+export type LineManageInfo = {
+  lineId: number;
+  name: string;
+  day: number;
+};
+
+// Info nécessaire au bloc d'édition d'un budget ouvert depuis sa case « Budget dép. ».
+// C'est le seul endroit où un montant se modifie, parce que c'est le seul où le mois
+// est sous les yeux : un budget n'est pas un nombre mais une suite de montants datés,
+// et « le montant du groupe » tout court ne veut rien dire. Le panneau de gestion du
+// groupe, qui ne montre aucun mois, n'en affiche donc plus aucun.
+// `target` dit ce qu'on écrit : le montant d'une enveloppe, ou celui d'une ligne de
+// récurrent (un récurrent n'a pas de montant à lui, sa case n'est pas modifiable).
+export type BudgetEditInfo = {
+  target: "group" | "line";
+  id: number;              // identifiant de groupe ou de ligne selon `target`
+  name: string;
+  month: string;           // mois de la case cliquée : celui où le montant prendra effet
+  amount: number;          // montant en vigueur ce mois-là (pré-remplissage)
+  changes: BudgetChange[]; // la frise entière, affichée sous le champ
+  // Mois courant, pour que le bloc sache lesquelles des entrées de la frise portent
+  // encore une corbeille (removableChangeMonths). Transmis plutôt que précalculé :
+  // le bloc reçoit une frise à jour après chaque application et doit la rejuger,
+  // sinon une entrée tout juste posée n'aurait pas de corbeille jusqu'au prochain clic.
+  currentMonth: string;
 };
 
 // Info nécessaire au bloc d'édition de la provision des non catégorisés (case
@@ -76,24 +107,43 @@ export type OverspendActionInfo = {
   accountId: string;
   groupId: number; // 0 = non catégorisés
   groupName: string;
-  // Nature du groupe : une enveloppe (et les non catégorisés, toujours "envelope")
-  // ont un montant à eux ; un récurrent n'en a pas (son budget est la somme de ses
-  // lignes). Pilote le formulaire « Permanent » affiché (un seul montant, ou une
-  // ligne par poste en dépassement — voir overspentLines).
+  // Nature de ce qui déborde. Sert au libellé du formulaire (« Nouvelle provision »
+  // pour les non catégorisés, « Budget » ailleurs) : le formulaire lui-même est le
+  // même partout, un seul montant, puisqu'on tranche toujours quelque chose qui porte
+  // un budget à soi.
   groupKind: "envelope" | "recurring";
+  // Ligne de récurrent qui déborde, null pour une enveloppe et pour les non
+  // catégorisés. C'est ce qui porte un budget qui se tranche : un récurrent n'en a pas
+  // (son budget est la somme de ses lignes), son groupe n'est donc jamais décidable.
+  lineId: number | null;
   month: string; // YYYY-MM
   amount: number; // dépassement, positif
   decision: "exceptional" | "permanent" | null; // null = non tranché
   currentBudget: number | null; // budget/provision actuel, pour pré-remplir « permanent »
-  // Lignes d'un récurrent qui ont dépassé ce mois-là, avec leur budget et leur
-  // dépense réelle. [] pour une enveloppe et pour les non catégorisés (jamais de
-  // lignes, donc jamais d'inconnue). null pour un récurrent dont le mois du
-  // dépassement n'est pas dans la fenêtre de mois actuellement affichée : les
-  // données de ce mois ne sont alors pas disponibles côté client pour distinguer
-  // « aucune ligne n'a dépassé » de « on ne sait pas » — à ne jamais confondre
-  // avec [], qui affirme un fait.
-  overspentLines: { lineId: number; name: string; budget: number; spent: number }[] | null;
+  // Le mois du dépassement est-il clos ? Un mois révolu ne se tranche plus et ne se
+  // dételle plus : le bloc n'affiche alors que ce qui s'applique (closedOverspendText
+  // ci-dessous), sans bouton. Absent vaut « ouvert » : les items qui viennent de
+  // computeOverspends sont par construction du mois courant, jamais clos.
+  closed?: boolean;
 };
+
+// Ce que dit le bloc de décision quand le mois du dépassement est clos : il n'y a
+// plus rien à trancher ni à défaire, seulement à rappeler ce qui s'applique et
+// pourquoi c'est définitif. Reçoit le montant et le mois déjà mis en français par
+// l'appelant (formatage des euros, élision, casse) : cette fonction porte la phrase,
+// pas la mise en forme.
+export function closedOverspendText(
+  decision: "exceptional" | "permanent" | null,
+  amountLabel: string,
+  monthPhrase: string,
+): string {
+  const entete = `Dépassement de ${amountLabel} en ${monthPhrase}`;
+  if (decision === null) {
+    return `${entete}. Ce mois est terminé : il compte comme exceptionnel, et son budget ne se modifie plus.`;
+  }
+  const tranche = decision === "permanent" ? "permanent" : "exceptionnel";
+  return `${entete}, tranché ${tranche}. Ce mois est terminé, cette décision ne se modifie plus.`;
+}
 
 export function sumOf(nodes: DetailNode[]): number {
   return nodes.reduce((s, n) => s + n.amount, 0);

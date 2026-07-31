@@ -58,7 +58,9 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
   const groupsOfAccount = (accountId: string) =>
     groups
       .filter((g) => g.accountId === accountId)
-      .map((g) => ({ id: g.id, name: g.name, lines: g.lines }));
+      // kind : le sélecteur en a besoin pour ne pas proposer un récurrent comme
+      // destination (seules ses lignes le sont).
+      .map((g) => ({ id: g.id, name: g.name, kind: g.kind, lines: g.lines }));
   const lineName = (id: number) => {
     for (const g of groups) {
       const l = g.lines.find((x) => x.id === id);

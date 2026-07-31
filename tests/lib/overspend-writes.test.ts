@@ -1,42 +1,16 @@
 import { describe, it, expect } from "vitest";
 import {
-  overspentLines, envelopeWrites, lineWrites, undoWrites,
-  amountAt, canDecidePermanent, normalizeWrites,
+  envelopeWrites, undoWrites,
+  amountAt, normalizeWrites,
   type BudgetWrite,
 } from "../../src/lib/overspend-writes";
-
-describe("lignes en dépassement", () => {
-  const lignes = [
-    { id: 101, name: "Direct Assurance voiture" },
-    { id: 102, name: "Sosh Internet" },
-    { id: 105, name: "iCloud" },
-  ];
-  const budgets: Record<number, number> = { 101: 81.84, 102: 30.99, 105: 9.99 };
-  const depenses: Record<number, number> = { 101: 151.84, 102: 30.99, 105: 1.99 };
-
-  it("ne retient que les lignes qui ont dépassé", () => {
-    expect(overspentLines(lignes, (id) => budgets[id], (id) => depenses[id])).toEqual([
-      { lineId: 101, name: "Direct Assurance voiture", budget: 81.84, spent: 151.84 },
-    ]);
-  });
-
-  it("ignore un écart d'arrondi sous le centime", () => {
-    const b = { 101: 10 } as Record<number, number>;
-    const d = { 101: 10.004 } as Record<number, number>;
-    expect(overspentLines([{ id: 101, name: "X" }], (id) => b[id], (id) => d[id])).toEqual([]);
-  });
-
-  it("rend une liste vide quand la dépense vient du groupe et non d'une ligne", () => {
-    expect(overspentLines([], () => 0, () => 0)).toEqual([]);
-  });
-});
 
 describe("écritures d'une décision permanente", () => {
   // Le mois d'effet (mois du dépassement + 1) n'est déterminé qu'à un seul
   // endroit : decideOverspend (actions.ts), qui calcule `nextMonthKey(month)`
   // une fois et le passe ici tel quel — à la fois pour capturer `before` au bon
-  // mois et pour écrire la nouvelle valeur. envelopeWrites/lineWrites ne
-  // recalculent plus rien : elles reçoivent directement le mois d'effet déjà
+  // mois et pour écrire la nouvelle valeur. envelopeWrites ne recalcule
+  // rien : elle reçoit directement le mois d'effet déjà
   // déterminé et l'utilisent tel quel, sans lui appliquer nextMonthKey une
   // seconde fois. La preuve : un mois d'effet identique au mois qu'on leur donne
   // ressort inchangé (s'il y avait un second nextMonthKey caché ici, il
@@ -53,11 +27,6 @@ describe("écritures d'une décision permanente", () => {
     ]);
   });
 
-  it("relève chaque ligne choisie exactement au mois d'effet reçu, sans le recalculer", () => {
-    expect(lineWrites("2026-08", [{ lineId: 101, amount: 151.84, before: null }])).toEqual([
-      { target: "line", id: 101, month: "2026-08", amount: 151.84, before: null },
-    ]);
-  });
 });
 
 describe("annulation d'une décision permanente", () => {
@@ -99,68 +68,28 @@ describe("amountAt : montant exactement posé à un mois (pas « en vigueur »)"
     expect(amountAt([{ effectiveMonth: "2026-08", amount: 80 }], "2026-08")).toBe(80);
   });
 
+  // Une décision « permanent » écrit un montant DURABLE : le montant d'avant qu'elle
+  // capture doit donc être le montant durable de ce mois-là, jamais une exception qui y
+  // serait posée. Sinon annuler la décision restaurerait l'exception comme un montant
+  // permanent, et tous les mois suivants la reprendraient.
+  it("ignore une exception posée au même mois : ce n'est pas ce qu'une décision permanente écrase", () => {
+    const serie = [
+      { effectiveMonth: "2026-08", amount: 80 },
+      { effectiveMonth: "2026-08", amount: 500, scope: "once" as const },
+    ];
+    expect(amountAt(serie, "2026-08")).toBe(80);
+  });
+
+  it("rend null quand le mois ne porte qu'une exception", () => {
+    expect(amountAt([{ effectiveMonth: "2026-08", amount: 500, scope: "once" as const }], "2026-08")).toBeNull();
+  });
+
   it("choisit la bonne entrée parmi plusieurs, dont une antérieure", () => {
     const serie = [
       { effectiveMonth: "2026-01", amount: 50 },
       { effectiveMonth: "2026-08", amount: 80 },
     ];
     expect(amountAt(serie, "2026-08")).toBe(80);
-  });
-});
-
-describe("canDecidePermanent : refuse un récurrent sans ventilation par ligne", () => {
-  it("autorise une enveloppe, avec ou sans lignes fournies", () => {
-    expect(canDecidePermanent("envelope", undefined)).toBe(true);
-    expect(canDecidePermanent("envelope", [{ lineId: 101, amount: 50 }])).toBe(true);
-  });
-
-  it("refuse un récurrent sans ventilation par ligne", () => {
-    expect(canDecidePermanent("recurring", undefined)).toBe(false);
-  });
-
-  it("refuse un récurrent avec une ventilation vide", () => {
-    expect(canDecidePermanent("recurring", [])).toBe(false);
-  });
-
-  it("autorise un récurrent dès qu'une ventilation par ligne est fournie", () => {
-    expect(canDecidePermanent("recurring", [{ lineId: 101, amount: 50 }])).toBe(true);
-  });
-
-  // decideOverspend (actions.ts) filtre ensuite les montants non finis, négatifs ou
-  // nuls avant d'écrire (lineWrites ne retient que ceux-là). Si TOUS les montants
-  // envoyés sont invalides, le garde-fou doit refuser au même titre qu'une
-  // ventilation vide ou absente — sinon une décision « permanent » se retrouve
-  // enregistrée sans qu'aucun montant ait réellement bougé.
-  it("refuse un récurrent dont tous les montants fournis sont invalides (non finis, négatifs ou nuls)", () => {
-    expect(canDecidePermanent("recurring", [{ lineId: 101, amount: NaN }])).toBe(false);
-    expect(canDecidePermanent("recurring", [{ lineId: 101, amount: -5 }])).toBe(false);
-    expect(canDecidePermanent("recurring", [{ lineId: 101, amount: 0 }])).toBe(false);
-    expect(
-      canDecidePermanent("recurring", [
-        { lineId: 101, amount: 0 },
-        { lineId: 102, amount: -1 },
-      ]),
-    ).toBe(false);
-  });
-
-  it("autorise un récurrent dès qu'au moins un montant fourni est valide, même si d'autres ne le sont pas", () => {
-    expect(
-      canDecidePermanent("recurring", [
-        { lineId: 101, amount: 0 },
-        { lineId: 102, amount: 50 },
-      ]),
-    ).toBe(true);
-  });
-
-  // decideOverspend aiguille sur `lineAmounts?.length` AVANT de regarder newBudget,
-  // quel que soit groupKind : un appel « envelope » avec un lineAmounts non vide
-  // mais entièrement invalide prendrait donc la branche lineWrites, écrirait une
-  // liste vide, et enregistrerait quand même la décision — la même faille que
-  // celle refermée ci-dessus pour un récurrent, sur l'autre branche.
-  it("refuse une enveloppe dont le lineAmounts fourni est entièrement invalide (même faille que sur un récurrent)", () => {
-    expect(canDecidePermanent("envelope", [{ lineId: 101, amount: 0 }])).toBe(false);
-    expect(canDecidePermanent("envelope", [{ lineId: 101, amount: -5 }])).toBe(false);
-    expect(canDecidePermanent("envelope", [{ lineId: 101, amount: NaN }])).toBe(false);
   });
 });
 

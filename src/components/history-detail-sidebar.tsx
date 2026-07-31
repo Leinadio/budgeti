@@ -3,8 +3,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { X, ChevronRight, ChevronDown, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { CellDetail, OverspendActionInfo, GroupManageInfo, UncatProvisionInfo } from "@/lib/history-explain";
-import { monthLabel, monthPhrase, deMonthPhrase, deMonthLabel } from "@/lib/transactions-view";
+import { closedOverspendText, type CellDetail, type OverspendActionInfo, type GroupManageInfo, type LineManageInfo, type UncatProvisionInfo, type BudgetEditInfo } from "@/lib/history-explain";
+import { monthLabel, monthPhrase, deMonthPhrase } from "@/lib/transactions-view";
 import { nextMonthKey } from "@/lib/history";
 import { formatEur } from "@/lib/money";
 import { detailKey } from "@/lib/history-detail";
@@ -16,12 +16,14 @@ import {
   renameGroupAction,
   deleteGroupAction,
   setGroupAmount,
-  removeGroupAmount,
   setUncatProvision,
   addGroupLine,
   editGroupLine,
   removeGroupLine,
-  removeLineAmount,
+  setGroupLineAmount,
+  spreadGroupAmount,
+  spreadGroupLineAmount,
+  spreadUncatProvision,
 } from "@/app/historique/actions";
 import { Sidebar, SidebarHeader, SidebarContent } from "@/components/ui/sidebar";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
@@ -99,46 +101,39 @@ function DetailRow({ row, selected, onToggle, onSelect }: {
   );
 }
 
-// Bloc de décision d'un dépassement : affiché sous le détail quand la case
-// cliquée est une Balance en dépassement. « Exceptionnel » enregistre en un clic ;
-// « Permanent » déplie un formulaire — un seul montant (budget ou provision) pour
-// une enveloppe ou les non catégorisés, un montant par ligne en dépassement pour
-// un récurrent (un récurrent n'a pas de budget à lui, voir action.overspentLines).
+// Bloc de décision d'un dépassement : affiché sous le détail quand la case cliquée est
+// une Balance en dépassement. « Exceptionnel » enregistre en un clic ; « Permanent »
+// déplie un champ, un seul montant.
+//
+// Un seul montant partout, désormais : on ne tranche plus que ce qui PORTE un budget —
+// une enveloppe, les non catégorisés, ou une ligne de récurrent. Le groupe d'un
+// récurrent n'en porte pas (son budget est la somme de ses lignes) et n'est donc jamais
+// décidable. C'est ce qui a fait disparaître l'ancien formulaire de ventilation, où il
+// fallait répartir à la main un dépassement de groupe entre ses lignes.
 function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
   const router = useRouter();
-  // Extrait pour que le null (« on ne sait pas ») se distingue proprement du
-  // vide (« aucune ligne n'a dépassé ») dans tout ce qui suit, sans répéter
-  // `action.overspentLines` à chaque branche.
-  const { overspentLines } = action;
   const [openForm, setOpenForm] = useState(false);
   const [value, setValue] = useState(() => String(Math.round(((action.currentBudget ?? 0) + action.amount) * 100) / 100));
-  // Montants saisis par ligne (formulaire « Permanent » d'un récurrent), indexés
-  // par lineId. Non renseigné = pré-rempli au montant réellement dépensé.
-  const [lineValues, setLineValues] = useState<Record<number, string>>({});
   const [busy, setBusy] = useState(false);
-  // Le serveur peut refuser une décision « permanent » (canDecidePermanent : aucun
-  // montant valide envoyé) : ce message ne s'affiche que dans ce cas, pour ne
-  // jamais laisser croire qu'une décision a été prise quand ce n'est pas vrai. Il
-  // ne doit pas non plus survivre à une correction : effacé dès que le formulaire
-  // se referme ou qu'un champ change.
+  // Le serveur peut refuser une décision (montant invalide, mois clos, groupe non
+  // décidable) : ce message ne s'affiche que dans ce cas, pour ne jamais laisser croire
+  // qu'une décision a été prise quand ce n'est pas vrai. Il ne doit pas non plus
+  // survivre à une correction : effacé dès que le formulaire se referme ou qu'un champ
+  // change.
   const [error, setError] = useState<string | null>(null);
   // Décision affichée : celle déjà en base à l'ouverture, mise à jour tout de suite
   // après un choix pour que la question disparaisse sans attendre un nouveau clic —
   // mais seulement si le serveur a réellement enregistré la décision (decide) :
   // sinon l'écran annoncerait une décision qui n'a pas eu lieu.
   const [decided, setDecided] = useState<"exceptional" | "permanent" | null>(action.decision);
-  const decide = async (
-    decision: "exceptional" | "permanent",
-    newBudget?: number,
-    lineAmounts?: { lineId: number; amount: number }[],
-  ) => {
+  const decide = async (decision: "exceptional" | "permanent", newBudget?: number) => {
     setBusy(true);
     setError(null);
-    const ok = await decideOverspend(action.accountId, action.groupId, action.month, decision, newBudget, lineAmounts);
+    const ok = await decideOverspend(action.accountId, action.groupId, action.lineId, action.month, decision, newBudget);
     setBusy(false);
     if (!ok) {
-      // Le serveur ne dit pas pourquoi il a refusé (mois mal formé, ou aucun
-      // montant valide) : on n'affirme que ce qui est toujours vrai.
+      // Le serveur ne dit pas pourquoi il a refusé : on n'affirme que ce qui est
+      // toujours vrai.
       setError("La décision n'a pas été enregistrée.");
       return;
     }
@@ -147,14 +142,25 @@ function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
     router.refresh();
   };
   // Annule le choix en base : le dépassement redevient « à trancher » et, si c'était
-  // « permanent », la hausse de budget/provision est retirée.
+  // « permanent », la hausse de budget est retirée.
   const undo = async () => {
     setBusy(true);
-    await undoOverspendDecision(action.accountId, action.groupId, action.month);
+    await undoOverspendDecision(action.accountId, action.groupId, action.lineId, action.month);
     setBusy(false);
     setDecided(null);
     router.refresh();
   };
+  // Mois clos : rien à trancher, rien à défaire. On ne montre que ce qui s'applique —
+  // la décision prise en son temps, ou l'exceptionnel d'office quand rien n'a été
+  // tranché. Le serveur refuse de toute façon les deux actions : ce n'est pas qu'un
+  // masquage.
+  if (action.closed) {
+    return (
+      <div className="mt-4 rounded-md border p-3 text-muted-foreground text-sm">
+        <p>{closedOverspendText(action.decision, fmtAbs(action.amount), monthPhrase(action.month))}</p>
+      </div>
+    );
+  }
   if (decided) {
     return (
       <div className="mt-4 rounded-md border p-3 text-sm">
@@ -194,107 +200,43 @@ function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
           Permanent
         </button>
       </div>
-      {/* On ne sait pas : le mois du dépassement n'est pas dans la période
-          affichée (une pastille peut viser un dépassement plus ancien que la
-          fenêtre par défaut). Pas de données ici pour proposer un montant par
-          ligne — plutôt que d'affirmer « aucune ligne n'a dépassé » sans le
-          savoir, on dit à l'utilisateur comment retrouver ce mois. */}
-      {openForm && overspentLines === null && (
-        <p className="text-muted-foreground mt-2 text-sm">
-          {monthLabel(action.month)} n&apos;est pas dans la période affichée : impossible
-          de proposer un montant par ligne. Élargis la période au-dessus du tableau pour
-          inclure ce mois, puis reviens choisir « Permanent ».
-        </p>
-      )}
-      {/* Récurrent dont aucune ligne n'a dépassé ce mois-là : la dépense est
-          rattachée au groupe, pas à une ligne précise — rien à ventiler ici, on
-          renvoie vers l'édition des lignes plutôt que d'inventer une répartition. */}
-      {openForm && overspentLines !== null && overspentLines.length === 0 && action.groupKind === "recurring" && (
-        <p className="text-muted-foreground mt-2 text-sm">
-          Aucune ligne n&apos;a dépassé en {monthPhrase(action.month)} : la dépense est
-          rattachée au groupe, pas à une ligne précise. Ajuste la ligne concernée depuis
-          « Gérer le groupe ».
-        </p>
-      )}
-      {/* Récurrent : un montant par ligne en dépassement, pré-rempli au montant
-          réellement dépensé, en vigueur à partir du mois qui suit le dépassement
-          (celui du dépassement, pas le mois courant — affiché en clair pour ne
-          pas laisser planer le doute). deMonthPhrase pose la préposition ET le
-          mois : « à partir » + deMonthPhrase, jamais « à partir de » + monthLabel
-          (sinon « de Août » — ni l'élision devant voyelle, ni la minuscule
-          attendue en milieu de phrase). */}
-      {openForm && overspentLines !== null && overspentLines.length > 0 && (
+      {/* Le budget en vigueur est affiché À CÔTÉ du montant proposé, et le mois d'effet
+          en clair au-dessus. Sans ça, le champ n'affichait qu'un nombre — le budget PLUS
+          le dépassement — qui ne correspondait à aucun montant existant : on croyait lire
+          le budget actuel et on lisait la proposition. */}
+      {openForm && (
         <div className="mt-2 flex flex-col gap-2">
           <p className="text-muted-foreground">
-            Nouveaux montants, à partir {deMonthPhrase(nextMonthKey(action.month))} :
+            Nouveau montant, à partir {deMonthPhrase(nextMonthKey(action.month))} :
           </p>
-          {overspentLines.map((l) => (
-            <div key={l.lineId} className="flex items-center justify-between gap-2">
-              <span className="min-w-0 truncate">{l.name}</span>
-              <span className="flex items-center gap-2">
-                <span className="text-muted-foreground tabular-nums">{formatEur(l.budget)} →</span>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={lineValues[l.lineId] ?? String(Math.round(l.spent * 100) / 100)}
-                  onChange={(e) => {
-                    setLineValues((v) => ({ ...v, [l.lineId]: e.target.value }));
-                    setError(null);
-                  }}
-                  className="w-24 rounded-md border px-2 py-1 text-right tabular-nums"
-                />
-              </span>
-            </div>
-          ))}
-          <Button
-            type="button"
-            size="sm"
-            disabled={
-              busy ||
-              !overspentLines.some((l) => parseFloat(lineValues[l.lineId] ?? String(Math.round(l.spent * 100) / 100)) > 0)
-            }
-            onClick={() =>
-              decide(
-                "permanent",
-                undefined,
-                overspentLines.map((l) => ({
-                  lineId: l.lineId,
-                  amount: parseFloat(lineValues[l.lineId] ?? String(Math.round(l.spent * 100) / 100)),
-                })),
-              )
-            }
-          >
-            Valider
-          </Button>
-        </div>
-      )}
-      {/* Enveloppe (ou non catégorisés) : un seul montant, comme avant. */}
-      {openForm && overspentLines !== null && overspentLines.length === 0 && action.groupKind !== "recurring" && (
-        <div className="mt-2 flex items-center gap-2">
-          <label className="text-muted-foreground" htmlFor="new-budget">
-            {action.groupId === 0 ? "Nouvelle provision" : "Nouveau budget"}
-          </label>
-          <input
-            id="new-budget"
-            type="number"
-            step="0.01"
-            min="0"
-            value={value}
-            onChange={(e) => {
-              setValue(e.target.value);
-              setError(null);
-            }}
-            className="w-24 rounded-md border px-2 py-1 text-right tabular-nums"
-          />
-          <button
-            type="button"
-            disabled={busy || !(parseFloat(value) > 0)}
-            onClick={() => decide("permanent", parseFloat(value))}
-            className="bg-primary text-primary-foreground rounded-md px-2 py-1"
-          >
-            Valider
-          </button>
+          <div className="flex items-center gap-2">
+            <label className="text-muted-foreground" htmlFor="new-budget">
+              {action.groupId === 0 ? "Provision" : "Budget"}
+            </label>
+            {action.currentBudget != null && (
+              <span className="text-muted-foreground tabular-nums">{formatEur(action.currentBudget)} →</span>
+            )}
+            <input
+              id="new-budget"
+              type="number"
+              step="0.01"
+              min="0"
+              value={value}
+              onChange={(e) => {
+                setValue(e.target.value);
+                setError(null);
+              }}
+              className="w-24 rounded-md border px-2 py-1 text-right tabular-nums"
+            />
+            <button
+              type="button"
+              disabled={busy || !(parseFloat(value) > 0)}
+              onClick={() => decide("permanent", parseFloat(value))}
+              className="bg-primary text-primary-foreground rounded-md px-2 py-1"
+            >
+              Valider
+            </button>
+          </div>
         </div>
       )}
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
@@ -302,132 +244,204 @@ function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
   );
 }
 
-// Vie d'un budget (enveloppe ou ligne) : ce qui s'applique et depuis quand. Le
-// montant de départ se modifie mais ne se supprime pas — sans lui, l'un ou
-// l'autre n'aurait plus de budget du tout, d'où l'absence de corbeille sur
-// cette entrée (voir aussi canRemoveBudgetChange, revérifié côté serveur).
-// Partagée entre le bloc « Vie du budget » d'une enveloppe et la liste sous
-// chaque ligne d'un récurrent : mêmes libellés, même motif de corbeille
-// conditionnelle, seule la taille du texte et de l'icône diffère entre les
-// deux contextes.
-function BudgetChangesList({ changes, busy, onRemoveChange, size = "sm" }: {
-  changes: BudgetChange[];
-  busy: boolean;
-  onRemoveChange: (month: string) => void;
-  size?: "sm" | "xs";
-}) {
-  if (changes.length === 0) return null;
+// Vue de gestion d'une ligne de récurrent, ouverte par le crayon au survol de la
+// ligne dans le tableau. Son nom et son jour, les deux seules propriétés qui valent
+// pour tous les mois, et sa suppression. Aucun montant : il est daté et se fixe depuis
+// la case « Budget dép. » de la ligne, au mois de la colonne — exactement comme pour
+// une enveloppe, et pour la même raison (voir BudgetEditBlock).
+function LineManageBlock({ info, onClose }: { info: LineManageInfo; onClose: () => void }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  const [name, setName] = useState(info.name);
+  const [day, setDay] = useState(String(info.day));
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    await fn();
+    setBusy(false);
+    router.refresh();
+  };
   return (
-    <ul className={cn("text-muted-foreground flex flex-col gap-1", size === "sm" ? "text-sm" : "text-xs")}>
-      {changes.map((c) => (
-        <li key={c.month} className="flex items-center justify-between gap-2">
-          {/* Le libellé ouvre l'élément (comme « Montant de départ » à côté) :
-              la majuscule de monthLabel y reste légitime, seule l'élision
-              manquait — d'où deMonthLabel (garde la casse) et non deMonthPhrase
-              (qui la mettrait en minuscule, hors de propos ici). */}
-          <span>{c.isStart ? "Montant de départ" : `À partir ${deMonthLabel(c.month)}`}</span>
-          <span className="flex items-center gap-2">
-            <span className="tabular-nums">{formatEur(c.amount)}</span>
-            {!c.isStart && (
-              <button
-                type="button"
-                disabled={busy}
-                // Même correctif que le libellé ci-dessus (deMonthLabel, pas
-                // deMonthPhrase) : ne change que l'élision manquante, pas la
-                // casse — les mois qui ne demandent pas l'élision gardent
-                // exactement le même texte qu'avant.
-                aria-label={`Supprimer le changement ${deMonthLabel(c.month)}`}
-                onClick={() => onRemoveChange(c.month)}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <Trash2 className={size === "sm" ? "size-3.5" : "size-3"} />
-              </button>
-            )}
-          </span>
-        </li>
-      ))}
-    </ul>
+    <>
+      <SidebarHeader className="gap-0 border-b p-4">
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <p className="text-muted-foreground text-sm">Gérer la ligne</p>
+            <h2 className="font-semibold">{info.name}</h2>
+          </div>
+          <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground shrink-0 rounded p-1" aria-label="Fermer">
+            <X className="size-4" />
+          </button>
+        </div>
+      </SidebarHeader>
+      <SidebarContent className="space-y-6 p-4">
+        <div className="flex flex-col gap-2">
+          <Label className="font-normal">Nom de la ligne</Label>
+          <Input value={name} onChange={(e) => setName(e.target.value)} className="h-9" />
+        </div>
+        <div className="flex flex-col gap-2">
+          <Label className="font-normal">Jour du mois</Label>
+          <div className="flex items-center gap-2">
+            <Input type="number" min="1" max="31" value={day} onChange={(e) => setDay(e.target.value)} className="h-9 w-20 text-right tabular-nums" />
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={busy || !name.trim() || (name.trim() === info.name && day === String(info.day))}
+              onClick={() => run(() => editGroupLine(info.lineId, name.trim(), parseInt(day, 10) || 1))}
+            >
+              Enregistrer
+            </Button>
+          </div>
+        </div>
+        <div className="border-t pt-4">
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button type="button" size="sm" variant="ghost" disabled={busy} className="text-red-600 hover:text-red-700">
+                <Trash2 className="size-4" />
+                Supprimer la ligne
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Supprimer cette ligne ?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  La ligne et tous ses montants seront supprimés du groupe.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Annuler</AlertDialogCancel>
+                <AlertDialogAction
+                  className="bg-red-600 text-white hover:bg-red-700"
+                  onClick={() =>
+                    run(async () => {
+                      await removeGroupLine(info.lineId);
+                      onClose();
+                    })
+                  }
+                >
+                  Supprimer
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        </div>
+      </SidebarContent>
+    </>
   );
 }
 
-// Une ligne d'un récurrent en édition : nom / montant du mois affiché / jour, plus
-// la vie de son montant. Le nom et le jour valent pour tous les mois ; le montant
-// est daté, avec la même portée que celle d'une enveloppe.
-function LineRow({ line, busy, onSave, onRemove, onRemoveChange }: {
-  line: { id: number; name: string; amount: number; day: number; changes: BudgetChange[] };
-  busy: boolean;
-  onSave: (name: string, day: number, amount: number, scope: "once" | "ongoing") => void;
-  onRemove: () => void;
-  onRemoveChange: (month: string) => void;
-}) {
-  const [name, setName] = useState(line.name);
-  const [amount, setAmount] = useState(String(line.amount));
-  const [day, setDay] = useState(String(line.day));
-  const [scope, setScope] = useState<"ongoing" | "once">("ongoing");
-  // line.amount vient de amountAtMonth(line.changes, mois) côté GroupManageBlock :
-  // il change quand ses changes sont resynchronisés après « Enregistrer » ou une
-  // suppression dans la Vie du budget, sans que ce composant soit remonté (même
-  // clé). Resynchronisation pendant le rendu (motif « ajuster un state depuis les
-  // props », react.dev/learn/you-might-not-need-an-effect), pas un useEffect :
-  // sans ça, le champ garderait la valeur affichée à l'ouverture du panneau —
-  // exactement le défaut relevé en relecture d'ensemble.
-  const [prevLineAmount, setPrevLineAmount] = useState(line.amount);
-  if (prevLineAmount !== line.amount) {
-    setPrevLineAmount(line.amount);
-    setAmount(String(line.amount));
+// Bloc d'édition d'un budget, affiché sous la décomposition de sa case « Budget dép. ».
+// C'est le seul endroit d'où un montant se modifie : la case dit le mois, et un montant
+// n'a de sens qu'attaché à un mois.
+//
+// On ne demande plus la portée AVANT de saisir. « Appliquer » vaut pour le seul mois
+// cliqué, puis la question tombe : les mois suivants doivent-ils prendre ce montant ?
+// Répondre après plutôt qu'avant, c'est répondre en voyant le montant qu'on vient de
+// poser, et non un choix abstrait à faire de tête au moment de la saisie.
+//
+// Ne s'affiche jamais sur un mois clos ni sur un groupe récurrent : budgetEditOfGroup /
+// budgetEditOfLine rendent alors null et la case n'a pas de bloc du tout.
+function BudgetEditBlock({ info }: { info: BudgetEditInfo }) {
+  const router = useRouter();
+  const [busy, setBusy] = useState(false);
+  // Montant en vigueur au mois cliqué, resynchronisé sur ce que le serveur vient
+  // réellement de poser : recalculer la sémantique des portées côté client
+  // dupliquerait la règle de lecture, avec le risque de diverger.
+  const [changes, setChanges] = useState(info.changes);
+  const enForce = amountAtMonth(changes, info.month);
+  const [amount, setAmount] = useState(String(enForce));
+  // Montant tout juste appliqué : tant qu'il est là, on pose la question de la
+  // propagation. null = rien à demander (rien appliqué, ou déjà répondu).
+  const [applique, setApplique] = useState<number | null>(null);
+  // Resynchronisation pendant le rendu, pas un useEffect (react.dev/learn/
+  // you-might-not-need-an-effect) : le champ doit suivre le montant en vigueur après
+  // un « Appliquer », sans que ce composant soit remonté.
+  const [prevEnForce, setPrevEnForce] = useState(enForce);
+  if (prevEnForce !== enForce) {
+    setPrevEnForce(enForce);
+    setAmount(String(enForce));
   }
+  const run = async (fn: () => Promise<BudgetChange[]>) => {
+    setBusy(true);
+    const next = await fn();
+    setBusy(false);
+    setChanges(next);
+    router.refresh();
+  };
+  const saisi = parseFloat(amount);
+  const apply = async () => {
+    await run(() =>
+      info.target === "group"
+        ? setGroupAmount(info.id, info.month, saisi, "once")
+        : setGroupLineAmount(info.id, info.month, saisi, "once"),
+    );
+    setApplique(saisi);
+  };
+  const propager = async () => {
+    await run(() =>
+      info.target === "group"
+        ? spreadGroupAmount(info.id, info.month, applique!)
+        : spreadGroupLineAmount(info.id, info.month, applique!),
+    );
+    setApplique(null);
+  };
   return (
-    <div className="flex flex-col gap-2 border-b pb-3 last:border-b-0">
-      <div className="flex items-end gap-2">
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <Label className="text-muted-foreground text-xs font-normal">Nom</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} className="h-8" />
+    <div className="mt-4 flex flex-col gap-4 border-t pt-4">
+      <div className="flex flex-col gap-2">
+        <Label className="font-normal">Montant pour {monthLabel(info.month)}</Label>
+        <div className="flex flex-wrap items-end gap-2">
+          <Input
+            type="number"
+            step="0.01"
+            min="0"
+            value={amount}
+            onChange={(e) => {
+              setAmount(e.target.value);
+              // Modifier le champ rouvre la saisie : la question porterait sinon sur un
+              // montant qui n'est plus celui affiché.
+              setApplique(null);
+            }}
+            className="h-9 w-28 text-right tabular-nums"
+          />
+          <Button type="button" size="sm" variant="secondary" disabled={busy || !(saisi >= 0)} onClick={apply}>
+            Appliquer
+          </Button>
         </div>
-        <div className="flex w-20 flex-col gap-1">
-          <Label className="text-muted-foreground text-xs font-normal">Montant</Label>
-          <Input type="number" step="0.01" min="0" value={amount} onChange={(e) => setAmount(e.target.value)} className="h-8 text-right tabular-nums" />
-        </div>
-        <div className="flex w-14 flex-col gap-1">
-          <Label className="text-muted-foreground text-xs font-normal">Jour</Label>
-          <Input type="number" min="1" max="31" value={day} onChange={(e) => setDay(e.target.value)} className="h-8 text-right tabular-nums" />
-        </div>
-        <Button type="button" size="icon-xs" variant="ghost" disabled={busy} aria-label="Supprimer la ligne" onClick={onRemove}>
-          <Trash2 className="text-muted-foreground size-4" />
-        </Button>
       </div>
-      <div className="flex flex-wrap items-center gap-2">
-        <select
-          value={scope}
-          onChange={(e) => setScope(e.target.value as "ongoing" | "once")}
-          className="h-8 rounded-md border bg-transparent px-2 text-sm"
-        >
-          <option value="ongoing">À partir de ce mois</option>
-          <option value="once">Ce mois seulement</option>
-        </select>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          disabled={busy || !name.trim()}
-          onClick={() => onSave(name.trim(), parseInt(day, 10) || 1, parseFloat(amount) || 0, scope)}
-        >
-          Enregistrer
-        </Button>
-      </div>
-      <BudgetChangesList changes={line.changes} busy={busy} onRemoveChange={onRemoveChange} size="xs" />
+      {applique !== null && (
+        <div className="flex flex-col gap-2 rounded-md border p-3 text-sm">
+          <p>
+            {formatEur(applique)} appliqué à {monthLabel(info.month)}. Les mois suivants
+            doivent-ils prendre ce montant ?
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {/* Le libellé dit la conséquence : répondre oui remplace les montants déjà
+                prévus après ce mois, il ne se contente pas de combler les vides. */}
+            <Button type="button" size="sm" disabled={busy} onClick={propager}>
+              Oui, remplacer tous les mois suivants
+            </Button>
+            <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => setApplique(null)}>
+              Non, {monthLabel(info.month).toLowerCase()} seulement
+            </Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 // Vue de gestion d'un groupe (ouverte depuis l'icône au survol d'une ligne de
-// groupe) : renommer, fixer le montant daté (enveloppe), gérer les lignes
-// (récurrent) et supprimer le groupe. Chaque action revalide côté serveur ; on
-// rafraîchit ensuite la vue pour refléter le changement.
+// groupe) : renommer le groupe, gérer les lignes d'un récurrent (nom, jour, ajout,
+// suppression) et supprimer le groupe. Aucun montant ici, volontairement : un montant
+// est daté, et ce panneau n'affiche aucun mois — il ne pourrait donc afficher qu'un
+// montant vrai pour un seul mois parmi d'autres, ce qui se lisait comme « le » montant
+// du groupe et contredisait ce que montrait le tableau. Les montants se fixent depuis
+// leur case « Budget dép. », au mois de la colonne (voir BudgetEditBlock).
+// Chaque action revalide côté serveur ; on rafraîchit ensuite la vue.
 function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: () => void }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState(info.name);
-  const [scope, setScope] = useState<"ongoing" | "once">("ongoing");
   const [newName, setNewName] = useState("");
   const [newAmount, setNewAmount] = useState("");
   const [newDay, setNewDay] = useState("1");
@@ -436,24 +450,6 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
   // jour. On la maintient ici pour que l'ajout / la suppression se reflètent tout de
   // suite (la vraie valeur sera rechargée à la prochaine ouverture du panneau).
   const [lines, setLines] = useState(info.lines);
-  // Vie du budget du groupe (enveloppe), même état local optimiste — mais
-  // resynchronisée avec la vraie donnée renvoyée par setGroupAmount /
-  // removeGroupAmount plutôt que recalculée ici : recalculer la sémantique
-  // once/ongoing côté client dupliquerait onceBudgetWrites, avec le risque de
-  // diverger de ce que le serveur vient réellement de poser (voir le rapport de
-  // relecture d'ensemble). C'est ce défaut, précisément, que « Vie du budget »
-  // rendait visible : sans ça, la corbeille et « Appliquer » n'affichaient jamais
-  // leur effet tant que le panneau restait ouvert.
-  const [changes, setChanges] = useState(info.changes);
-  const currentAmount = amountAtMonth(changes, info.month);
-  const [amount, setAmount] = useState(String(currentAmount));
-  // Resynchronisation pendant le rendu, pas un useEffect — même motif et même
-  // raison que LineRow ci-dessus.
-  const [prevCurrentAmount, setPrevCurrentAmount] = useState(currentAmount);
-  if (prevCurrentAmount !== currentAmount) {
-    setPrevCurrentAmount(currentAmount);
-    setAmount(String(currentAmount));
-  }
   const run = async <T,>(fn: () => Promise<T>): Promise<T> => {
     setBusy(true);
     const result = await fn();
@@ -461,8 +457,6 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
     router.refresh();
     return result;
   };
-  const updateLineChanges = (lineId: number, newChanges: BudgetChange[]) =>
-    setLines((cur) => cur.map((l) => (l.id === lineId ? { ...l, changes: newChanges } : l)));
   return (
     <>
       <SidebarHeader className="gap-0 border-b p-4">
@@ -494,81 +488,25 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
           </div>
         </div>
 
-        {/* Montant daté (enveloppe) */}
-        {info.kind === "envelope" && (
-          <div className="flex flex-col gap-2">
-            <Label className="font-normal">Montant pour {monthLabel(info.month)}</Label>
-            <div className="flex flex-wrap items-end gap-2">
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                value={amount}
-                onChange={(e) => setAmount(e.target.value)}
-                className="h-9 w-28 text-right tabular-nums"
-              />
-              <select
-                value={scope}
-                onChange={(e) => setScope(e.target.value as "ongoing" | "once")}
-                className="h-9 rounded-md border bg-transparent px-2 text-sm"
-              >
-                <option value="ongoing">À partir de ce mois</option>
-                <option value="once">Ce mois seulement</option>
-              </select>
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                disabled={busy || !(parseFloat(amount) >= 0)}
-                onClick={() => run(() => setGroupAmount(info.groupId, info.month, parseFloat(amount), scope)).then(setChanges)}
-              >
-                Appliquer
-              </Button>
-            </div>
-          </div>
-        )}
-
-        {/* Vie du budget : ce qui s'applique et depuis quand. */}
-        {info.kind === "envelope" && changes.length > 0 && (
-          <div className="flex flex-col gap-2">
-            <Label className="font-normal">Vie du budget</Label>
-            <BudgetChangesList
-              changes={changes}
-              busy={busy}
-              onRemoveChange={(m) => run(() => removeGroupAmount(info.groupId, m)).then(setChanges)}
-              size="sm"
-            />
-          </div>
-        )}
-
-        {/* Lignes (récurrent) */}
+        {/* Ajout d'une ligne (récurrent). Les lignes existantes ne se modifient plus
+            ici : chacune a son propre crayon dans le tableau, à côté de son nom, qui
+            ouvre son panneau (LineManageBlock). Les renommer d'ici obligeait à les
+            chercher toutes dans une liste, alors qu'on les a sous les yeux. */}
         {info.kind === "recurring" && (
           <div className="flex flex-col gap-3">
-            <Label className="font-normal">Lignes</Label>
+            <Label className="font-normal">Ajouter une ligne</Label>
             {lines.length === 0 && <p className="text-muted-foreground text-sm">Aucune ligne pour l&apos;instant.</p>}
-            {lines.map((l) => (
-              <LineRow
-                key={l.id}
-                line={{ ...l, amount: amountAtMonth(l.changes, info.month) }}
-                busy={busy}
-                onSave={(n, d, a, s) => run(() => editGroupLine(l.id, n, d, info.month, a, s)).then((nc) => updateLineChanges(l.id, nc))}
-                onRemoveChange={(m) => run(() => removeLineAmount(l.id, m)).then((nc) => updateLineChanges(l.id, nc))}
-                onRemove={() =>
-                  run(async () => {
-                    await removeGroupLine(l.id);
-                    setLines((cur) => cur.filter((x) => x.id !== l.id));
-                  })
-                }
-              />
-            ))}
-            {/* Ajout d'une ligne */}
             <div className="mt-1 flex items-end gap-2 border-t pt-3">
               <div className="flex min-w-0 flex-1 flex-col gap-1">
                 <Label className="text-muted-foreground text-xs font-normal">Nom</Label>
                 <Input value={newName} onChange={(e) => setNewName(e.target.value)} className="h-8" placeholder="Ex: Spotify" />
               </div>
+              {/* Montant de départ de la ligne, seul montant qui subsiste dans ce
+                  panneau : il ne montre rien d'existant, il en pose un. Il prend effet
+                  au mois où le panneau se place, et se modifie ensuite depuis la case
+                  de la ligne, mois par mois. */}
               <div className="flex w-20 flex-col gap-1">
-                <Label className="text-muted-foreground text-xs font-normal">Montant</Label>
+                <Label className="text-muted-foreground text-xs font-normal">Montant de départ</Label>
                 <Input type="number" step="0.01" min="0" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} className="h-8 text-right tabular-nums" placeholder="0.00" />
               </div>
               <div className="flex w-14 flex-col gap-1">
@@ -590,10 +528,7 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
                     // une suppression/édition immédiate (sans refermer le panneau)
                     // viserait un id fictif et laisserait une ligne fantôme en base.
                     if (id > 0) {
-                      setLines((cur) => [
-                        ...cur,
-                        { id, name: n, amount: a, day: d, changes: [{ month: info.month, amount: a, isStart: true }] },
-                      ]);
+                      setLines((cur) => [...cur, { id, name: n, day: d }]);
                     }
                     setNewName("");
                     setNewAmount("");
@@ -660,13 +595,17 @@ function UncatProvisionBlock({ info, onClose }: { info: UncatProvisionInfo; onCl
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [amount, setAmount] = useState(() => String(info.currentAmount));
-  const [scope, setScope] = useState<"ongoing" | "once">("ongoing");
+  // Montant tout juste appliqué : tant qu'il est là, on pose la question de la
+  // propagation. Même règle que pour un budget d'enveloppe (voir BudgetEditBlock) :
+  // on applique au mois cliqué, puis on demande pour les mois suivants.
+  const [applique, setApplique] = useState<number | null>(null);
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
     await fn();
     setBusy(false);
     router.refresh();
   };
+  const saisi = parseFloat(amount);
   return (
     <>
       <SidebarHeader className="gap-0 border-b p-4">
@@ -689,27 +628,49 @@ function UncatProvisionBlock({ info, onClose }: { info: UncatProvisionInfo; onCl
               step="0.01"
               min="0"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => {
+                setAmount(e.target.value);
+                setApplique(null);
+              }}
               className="h-9 w-28 text-right tabular-nums"
             />
-            <select
-              value={scope}
-              onChange={(e) => setScope(e.target.value as "ongoing" | "once")}
-              className="h-9 rounded-md border bg-transparent px-2 text-sm"
-            >
-              <option value="ongoing">À partir de ce mois</option>
-              <option value="once">Ce mois seulement</option>
-            </select>
             <Button
               type="button"
               size="sm"
               variant="secondary"
-              disabled={busy || !(parseFloat(amount) >= 0)}
-              onClick={() => run(() => setUncatProvision(info.month, parseFloat(amount), scope))}
+              disabled={busy || !(saisi >= 0)}
+              onClick={async () => {
+                await run(() => setUncatProvision(info.month, saisi, "once"));
+                setApplique(saisi);
+              }}
             >
               Appliquer
             </Button>
           </div>
+          {applique !== null && (
+            <div className="mt-2 flex flex-col gap-2 rounded-md border p-3 text-sm">
+              <p>
+                {formatEur(applique)} appliqué à {monthLabel(info.month)}. Les mois suivants
+                doivent-ils prendre ce montant ?
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  size="sm"
+                  disabled={busy}
+                  onClick={async () => {
+                    await run(() => spreadUncatProvision(info.month, applique));
+                    setApplique(null);
+                  }}
+                >
+                  Oui, remplacer tous les mois suivants
+                </Button>
+                <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => setApplique(null)}>
+                  Non, {monthLabel(info.month).toLowerCase()} seulement
+                </Button>
+              </div>
+            </div>
+          )}
         </div>
       </SidebarContent>
     </>
@@ -741,6 +702,10 @@ function DetailBody({ detail, onClose, selectedPanel, onSelectRow }: {
   // lieu d'un calcul.
   if (detail.groupManage) {
     return <GroupManageBlock info={detail.groupManage} onClose={onClose} />;
+  }
+  // Gestion d'une ligne de récurrent : nom, jour, suppression. Aucun montant.
+  if (detail.lineManage) {
+    return <LineManageBlock info={detail.lineManage} onClose={onClose} />;
   }
   // Édition de la provision des non catégorisés : formulaire (montant daté) au lieu
   // d'un calcul.
@@ -831,6 +796,9 @@ function DetailBody({ detail, onClose, selectedPanel, onSelectRow }: {
           </TableBody>
         </Table>
         {detail.overspendAction && <OverspendActionBlock action={detail.overspendAction} />}
+        {/* Édition du montant sous la décomposition de la case « Budget dép. » : la
+            décomposition reste visible, c'est elle qui dit d'où vient le chiffre. */}
+        {detail.budgetEdit && <BudgetEditBlock info={detail.budgetEdit} />}
         {detail.note && <p className="text-muted-foreground mt-3 text-xs">{detail.note}</p>}
       </SidebarContent>
     </>

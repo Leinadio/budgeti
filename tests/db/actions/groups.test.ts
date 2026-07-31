@@ -43,7 +43,7 @@ test("une rémunération créée a son montant lisible dès son mois de départ 
   expect(row).toBeDefined();
   expect(row.startMonth).toBe("2000-01");
   expect(row.endMonth).toBeNull();
-  expect(listBudgetAmounts(db).filter((b) => b.groupId === row.id)).toEqual([{ groupId: row.id, effectiveMonth: "2000-01", amount: 2500 }]);
+  expect(listBudgetAmounts(db).filter((b) => b.groupId === row.id)).toEqual([{ groupId: row.id, effectiveMonth: "2000-01", amount: 2500, scope: "ongoing" }]);
 });
 
 test("créer une rémunération déjà existante ne duplique rien", async () => {
@@ -52,5 +52,5 @@ test("créer une rémunération déjà existante ne duplique rien", async () => 
 
   const rows = listGroups(db).filter((g) => g.incomeKind === "principal");
   expect(rows).toHaveLength(1);
-  expect(listBudgetAmounts(db).filter((b) => b.groupId === rows[0].id)).toEqual([{ groupId: rows[0].id, effectiveMonth: "2000-01", amount: 2500 }]);
+  expect(listBudgetAmounts(db).filter((b) => b.groupId === rows[0].id)).toEqual([{ groupId: rows[0].id, effectiveMonth: "2000-01", amount: 2500, scope: "ongoing" }]);
 });

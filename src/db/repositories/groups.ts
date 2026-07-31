@@ -28,6 +28,13 @@ export function getGroupKind(db: Database.Database, id: number): "envelope" | "r
   return row ? row.kind : null;
 }
 
+// Groupe auquel appartient une ligne, null si la ligne n'existe pas. Sert à vérifier
+// qu'un couple (groupe, ligne) est cohérent avant de l'écrire sur une transaction.
+export function getLineGroupId(db: Database.Database, lineId: number): number | null {
+  const row = db.prepare(`SELECT group_id AS groupId FROM group_lines WHERE id = ?`).get(lineId) as { groupId: number } | undefined;
+  return row ? row.groupId : null;
+}
+
 export function listGroups(db: Database.Database): GroupRow[] {
   const groups = db
     .prepare(
@@ -125,6 +132,12 @@ export function insertLine(
   return Number(info.lastInsertRowid);
 }
 
+// Écrit aussi group_lines.amount, la colonne héritée que plus aucun calcul de budget
+// ne lit (les montants vivent dans line_amounts, datés). Plus appelée par l'app :
+// modifier une ligne ne touche plus qu'à son nom et son jour (renameLine ci-dessous),
+// son montant se fixe depuis sa case du tableau. Gardée parce que la migration de
+// reprise doit continuer de bien se comporter face à des bases où cette colonne porte
+// un montant périmé — ce que vérifie tests/db/seed-dated-amounts.test.ts.
 export function updateLine(
   db: Database.Database,
   id: number,
@@ -133,6 +146,12 @@ export function updateLine(
   day: number,
 ): void {
   db.prepare(`UPDATE group_lines SET name = ?, amount = ?, day = ? WHERE id = ?`).run(name, amount, day, id);
+}
+
+// Nom et jour d'une ligne : ses deux seules propriétés qui valent pour tous les mois.
+// Ne touche pas à group_lines.amount, pour ne pas y laisser un montant périmé.
+export function renameLine(db: Database.Database, id: number, name: string, day: number): void {
+  db.prepare(`UPDATE group_lines SET name = ?, day = ? WHERE id = ?`).run(name, day, id);
 }
 
 export function deleteLine(db: Database.Database, id: number): void {

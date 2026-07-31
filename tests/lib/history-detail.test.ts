@@ -12,8 +12,8 @@ import {
   sectionRowKey,
   soldeActuelDetail,
   overspendDecisionDetail,
-  overspentLinesOf,
-  overspentLinesOfPending,
+  budgetEditOfGroup,
+  budgetEditOfLine,
   detailKey,
 } from "../../src/lib/history-detail";
 import type { DetailNode } from "../../src/lib/history-explain";
@@ -236,59 +236,6 @@ describe("Les transactions et les postes d'une ligne", () => {
   });
 });
 
-describe("overspentLinesOf : lignes d'un récurrent en dépassement à un mois précis", () => {
-  // Abonnements sur 3 mois : Direct Assurance voiture ne dépasse (81.84 → 151.84)
-  // qu'en juillet (index 1) ; Sosh Internet ne dépasse jamais. Trois mois, pas
-  // deux : un décalage d'indice d'un seul cran doit retomber sur un mois qui NE
-  // dépasse PAS, pour que le test morde dessus (avec deux mois seulement, un
-  // décalage circulaire pourrait retomber par hasard sur le même résultat).
-  const abonnements: HistoryRow = {
-    id: 13,
-    name: "Abonnements",
-    kind: "recurring",
-    direction: "out",
-    incomeKind: null,
-    cells: [cell(), cell(), cell()],
-    aliveMonths: [true, true, true],
-    subRows: [
-      {
-        id: 2,
-        name: "Direct Assurance voiture",
-        cells: [
-          cell({ budgeted: 81.84, depense: 81.84 }),
-          cell({ budgeted: 81.84, depense: 151.84 }),
-          cell({ budgeted: 81.84, depense: 81.84 }),
-        ],
-        aliveMonths: [true, true, true],
-        txns: [],
-      },
-      {
-        id: 3,
-        name: "Sosh Internet",
-        cells: [cell({ budgeted: 30.99, depense: 30.99 }), cell({ budgeted: 30.99, depense: 30.99 }), cell({ budgeted: 30.99, depense: 30.99 })],
-        aliveMonths: [true, true, true],
-        txns: [],
-      },
-    ],
-    txns: [],
-  };
-
-  it("devrait retenir la ligne en dépassement au bon mois, avec son budget et sa dépense réelle", () => {
-    expect(overspentLinesOf(abonnements, 1)).toEqual([
-      { lineId: 2, name: "Direct Assurance voiture", budget: 81.84, spent: 151.84 },
-    ]);
-  });
-
-  it("ne devrait rien retenir aux mois où aucune ligne ne dépasse (avant / après)", () => {
-    expect(overspentLinesOf(abonnements, 0)).toEqual([]);
-    expect(overspentLinesOf(abonnements, 2)).toEqual([]);
-  });
-
-  it("ne devrait jamais rien retenir pour une enveloppe (subRows toujours vide)", () => {
-    expect(overspentLinesOf(courses, 1)).toEqual([]);
-  });
-});
-
 describe("Le détail du Solde actuel", () => {
   const solde: SoldeColumn = {
     openings: [1000, 1500],
@@ -360,7 +307,7 @@ describe("L'invariant de lecture du panneau : un total est la somme de ce qu'il 
 });
 
 describe("Le dépassement ouvert depuis un bandeau ou une pastille", () => {
-  const item = { groupId: 7, name: "Courses", month: "2026-06", amount: 50, kind: "envelope" as const };
+  const item = { groupId: 7, lineId: null, name: "Courses", month: "2026-06", amount: 50, kind: "envelope" as const };
 
   it("devrait viser la Balance du groupe, au mois affiché", () => {
     const d = overspendDecisionDetail(item, "a1", 2, null, 300);
@@ -391,62 +338,109 @@ describe("Le dépassement ouvert depuis un bandeau ou une pastille", () => {
     );
   });
 
-  it("devrait porter les lignes en dépassement transmises, sans les recalculer", () => {
-    const lignes = [{ lineId: 101, name: "Direct Assurance voiture", budget: 81.84, spent: 151.84 }];
-    expect(overspendDecisionDetail(item, "a1", 1, null, 300, lignes).overspendAction!.overspentLines).toEqual(lignes);
+  it("devrait porter le budget en vigueur transmis, pour pré-remplir « Permanent »", () => {
+    expect(overspendDecisionDetail(item, "a1", 1, null, 300).overspendAction!.currentBudget).toBe(300);
   });
 
-  it("ne devrait pas affirmer qu'aucune ligne n'a dépassé quand rien n'est transmis : le défaut est « inconnu », pas « vide »", () => {
-    // [] affirme un fait (aucune ligne n'a dépassé) ; null dit qu'on ne sait pas.
-    // Un appelant distrait qui oublie le 6e argument ne doit jamais affirmer par
-    // omission — voir le bandeau de dépassements, qui faisait exactement ça.
-    expect(overspendDecisionDetail(item, "a1", 1, null).overspendAction!.overspentLines).toBeNull();
+  // Le dépassement d'un récurrent est celui d'une de ses LIGNES : le panneau doit viser
+  // la case de la ligne, pas celle du groupe, qui n'est plus décidable.
+  it("devrait viser la Balance de la ligne pour un récurrent", () => {
+    const ligne = { ...item, groupId: 13, lineId: 3, name: "Sosh Internet", kind: "recurring" as const };
+    const d = overspendDecisionDetail(ligne, "a1", 2, null);
+    expect(d.cellRef).toBe("subrow:3::reste::2");
+    expect(d.overspendAction!.lineId).toBe(3);
   });
 });
 
-describe("overspentLinesOfPending : lignes en dépassement d'un item PendingOverspend", () => {
-  const abonnements: HistoryRow = {
-    id: 13,
-    name: "Abonnements",
-    kind: "recurring",
-    direction: "out",
-    incomeKind: null,
-    cells: [cell(), cell()],
-    aliveMonths: [true, true],
-    subRows: [
-      {
-        id: 2,
-        name: "Direct Assurance voiture",
-        cells: [cell({ budgeted: 81.84, depense: 81.84 }), cell({ budgeted: 81.84, depense: 151.84 })],
-        aliveMonths: [true, true],
-        txns: [],
-      },
+// Le montant d'un budget se modifie depuis SA case « Budget dép. », au mois de la
+// colonne cliquée. C'est le seul endroit où le mois est visible, donc le seul où un
+// montant daté a un sens : le panneau de gestion du groupe, lui, ne montre aucun
+// mois et n'affiche donc plus de montant du tout.
+describe("Ce qu'une case « Budget dép. » laisse modifier", () => {
+  const courses = {
+    id: 7,
+    name: "Courses",
+    kind: "envelope" as const,
+    changes: [
+      { month: "2026-01", amount: 300, isStart: true, scope: "ongoing" as const },
+      { month: "2026-06", amount: 350, isStart: false, scope: "ongoing" as const },
     ],
-    txns: [],
   };
-  const rowsById = new Map<number, HistoryRow>([[13, abonnements]]);
-  const months = ["2026-06", "2026-07"];
 
-  it("devrait rendre [] pour une enveloppe, sans même chercher la ligne", () => {
-    const item = { groupId: 99, name: "Courses", month: "2026-07", amount: 50, kind: "envelope" as const };
-    expect(overspentLinesOfPending(item, rowsById, months)).toEqual([]);
+  it("laisse modifier le montant d'une enveloppe, au mois de la case", () => {
+    expect(budgetEditOfGroup(courses, "2026-07", "2026-07")).toEqual({
+      target: "group",
+      id: 7,
+      name: "Courses",
+      month: "2026-07",
+      amount: 350,
+      changes: courses.changes,
+      currentMonth: "2026-07",
+    });
   });
 
-  it("devrait rendre les lignes en dépassement d'un récurrent au bon mois", () => {
-    const item = { groupId: 13, name: "Abonnements", month: "2026-07", amount: 70, kind: "recurring" as const };
-    expect(overspentLinesOfPending(item, rowsById, months)).toEqual([
-      { lineId: 2, name: "Direct Assurance voiture", budget: 81.84, spent: 151.84 },
-    ]);
+  it("propose le montant en vigueur au mois cliqué, pas le dernier de la frise", () => {
+    // Vu depuis février : c'est 300 qui s'applique alors, et la hausse à 350 est
+    // encore devant. Un changement futur déjà posé ne doit pas fuir dans le montant
+    // proposé pour ce mois-ci.
+    expect(budgetEditOfGroup(courses, "2026-02", "2026-02")?.amount).toBe(300);
   });
 
-  it("devrait rendre null quand le mois du dépassement n'est pas dans la fenêtre affichée", () => {
-    const item = { groupId: 13, name: "Abonnements", month: "2025-01", amount: 70, kind: "recurring" as const };
-    expect(overspentLinesOfPending(item, rowsById, months)).toBeNull();
+  // Un récurrent n'a pas de montant à lui : son budget est la somme de ses lignes.
+  // Il n'y a rien à écrire au niveau du groupe, donc rien à modifier depuis sa case.
+  it("ne laisse rien modifier sur la case d'un groupe récurrent", () => {
+    expect(budgetEditOfGroup({ ...courses, kind: "recurring" }, "2026-07", "2026-07")).toBeNull();
   });
 
-  it("devrait rendre null quand le groupe n'est pas dans les lignes affichées", () => {
-    const item = { groupId: 404, name: "Fantôme", month: "2026-07", amount: 70, kind: "recurring" as const };
-    expect(overspentLinesOfPending(item, rowsById, months)).toBeNull();
+  // Un mois révolu est un fait : le serveur refuse d'y écrire (month-lock), la case
+  // ne doit donc pas proposer de formulaire du tout.
+  it("ne laisse rien modifier dans un mois clos", () => {
+    expect(budgetEditOfGroup(courses, "2026-03", "2026-07")).toBeNull();
+  });
+
+  it("laisse modifier un mois futur", () => {
+    expect(budgetEditOfGroup(courses, "2026-09", "2026-07")?.month).toBe("2026-09");
+  });
+
+  it("ne laisse rien modifier quand le groupe est inconnu", () => {
+    expect(budgetEditOfGroup(undefined, "2026-07", "2026-07")).toBeNull();
+  });
+
+  // Une ligne de récurrent porte son propre montant daté : elle s'édite comme une
+  // enveloppe, depuis sa case à elle.
+  it("laisse modifier le montant d'une ligne de récurrent", () => {
+    const netflix = { id: 12, name: "Netflix", changes: [{ month: "2026-01", amount: 13.99, isStart: true, scope: "ongoing" as const }] };
+    expect(budgetEditOfLine(netflix, "2026-07", "2026-07")).toEqual({
+      target: "line",
+      id: 12,
+      name: "Netflix",
+      month: "2026-07",
+      amount: 13.99,
+      changes: netflix.changes,
+      currentMonth: "2026-07",
+    });
+  });
+
+  it("ne laisse rien modifier sur une ligne dans un mois clos, ni sur une ligne inconnue", () => {
+    const netflix = { id: 12, name: "Netflix", changes: [{ month: "2026-01", amount: 13.99, isStart: true, scope: "ongoing" as const }] };
+    expect(budgetEditOfLine(netflix, "2026-03", "2026-07")).toBeNull();
+    expect(budgetEditOfLine(undefined, "2026-07", "2026-07")).toBeNull();
+  });
+
+  // La clé de montage doit distinguer deux cases différentes, sinon le panneau garde
+  // l'état du budget précédemment ouvert (montant saisi, portée) en changeant de case.
+  it("donne une identité distincte à chaque case de budget", () => {
+    const base = { title: "Budget dépense", nodes: [], result: 0 };
+    const groupe = { ...base, budgetEdit: budgetEditOfGroup(courses, "2026-07", "2026-07")! };
+    const autreMois = { ...base, budgetEdit: budgetEditOfGroup(courses, "2026-08", "2026-07")! };
+    const ligne = {
+      ...base,
+      budgetEdit: budgetEditOfLine({ id: 7, name: "Netflix", changes: [] }, "2026-07", "2026-07")!,
+    };
+    expect(detailKey(groupe)).toBe("budget:group:7:2026-07");
+    expect(detailKey(autreMois)).toBe("budget:group:7:2026-08");
+    // Même id, même mois, mais une ligne n'est pas un groupe : les clés diffèrent.
+    expect(detailKey(ligne)).toBe("budget:line:7:2026-07");
   });
 });
 
@@ -466,10 +460,26 @@ describe("L'identité d'un détail, qui décide quand le panneau repart de zéro
   it("devrait donner son identité propre à la gestion d'un groupe", () => {
     const k = detailKey({
       title: "Courses", nodes: [], result: 0,
-      groupManage: { groupId: 3, name: "Courses", kind: "envelope", month: "2026-07", currentAmount: 300, changes: [], lines: [] },
+      groupManage: { groupId: 3, name: "Courses", kind: "envelope", month: "2026-07", lines: [] },
     });
     expect(k).toContain("3");
     expect(k).toContain("2026-07");
+  });
+
+  // Chaque ligne d'un récurrent a son propre crayon, donc son propre panneau : sa clé
+  // doit être distincte de celle du groupe qui la porte, sinon ouvrir une ligne
+  // rouvrirait le panneau du groupe (même id possible de part et d'autre).
+  it("devrait donner son identité propre à la gestion d'une ligne, distincte du groupe", () => {
+    const ligne = detailKey({
+      title: "Sosh Internet", nodes: [], result: 0,
+      lineManage: { lineId: 3, name: "Sosh Internet", day: 12 },
+    });
+    const groupe = detailKey({
+      title: "Abonnements", nodes: [], result: 0,
+      groupManage: { groupId: 3, name: "Abonnements", kind: "recurring", month: "2026-07", lines: [] },
+    });
+    expect(ligne).toBe("line:3");
+    expect(ligne).not.toBe(groupe);
   });
 
   it("devrait donner son identité propre à l'explication d'une colonne", () => {

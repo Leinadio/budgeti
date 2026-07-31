@@ -1,5 +1,5 @@
-import { expect, test } from "vitest";
-import { resolveOwnership, type OwnableGroup, type OwnedTxn } from "../../src/lib/ownership";
+import { expect, test, describe, it } from "vitest";
+import { resolveOwnership, canAttachToGroup, type OwnableGroup, type OwnedTxn } from "../../src/lib/ownership";
 
 const courses: OwnableGroup = { id: 1, accountId: "a1", direction: "out", kind: "envelope" };
 const abo: OwnableGroup = { id: 2, accountId: "a1", direction: "out", kind: "recurring" };
@@ -40,4 +40,22 @@ test("manual to a group of another account -> none (not owned)", () => {
 
 test("manual group on another account is ignored", () => {
   expect(resolveOwnership(txn({ accountId: "a2", groupId: 1 }), groups)).toEqual({ status: "none" });
+});
+
+// Un récurrent n'est pas une destination : ses dépenses appartiennent à une de ses
+// lignes (Direct Assurance, Sosh Internet…), jamais au groupe lui-même. C'est ce qui
+// garantit qu'un dépassement de récurrent vient toujours d'une ligne, et a donc
+// toujours un endroit où se trancher.
+describe("ce à quoi une transaction peut être rattachée", () => {
+  it("accepte une enveloppe, avec ou sans ligne (une enveloppe n'en a pas)", () => {
+    expect(canAttachToGroup("envelope", null)).toBe(true);
+  });
+
+  it("refuse un récurrent tout seul", () => {
+    expect(canAttachToGroup("recurring", null)).toBe(false);
+  });
+
+  it("accepte un récurrent dès qu'une de ses lignes est visée", () => {
+    expect(canAttachToGroup("recurring", 3)).toBe(true);
+  });
 });

@@ -103,7 +103,12 @@ CREATE TABLE IF NOT EXISTS budget_amounts (
   group_id INTEGER NOT NULL,
   effective_month TEXT NOT NULL,   -- YYYY-MM
   amount REAL NOT NULL,
-  UNIQUE(group_id, effective_month)
+  -- Portée : 'ongoing' = vaut à partir de ce mois et pour les suivants ; 'once' = ne
+  -- vaut que pour ce mois. Les deux peuvent coexister au même mois (relever durablement
+  -- à partir de juillet ET faire une exception pour juillet), d'où la portée dans la
+  -- clé d'unicité — sinon écrire l'une effacerait l'autre.
+  scope TEXT NOT NULL DEFAULT 'ongoing',
+  UNIQUE(group_id, effective_month, scope)
 );
 
 -- Décision de l'utilisateur sur un dépassement (un groupe x un mois).
@@ -113,11 +118,16 @@ CREATE TABLE IF NOT EXISTS overspend_decisions (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   account_id TEXT NOT NULL REFERENCES accounts(id),
   group_id INTEGER NOT NULL,       -- 0 = non catégorisés
+  -- Ligne de récurrent qui déborde ; 0 = le groupe lui-même (enveloppe, non
+  -- catégorisés). Un récurrent n'a pas de budget à lui : ce sont ses lignes qui en
+  -- portent un, donc chaque ligne se tranche séparément. 0 et non NULL : SQLite tient
+  -- deux NULL pour distincts dans une contrainte d'unicité.
+  line_id INTEGER NOT NULL DEFAULT 0,
   month TEXT NOT NULL,             -- YYYY-MM
   decision TEXT NOT NULL CHECK (decision IN ('exceptional', 'permanent')),
   decided_at TEXT NOT NULL,        -- ISO datetime
   writes TEXT,                     -- JSON des écritures posées (BudgetWrite[]), NULL si aucune
-  UNIQUE(account_id, group_id, month)
+  UNIQUE(account_id, group_id, line_id, month)
 );
 
 -- Montants datés d'une ligne de récurrent. Même règle que budget_amounts : le
@@ -129,5 +139,10 @@ CREATE TABLE IF NOT EXISTS line_amounts (
   line_id INTEGER NOT NULL REFERENCES group_lines(id) ON DELETE CASCADE,
   effective_month TEXT NOT NULL,   -- YYYY-MM
   amount REAL NOT NULL,
-  UNIQUE(line_id, effective_month)
+  -- Portée : 'ongoing' = vaut à partir de ce mois et pour les suivants ; 'once' = ne
+  -- vaut que pour ce mois. Les deux peuvent coexister au même mois (relever durablement
+  -- à partir de juillet ET faire une exception pour juillet), d'où la portée dans la
+  -- clé d'unicité — sinon écrire l'une effacerait l'autre.
+  scope TEXT NOT NULL DEFAULT 'ongoing',
+  UNIQUE(line_id, effective_month, scope)
 );

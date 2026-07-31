@@ -1,9 +1,7 @@
 "use client";
-import { useMemo } from "react";
 import type { AccountForecast } from "@/lib/forecast";
-import type { MonthCell, HistorySection, SoldeColumn, PlannedSoldes, PendingOverspend, IgnoredBlock } from "@/lib/history";
+import { budgetKey, type MonthCell, type HistorySection, type SoldeColumn, type PlannedSoldes, type PendingOverspend, type IgnoredBlock } from "@/lib/history";
 import type { BudgetChange } from "@/lib/budget-history";
-import { overspentLinesOfPending } from "@/lib/history-detail";
 import { CenterScroll } from "@/components/center-scroll";
 import { HistoryGrid } from "@/components/history-grid";
 import { OverspendBanner } from "@/components/overspend-banner";
@@ -38,7 +36,7 @@ export function HistoryWithDetail(props: {
   // Compte affiché et décisions déjà prises sur des dépassements : nécessaires au
   // bloc de décision du side panel (Task 6).
   accountId: string;
-  decisions?: { groupId: number; month: string; decision: "exceptional" | "permanent" }[];
+  decisions?: { groupId: number; lineId: number | null; month: string; decision: "exceptional" | "permanent" }[];
   // Tous les dépassements non tranchés, un par groupe (pastilles) ; budgets courants
   // par groupe, pour pré-remplir l'édition de budget d'un groupe (gestion de groupe).
   pending?: PendingOverspend[];
@@ -62,7 +60,15 @@ export function HistoryWithDetail(props: {
   // item du bandeau, ses lignes en dépassement (overspentLinesOfPending). Comme
   // bannerItems ne contient que des mois affichés, le résultat n'est jamais null
   // ici — la fenêtre couvre toujours le mois de chaque item.
-  const rowsById = useMemo(() => new Map(props.sections.flatMap((s) => s.rows).map((r) => [r.id, r])), [props.sections]);
+  // Budget en vigueur de ce qui déborde. Pour une ligne de récurrent, il se lit dans sa
+  // propre case du mois : la table par groupe ne le connaît pas et proposerait 0.
+  const budgetOfPending = (item: PendingOverspend): number | null => {
+    if (item.lineId === null) return props.budgetsForOverspend?.[budgetKey(item.groupId, item.month)] ?? null;
+    const idx = props.months.indexOf(item.month);
+    if (idx === -1) return null;
+    const row = props.sections.flatMap((s) => s.rows).find((r) => r.id === item.groupId);
+    return row?.subRows.find((sr) => sr.id === item.lineId)?.cells[idx]?.budgeted ?? null;
+  };
   return (
     <div className="flex flex-col gap-3">
       {bannerItems.length > 0 && (
@@ -70,8 +76,7 @@ export function HistoryWithDetail(props: {
           items={bannerItems}
           accountId={props.accountId}
           months={props.months}
-          budgetsForOverspend={props.budgetsForOverspend}
-          overspentLinesOf={(it) => overspentLinesOfPending(it, rowsById, props.months)}
+          budgetOf={budgetOfPending}
         />
       )}
       <CenterScroll>
