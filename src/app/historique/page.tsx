@@ -4,14 +4,15 @@ import { listTransactions, sumIgnoredByAccount, type TxnView } from "../../db/re
 import { listGroups } from "../../db/repositories/groups";
 import { listBudgetAmounts } from "../../db/repositories/budget-amounts";
 import { listLineAmounts } from "../../db/repositories/line-amounts";
-import { listOverspendDecisions } from "../../db/repositories/overspend-decisions";
 import {
   computeHistory, grandTotals, monthlyOverspend, monthsWithData, computeSolde,
   computePlannedSoldes, addMonthsKey, monthRange, isMonthKey, clampMonth,
   sliceHistorySections, sliceSoldeColumn, slicePlannedSoldes, computeTableEstimate,
-  toDatedBudgets, toDatedLineAmounts, computeOverspends, budgetsByMonth, computeIgnoredBlocks,
+  toDatedBudgets, toDatedLineAmounts, computeOverspends, computeIgnoredBlocks,
 } from "../../lib/history";
 import { budgetChanges } from "../../lib/budget-history";
+import { withoutDismissed } from "../../lib/notifications";
+import { listDismissedNotifications } from "../../db/repositories/dismissed-notifications";
 import { computeForecast, type Group, type Txn } from "../../lib/forecast";
 import { ForecastDetailSheet } from "@/components/forecast-detail-sheet";
 import { monthKey } from "../../lib/money";
@@ -35,6 +36,7 @@ export default async function HistoriquePage({
   const allGroups = listGroups(database);
   const datedBudgets = toDatedBudgets(listBudgetAmounts(database));
   const datedLines = toDatedLineAmounts(listLineAmounts(database));
+  const dismissed = listDismissedNotifications(database);
   const toTxn = (t: TxnView): Txn => ({
     id: t.id,
     date: t.date,
@@ -118,18 +120,13 @@ export default async function HistoriquePage({
           const estimateValue =
             computeTableEstimate(sectionsFull, calcMonths, currentMonth, balance)?.value ?? forecast.currentEstimate;
           const soldeFull = computeSolde(sectionsFull, calcMonths, currentMonth, balance, estimateValue);
-          const decisions = listOverspendDecisions(database, a.id);
-          const overspends = computeOverspends(groups, txns, currentMonth, decisions, datedBudgets, datedLines);
-          // Budgets servant à pré-remplir le formulaire « Permanent » d'un
-          // dépassement (groupe 0 = provision des non catégorisés). Le montant proposé
-          // se calcule au mois DU DÉPASSEMENT, qui peut être ancien et porter un tout
-          // autre budget que le mois courant : d'où un budget par mois et non un
-          // budget unique par groupe. Les mois couverts sont ceux affichés PLUS ceux
-          // des dépassements non tranchés, que les pastilles peuvent ouvrir alors
-          // qu'ils sont hors de la fenêtre.
-          const overspendMonths = overspends.pending.map((p) => p.month);
-          const budgetsForOverspend = budgetsByMonth(
-            groups, [...months, ...overspendMonths], datedBudgets, datedLines,
+          // Acquittés retirés à la source : l'étiquette sous les montants, le signal
+          // porté par un groupe récurrent et le bandeau du side panel en découlent tous,
+          // et suivent donc sans avoir à vérifier chacun de leur côté.
+          const overspendsByMonth = withoutDismissed(
+            computeOverspends(groups, txns, currentMonth, datedBudgets, datedLines).byMonth,
+            a.id,
+            dismissed,
           );
           const plannedFull = computePlannedSoldes(sectionsFull, calcMonths, currentMonth, soldeFull.openings, estimateValue, datedBudgets);
           const sections = sliceHistorySections(sectionsFull, calcMonths, k);
@@ -175,10 +172,7 @@ export default async function HistoriquePage({
                   solde={solde}
                   planned={planned}
                   accountId={a.id}
-                  decisions={decisions.map(({ groupId, lineId, month, decision }) => ({ groupId, lineId, month, decision }))}
-                  pending={overspends.pending}
-                  pendingByMonth={overspends.pendingByMonth}
-                  budgetsForOverspend={budgetsForOverspend}
+                  overspendsByMonth={overspendsByMonth}
                 />
               )}
             </TabsContent>

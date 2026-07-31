@@ -34,16 +34,25 @@ export type DetailNode = { label: string; amount: number; children?: DetailNode[
 // de surligner cette case en cliquant la ligne « Total » du side panel.
 // description : si présent, le détail est une explication de colonne (texte, un
 // paragraphe par entrée) et non un calcul — le panneau l'affiche alors tel quel.
-// overspendAction : présent quand le détail vient d'une Balance en dépassement d'un
-// mois passé ou courant. Pilote le bloc de décision affiché sous le tableau du
-// détail dans le side panel (voir OverspendActionBlock).
 // groupManage : présent quand le détail vient du menu de gestion d'une ligne de
 // groupe (icône au survol). Pilote la vue de gestion du side panel (renommer,
 // montant daté, lignes, suppression) au lieu d'un calcul (voir GroupManageBlock).
 // uncatProvision : présent quand le détail vient de la case « Budget dép. » des non
 // catégorisés. Pilote le bloc d'édition de la provision (montant daté du groupe 0,
 // voir UncatProvisionBlock) au lieu d'un calcul.
-export type CellDetail = { title: string; subtitle?: string; nodes: DetailNode[]; result: number; note?: string; cellRef?: string; description?: string[]; overspendAction?: OverspendActionInfo; groupManage?: GroupManageInfo; lineManage?: LineManageInfo; uncatProvision?: UncatProvisionInfo; budgetEdit?: BudgetEditInfo };
+export type CellDetail = { title: string; subtitle?: string; nodes: DetailNode[]; result: number; note?: string; cellRef?: string; description?: string[]; groupManage?: GroupManageInfo; lineManage?: LineManageInfo; uncatProvision?: UncatProvisionInfo; budgetEdit?: BudgetEditInfo; overspendNotice?: OverspendNoticeInfo };
+
+// Bandeau de dépassement affiché sous le calcul d'une case Balance qui déborde. Le même
+// constat que dans le panneau de notifications, à l'endroit exact où le chiffre est
+// regardé : c'est là qu'on se demande d'où vient le rouge.
+// `id` est l'identité d'acquittement (voir notificationId) : cliquer « Vu » retire le
+// bandeau ET l'étiquette sous le montant, puisque les deux lisent la même liste.
+export type OverspendNoticeInfo = {
+  id: string;
+  name: string;
+  month: string;
+  amount: number;
+};
 
 // Info nécessaire à la vue de gestion d'un groupe dans le side panel : quel groupe,
 // son nom, sa nature (une enveloppe n'a pas de lignes, un récurrent si), le mois où le
@@ -100,50 +109,6 @@ export type UncatProvisionInfo = {
   month: string;          // mois de la case cliquée (pour le montant daté)
   currentAmount: number;  // provision en vigueur ce mois (pré-remplissage)
 };
-
-// Info nécessaire au bloc de décision d'un dépassement de budget : quel groupe (0 =
-// non catégorisés), quel mois, de combien, et la décision déjà prise le cas échéant.
-export type OverspendActionInfo = {
-  accountId: string;
-  groupId: number; // 0 = non catégorisés
-  groupName: string;
-  // Nature de ce qui déborde. Sert au libellé du formulaire (« Nouvelle provision »
-  // pour les non catégorisés, « Budget » ailleurs) : le formulaire lui-même est le
-  // même partout, un seul montant, puisqu'on tranche toujours quelque chose qui porte
-  // un budget à soi.
-  groupKind: "envelope" | "recurring";
-  // Ligne de récurrent qui déborde, null pour une enveloppe et pour les non
-  // catégorisés. C'est ce qui porte un budget qui se tranche : un récurrent n'en a pas
-  // (son budget est la somme de ses lignes), son groupe n'est donc jamais décidable.
-  lineId: number | null;
-  month: string; // YYYY-MM
-  amount: number; // dépassement, positif
-  decision: "exceptional" | "permanent" | null; // null = non tranché
-  currentBudget: number | null; // budget/provision actuel, pour pré-remplir « permanent »
-  // Le mois du dépassement est-il clos ? Un mois révolu ne se tranche plus et ne se
-  // dételle plus : le bloc n'affiche alors que ce qui s'applique (closedOverspendText
-  // ci-dessous), sans bouton. Absent vaut « ouvert » : les items qui viennent de
-  // computeOverspends sont par construction du mois courant, jamais clos.
-  closed?: boolean;
-};
-
-// Ce que dit le bloc de décision quand le mois du dépassement est clos : il n'y a
-// plus rien à trancher ni à défaire, seulement à rappeler ce qui s'applique et
-// pourquoi c'est définitif. Reçoit le montant et le mois déjà mis en français par
-// l'appelant (formatage des euros, élision, casse) : cette fonction porte la phrase,
-// pas la mise en forme.
-export function closedOverspendText(
-  decision: "exceptional" | "permanent" | null,
-  amountLabel: string,
-  monthPhrase: string,
-): string {
-  const entete = `Dépassement de ${amountLabel} en ${monthPhrase}`;
-  if (decision === null) {
-    return `${entete}. Ce mois est terminé : il compte comme exceptionnel, et son budget ne se modifie plus.`;
-  }
-  const tranche = decision === "permanent" ? "permanent" : "exceptionnel";
-  return `${entete}, tranché ${tranche}. Ce mois est terminé, cette décision ne se modifie plus.`;
-}
 
 export function sumOf(nodes: DetailNode[]): number {
   return nodes.reduce((s, n) => s + n.amount, 0);

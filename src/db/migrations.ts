@@ -185,6 +185,14 @@ export function migrateBudgetAmountsDropGroupFk(db: Database.Database): void {
   })();
 }
 
+// Table des notifications fermées d'une croix. Idempotent.
+export function migrateDismissedNotifications(db: Database.Database): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS dismissed_notifications (
+    id TEXT PRIMARY KEY,
+    dismissed_at TEXT NOT NULL
+  )`);
+}
+
 // Ajoute la LIGNE à la clé d'une décision de dépassement. Un récurrent n'a pas de
 // budget à lui : ce sont ses lignes qui en portent un, donc c'est chaque ligne qui
 // déborde, et c'est sur elle que la décision se prend. Sans line_id dans la clé,

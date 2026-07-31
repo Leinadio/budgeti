@@ -1,5 +1,5 @@
 import { expect, describe, it } from "vitest";
-import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde, computePlannedSoldes, budgetInForce, lineAmountInForce, toDatedBudgets, toDatedLineAmounts, computeOverspends, groupsWithPending, budgetKey, budgetsByMonth, rowRevenus, rowOverspend, uncatOverspend, uncatOverspendOf, type HistoryRow, type DatedBudgets, type PendingOverspend } from "../../src/lib/history";
+import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde, computePlannedSoldes, budgetInForce, lineAmountInForce, toDatedBudgets, toDatedLineAmounts, computeOverspends, groupsWithPending, overspentCells, budgetKey, budgetsByMonth, rowRevenus, rowOverspend, uncatOverspend, uncatOverspendOf, type HistoryRow, type DatedBudgets, type Overspend } from "../../src/lib/history";
 import { isGroupAlive, type Group, type Txn } from "../../src/lib/forecast";
 import { budgetChangePoints } from "../../src/lib/history-columns";
 import { seedDated, mergeDated } from "./dated-fixtures";
@@ -36,13 +36,9 @@ const hist = (
   const { dated, datedLines } = seedDated(groups);
   return computeHistory(groups, txns, months, current, mergeDated(dated, extra), datedLines);
 };
-const over = (
-  groups: Group[], txns: Txn[], current: string,
-  decided: { groupId: number; month: string; decision?: "exceptional" | "permanent" }[],
-  extra?: DatedBudgets,
-) => {
+const over = (groups: Group[], txns: Txn[], current: string, extra?: DatedBudgets) => {
   const { dated, datedLines } = seedDated(groups);
-  return computeOverspends(groups, txns, current, decided, mergeDated(dated, extra), datedLines);
+  return computeOverspends(groups, txns, current, mergeDated(dated, extra), datedLines);
 };
 
 describe("Montants affichés dans le tableau de l'historique", () => {
@@ -683,25 +679,31 @@ describe("Changer un budget pour un seul mois", () => {
 });
 
 describe("Rappels d'argent dépensé au-delà du budget", () => {
-  // Seul le mois courant se tranche encore. Un dépassement laissé sans décision
-  // dans un mois révolu compte comme exceptionnel d'office : le mois est clos, on
-  // ne peut plus rien y écrire, il n'y a donc plus de décision à prendre.
-  it("ne retient à trancher que les dépassements du mois courant", () => {
+  // Un dépassement ne se tranche plus : il se signale, et c'est tout. Relever un budget
+  // pour la suite est un geste à part, que l'utilisateur fait dans les cases du mois
+  // qu'il veut changer. Les mois révolus sont donc signalés comme les autres — leur
+  // dépassement a bien eu lieu, il n'y a simplement rien à décider dessus.
+  it("signale les dépassements de tous les mois écoulés, mois courant compris", () => {
     const txns = [
-      tx({ id: "1", date: "2026-06-10", amount: -350, label: "CARREFOUR", groupId: 1 }), // juin (clos) : dépassement 50
-      tx({ id: "2", date: "2026-07-10", amount: -380, label: "CARREFOUR", groupId: 1 }), // juillet (courant) : dépassement 80
+      tx({ id: "1", date: "2026-06-10", amount: -350, label: "CARREFOUR", groupId: 1 }), // juin : dépassement 50
+      tx({ id: "2", date: "2026-07-10", amount: -380, label: "CARREFOUR", groupId: 1 }), // juillet (courant) : 80
       tx({ id: "3", date: "2026-06-05", amount: -120, label: "SANS GROUPE" }), // uncat juin : 120 dépensés
       tx({ id: "4", date: "2026-06-06", amount: 40, label: "REMBOURSEMENT" }), // uncat juin : 40 reçus -> net 80
     ];
-    const r = over([courses], txns, "2026-07", []);
-    // Pastilles : rien de juin, ni pour Courses ni pour les non catégorisés.
-    expect(r.pending).toEqual([
+    const r = over([courses], txns, "2026-07");
+    expect(r.byMonth["2026-06"]).toEqual([
+      { groupId: 1, lineId: null, name: "Courses", month: "2026-06", amount: 50, kind: "envelope" },
+      { groupId: 0, lineId: null, name: "Non catégorisés", month: "2026-06", amount: 80, kind: "envelope" },
+    ]);
+    expect(r.byMonth["2026-07"]).toEqual([
       { groupId: 1, lineId: null, name: "Courses", month: "2026-07", amount: 80, kind: "envelope" },
     ]);
-    expect(r.pendingByMonth["2026-06"]).toBeUndefined();
-    expect(r.pendingByMonth["2026-07"]).toEqual([
-      { groupId: 1, lineId: null, name: "Courses", month: "2026-07", amount: 80, kind: "envelope" },
-    ]);
+  });
+
+  // Un mois à venir n'a rien de réel : aucune dépense n'y a encore eu lieu.
+  it("ne signale rien sur un mois à venir", () => {
+    const txns = [tx({ id: "1", date: "2026-07-10", amount: -380, label: "CARREFOUR", groupId: 1 })];
+    expect(over([courses], txns, "2026-06").byMonth["2026-07"]).toBeUndefined();
   });
 
   it("devrait dire la nature de ce qui dépasse, enveloppe ou ligne de récurrent", () => {
@@ -716,41 +718,21 @@ describe("Rappels d'argent dépensé au-delà du budget", () => {
       tx({ id: "1", date: "2026-07-10", amount: -350, label: "CARREFOUR", groupId: 1 }), // enveloppe : 50
       tx({ id: "2", date: "2026-07-05", amount: -130, label: "LOYER", groupId: 2, lineId: 21 }), // ligne : 30
     ];
-    const r = over([courses, loyer], txns, "2026-07", []);
-    expect(r.pendingByMonth["2026-07"]).toEqual([
+    const r = over([courses, loyer], txns, "2026-07");
+    expect(r.byMonth["2026-07"]).toEqual([
       { groupId: 1, lineId: null, name: "Courses", month: "2026-07", amount: 50, kind: "envelope" },
       { groupId: 2, lineId: 21, name: "Loyer", month: "2026-07", amount: 30, kind: "recurring" },
     ]);
   });
 
-  it("devrait exclure des rappels un dépassement déjà tranché, quelle que soit la décision", () => {
-    const txns = [
-      tx({ id: "1", date: "2026-06-10", amount: -350, label: "CARREFOUR", groupId: 1 }), // juin (clos) : 50
-      tx({ id: "2", date: "2026-07-10", amount: -380, label: "CARREFOUR", groupId: 1 }), // juillet (courant) : 80
-    ];
-    // Rien tranché : seul juillet attend une décision, juin est déjà derrière nous.
-    const none = over([courses], txns, "2026-07", []);
-    expect(none.pending).toEqual([{ groupId: 1, lineId: null, name: "Courses", month: "2026-07", amount: 80, kind: "envelope" }]);
-    // Juillet tranché : la pastille s'éteint, et ne retombe PAS sur juin. Avant le
-    // verrou, elle y retombait — c'est le rappel qui n'avait pas de fin, puisque le
-    // mois visé n'était plus modifiable.
-    const perm = over([courses], txns, "2026-07", [{ groupId: 1, month: "2026-07", decision: "permanent" }]);
-    expect(perm.pending).toEqual([]);
-    const exc = over([courses], txns, "2026-07", [{ groupId: 1, month: "2026-07", decision: "exceptional" }]);
-    expect(exc.pending).toEqual([]);
-  });
-
-  it("devrait, de bout en bout, ne plus reporter aucun dépassement sur le prévisionnel des mois à venir, même marqué permanent", () => {
+  it("devrait, de bout en bout, ne reporter aucun dépassement sur le prévisionnel des mois à venir", () => {
     const txns = [tx({ id: "1", date: "2026-07-10", amount: -380, label: "CARREFOUR", groupId: 1 })]; // budget 300 -> dépassement 80
     const months = ["2026-07", "2026-08"];
     const sections = hist([courses], txns, months, "2026-07");
     const solde = computeSolde(sections, months, "2026-07", 1000);
     const estimate = solde.openings[0] - 380; // estimé de fin du mois courant, comme le fait la page Historique
-    // Marquer le dépassement de juillet « permanent » ne change plus rien au
-    // prévisionnel : computePlannedSoldes ne prend plus aucune information issue des
-    // décisions (le paramètre `retained` a disparu, remplacé par `dated`, réservé à
-    // la provision des non catégorisés).
-    over([courses], txns, "2026-07", [{ groupId: 1, month: "2026-07", decision: "permanent" }]);
+    // Un dépassement ne se reconduit jamais tout seul : relever un budget pour les mois
+    // à venir se fait à la main, depuis les cases concernées.
     const p = computePlannedSoldes(sections, months, "2026-07", solde.openings, estimate);
     // Le mois courant reste factuel : le dépassement réel de 80 est retiré.
     expect(p.prevuClosings[0]! - p.depassClosings[0]!).toBeCloseTo(80, 2);
@@ -760,9 +742,8 @@ describe("Rappels d'argent dépensé au-delà du budget", () => {
 });
 
 // Un récurrent n'a pas de budget à lui : ce sont ses lignes qui en portent un, et
-// c'est donc chacune d'elles qui déborde ou non. Le dépassement se constate — et se
-// tranche — au niveau de la ligne : Sosh Internet, pas Abonnements. Le groupe n'est
-// qu'une somme, il n'y a rien à y décider.
+// c'est donc chacune d'elles qui déborde ou non. Le dépassement se constate au niveau
+// de la ligne : Sosh Internet, pas Abonnements. Le groupe n'est qu'une somme.
 describe("Le dépassement d'un récurrent se constate ligne par ligne", () => {
   const sosh = { id: 31, name: "Sosh Internet", amount: 30, day: 12 };
   const assurance = { id: 32, name: "Direct Assurance", amount: 80, day: 5 };
@@ -774,15 +755,14 @@ describe("Le dépassement d'un récurrent se constate ligne par ligne", () => {
     { lineId: 31, effectiveMonth: "2026-01", amount: 30 },
     { lineId: 32, effectiveMonth: "2026-01", amount: 80 },
   ]);
-  const over = (txns: Txn[], decided: { groupId: number; lineId: number | null; month: string; decision?: "exceptional" | "permanent" }[] = []) =>
-    computeOverspends([abonnements], txns, "2026-07", decided, {}, datedLines);
+  const over = (txns: Txn[]) => computeOverspends([abonnements], txns, "2026-07", {}, datedLines);
 
   it("signale la ligne qui déborde, et elle seule", () => {
     const txns = [
       tx({ id: "a", date: "2026-07-12", amount: -45, label: "SOSH", groupId: 3, lineId: 31 }),
       tx({ id: "b", date: "2026-07-05", amount: -80, label: "ASSURANCE", groupId: 3, lineId: 32 }),
     ];
-    expect(over(txns).pending).toEqual([
+    expect(over(txns).byMonth["2026-07"]).toEqual([
       { groupId: 3, lineId: 31, name: "Sosh Internet", month: "2026-07", amount: 15, kind: "recurring" },
     ]);
   });
@@ -794,7 +774,7 @@ describe("Le dépassement d'un récurrent se constate ligne par ligne", () => {
       tx({ id: "a", date: "2026-07-12", amount: -45, label: "SOSH", groupId: 3, lineId: 31 }),
       tx({ id: "b", date: "2026-07-05", amount: -95, label: "ASSURANCE", groupId: 3, lineId: 32 }),
     ];
-    expect(over(txns).pending.some((p) => p.lineId === null)).toBe(false);
+    expect(over(txns).byMonth["2026-07"]!.some((p) => p.lineId === null)).toBe(false);
   });
 
   it("signale chaque ligne qui déborde, séparément", () => {
@@ -802,37 +782,16 @@ describe("Le dépassement d'un récurrent se constate ligne par ligne", () => {
       tx({ id: "a", date: "2026-07-12", amount: -45, label: "SOSH", groupId: 3, lineId: 31 }),
       tx({ id: "b", date: "2026-07-05", amount: -95, label: "ASSURANCE", groupId: 3, lineId: 32 }),
     ];
-    expect(over(txns).pendingByMonth["2026-07"]).toEqual([
+    expect(over(txns).byMonth["2026-07"]).toEqual([
       { groupId: 3, lineId: 32, name: "Direct Assurance", month: "2026-07", amount: 15, kind: "recurring" },
       { groupId: 3, lineId: 31, name: "Sosh Internet", month: "2026-07", amount: 15, kind: "recurring" },
     ]);
   });
 
-  // Trancher une ligne n'éteint pas l'autre : ce sont deux décisions distinctes.
-  it("ne fait taire que la ligne tranchée", () => {
-    const txns = [
-      tx({ id: "a", date: "2026-07-12", amount: -45, label: "SOSH", groupId: 3, lineId: 31 }),
-      tx({ id: "b", date: "2026-07-05", amount: -95, label: "ASSURANCE", groupId: 3, lineId: 32 }),
-    ];
-    const r = over(txns, [{ groupId: 3, lineId: 31, month: "2026-07", decision: "exceptional" }]);
-    expect(r.pendingByMonth["2026-07"]).toEqual([
-      { groupId: 3, lineId: 32, name: "Direct Assurance", month: "2026-07", amount: 15, kind: "recurring" },
-    ]);
-  });
-
-  // Une décision prise sur le GROUPE ne fait taire aucune ligne : ce ne sont pas les
-  // mêmes cases. Sans ça, une vieille décision de groupe éteindrait silencieusement
-  // des dépassements de lignes que personne n'a tranchés.
-  it("ne confond pas une décision de groupe avec celle d'une ligne", () => {
-    const txns = [tx({ id: "a", date: "2026-07-12", amount: -45, label: "SOSH", groupId: 3, lineId: 31 })];
-    const r = over(txns, [{ groupId: 3, lineId: null, month: "2026-07", decision: "exceptional" }]);
-    expect(r.pending).toHaveLength(1);
-  });
-
   it("laisse une enveloppe sans ligne, comme avant", () => {
     const txns = [tx({ id: "c", date: "2026-07-10", amount: -350, label: "CARREFOUR", groupId: 1 })];
-    const r = computeOverspends([courses], txns, "2026-07", [], seedDated([courses]).dated, {});
-    expect(r.pending).toEqual([
+    const r = computeOverspends([courses], txns, "2026-07", seedDated([courses]).dated, {});
+    expect(r.byMonth["2026-07"]).toEqual([
       { groupId: 1, lineId: null, name: "Courses", month: "2026-07", amount: 50, kind: "envelope" },
     ]);
   });
@@ -841,8 +800,34 @@ describe("Le dépassement d'un récurrent se constate ligne par ligne", () => {
 // Un groupe récurrent ne se tranche plus lui-même, mais il doit continuer de MONTRER
 // qu'il reste à trancher chez lui : replié, aucune de ses lignes n'est visible, et rien
 // ne dirait qu'une décision attend. C'est un signal, pas une décision.
+// L'étiquette « dépassement » sous un montant se lit dans la liste des dépassements, et
+// nulle part ailleurs : c'est ce qui la fait disparaître quand l'utilisateur clique
+// « Vu » — acquitter retire le dépassement de la liste, et l'étiquette suit.
+describe("Cases qui portent l'étiquette dépassement", () => {
+  const item = (groupId: number, lineId: number | null, month: string): Overspend => ({
+    groupId, lineId, name: "x", month, amount: 10, kind: lineId === null ? "envelope" : "recurring",
+  });
+
+  it("marque la case de ce qui déborde, au bon mois", () => {
+    const s = overspentCells({ "2026-07": [item(16, null, "2026-07"), item(13, 3, "2026-07")] });
+    expect(s.has("16::0::2026-07")).toBe(true);
+    expect(s.has("13::3::2026-07")).toBe(true);
+  });
+
+  it("ne marque ni un autre mois, ni une autre ligne", () => {
+    const s = overspentCells({ "2026-07": [item(13, 3, "2026-07")] });
+    expect(s.has("13::3::2026-08")).toBe(false);
+    expect(s.has("13::4::2026-07")).toBe(false);
+    expect(s.has("13::0::2026-07")).toBe(false);
+  });
+
+  it("ne marque rien quand rien ne déborde", () => {
+    expect([...overspentCells({})]).toEqual([]);
+  });
+});
+
 describe("Ce qu'un groupe signale à trancher chez ses lignes", () => {
-  const item = (groupId: number, lineId: number | null, month: string): PendingOverspend => ({
+  const item = (groupId: number, lineId: number | null, month: string): Overspend => ({
     groupId, lineId, name: "x", month, amount: 10, kind: lineId === null ? "envelope" : "recurring",
   });
 
@@ -963,9 +948,8 @@ describe("Durée de vie d'un groupe", () => {
     const ponctuel: Group = { ...courses, id: 60, name: "Cadeau", startMonth: "2026-06", endMonth: "2026-06" };
     // dépense en juillet, un mois où le groupe n'est plus actif : elle est non catégorisée, pas un dépassement de groupe
     const txn: Txn = { id: "t1", date: "2026-07-10", amount: -500, label: "x", accountId: "a1", groupId: 60 };
-    const r = over([ponctuel], [txn], "2026-07", []);
-    expect(r.pending.some((p) => p.groupId === 60)).toBe(false);
-    expect(r.pendingByMonth["2026-07"]?.some((p) => p.groupId === 60) ?? false).toBe(false);
+    const r = over([ponctuel], [txn], "2026-07");
+    expect(r.byMonth["2026-07"]?.some((p) => p.groupId === 60) ?? false).toBe(false);
   });
 
   it("devrait retirer la provision du dépassement non catégorisé", () => {
@@ -975,12 +959,12 @@ describe("Durée de vie d'un groupe", () => {
     ];
     // Juin est ici le mois courant : c'est le seul qui se tranche encore.
     // Sans provision : dépassement = 260.
-    const sans = over([], txns, "2026-06", []);
-    expect(sans.pending).toEqual([{ groupId: 0, lineId: null, name: "Non catégorisés", month: "2026-06", amount: 260, kind: "envelope" }]);
+    const sans = over([], txns, "2026-06");
+    expect(sans.byMonth["2026-06"]).toEqual([{ groupId: 0, lineId: null, name: "Non catégorisés", month: "2026-06", amount: 260, kind: "envelope" }]);
     // Provision de 100 en vigueur en juin (budget daté du groupe 0) : dépassement = 160.
     const dated = { 0: [{ effectiveMonth: "2026-06", amount: 100 }] };
-    const avec = over([], txns, "2026-06", [], dated);
-    expect(avec.pending).toEqual([{ groupId: 0, lineId: null, name: "Non catégorisés", month: "2026-06", amount: 160, kind: "envelope" }]);
+    const avec = over([], txns, "2026-06", dated);
+    expect(avec.byMonth["2026-06"]).toEqual([{ groupId: 0, lineId: null, name: "Non catégorisés", month: "2026-06", amount: 160, kind: "envelope" }]);
   });
 });
 
@@ -1192,26 +1176,26 @@ describe("montant en vigueur", () => {
       { lineId: 12, effectiveMonth: "2026-01", amount: 15 },
       { lineId: 12, effectiveMonth: "2026-08", amount: 20 },
     ]);
-    // Juillet dépasse de 5 (30 dépensés pour 25 budgétés), août non (30 pour 30).
-    // Vu depuis juillet, le dépassement est là et attend une décision.
-    // C'est Netflix qui déborde de 5 (20 dépensés pour 15 budgétés) : le rappel porte
-    // son nom, pas celui du groupe. Spotify, payée pile son budget, ne remonte pas.
-    const enJuillet = computeOverspends([recurrent], txns, "2026-07", [], {}, datedLines);
-    expect(enJuillet.pendingByMonth["2026-07"]).toEqual([
+    // C'est Netflix qui déborde de 5 en juillet (20 dépensés pour 15 budgétés) : le
+    // rappel porte son nom, pas celui du groupe. Spotify, payée pile son budget, ne
+    // remonte pas.
+    const enJuillet = computeOverspends([recurrent], txns, "2026-07", {}, datedLines);
+    expect(enJuillet.byMonth["2026-07"]).toEqual([
       { groupId: 2, lineId: 12, name: "Netflix", month: "2026-07", amount: 5, kind: "recurring" },
     ]);
-    // Vu depuis août, la ligne relevée a absorbé la dépense : plus aucun
-    // dépassement en août. Et juillet, désormais clos, ne se tranche plus.
-    const enAout = computeOverspends([recurrent], txns, "2026-08", [], {}, datedLines);
-    expect(enAout.pendingByMonth["2026-08"]).toBeUndefined();
-    expect(enAout.pending).toEqual([]);
+    // Vu depuis août, la ligne relevée a absorbé la dépense : plus aucun dépassement en
+    // août. Celui de juillet, lui, a bien eu lieu et reste signalé — c'est un fait, pas
+    // une question en attente.
+    const enAout = computeOverspends([recurrent], txns, "2026-08", {}, datedLines);
+    expect(enAout.byMonth["2026-08"]).toBeUndefined();
+    expect(enAout.byMonth["2026-07"]).toHaveLength(1);
   });
 });
 
-// Budgets pré-remplis du formulaire « Permanent » d'un dépassement. Le montant
-// proposé se calcule au mois DU DÉPASSEMENT, qui peut être ancien : le prendre au
-// mois courant proposerait un montant faux dès que le budget a changé depuis.
-describe("budgets par mois pour un dépassement", () => {
+// Budgets en vigueur pour chaque mois affiché, table plate franchissant la frontière
+// serveur/client. Le budget d'un mois ne se déduit pas de celui d'un autre : chaque
+// mois a le sien, et c'est bien un budget PAR MOIS qu'il faut transmettre.
+describe("budgets par mois", () => {
   const courses: Group = {
     id: 1, accountId: "a1", name: "Courses", direction: "out", kind: "envelope",
     monthlyAmount: null, lines: [], startMonth: "2026-01", endMonth: null,

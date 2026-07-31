@@ -10,9 +10,8 @@ import type Database from "better-sqlite3";
 import { freshDb, at } from "./setup";
 import {
   setGroupAmount, setUncatProvision, removeGroupAmount, removeLineAmount,
-  addGroupLine, editGroupLine, setGroupLineAmount, decideOverspend, undoOverspendDecision,
+  addGroupLine, editGroupLine, setGroupLineAmount,
 } from "../../../src/app/historique/actions";
-import { getOverspendDecision } from "../../../src/db/repositories/overspend-decisions";
 import { revalidatePath } from "next/cache";
 import { insertEnvelopeGroup, insertRecurringGroup } from "../../../src/db/repositories/groups";
 import { listBudgetAmounts, setBudgetAmount } from "../../../src/db/repositories/budget-amounts";
@@ -184,82 +183,6 @@ describe("setGroupLineAmount", () => {
     await editGroupLine(lid, "Spotify Famille", 15);
 
     expect(db.prepare(`SELECT name, day FROM group_lines WHERE id = ?`).get(lid)).toEqual({ name: "Spotify Famille", day: 15 });
-  });
-});
-
-// Un dépassement ne se tranche que dans son mois. Passé ce mois, il compte comme
-// exceptionnel d'office : il n'y a plus rien à décider (computeOverspends ne le
-// propose même plus), et surtout plus rien à écrire — une décision « permanent »
-// poserait un montant au mois suivant celui du dépassement, en pleine époque close.
-describe("decideOverspend", () => {
-  test("refuse de trancher un dépassement dont le mois est clos", async () => {
-    const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
-    at("2026-01");
-    setBudgetAmount(db, gid, "2026-01", 300);
-    at("2026-07");
-
-    const ok = await decideOverspend("a1", gid, null, "2026-03", "permanent", 400);
-
-    expect(ok).toBe(false);
-    expect(amountsOf(gid)).toEqual([["2026-01", 300]]);
-    expect(getOverspendDecision(db, "a1", gid, null, "2026-03")).toBeNull();
-  });
-
-  // Même « exceptionnel », qui n'écrit aucun montant, est refusé : la décision
-  // n'apprendrait rien (c'est déjà ce qui s'applique) et laisserait une trace en
-  // base pour un mois que l'app présente comme figé.
-  test("refuse aussi une décision exceptionnelle dans un mois clos", async () => {
-    const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
-    at("2026-07");
-
-    const ok = await decideOverspend("a1", gid, null, "2026-03", "exceptional");
-
-    expect(ok).toBe(false);
-    expect(getOverspendDecision(db, "a1", gid, null, "2026-03")).toBeNull();
-  });
-
-  test("accepte de trancher un dépassement du mois courant", async () => {
-    const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
-    at("2026-01");
-    setBudgetAmount(db, gid, "2026-01", 300);
-    at("2026-07");
-
-    const ok = await decideOverspend("a1", gid, null, "2026-07", "permanent", 400);
-
-    expect(ok).toBe(true);
-    expect(amountsOf(gid)).toEqual([["2026-01", 300], ["2026-08", 400]]);
-  });
-});
-
-describe("undoOverspendDecision", () => {
-  // Annuler défait les écritures de la décision : sur un mois devenu clos, ce
-  // serait retirer un montant du passé. La décision reste donc telle qu'elle est,
-  // et le panneau ne propose plus de l'annuler.
-  test("refuse d'annuler une décision dont le mois est devenu clos", async () => {
-    const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
-    at("2026-01");
-    setBudgetAmount(db, gid, "2026-01", 300);
-    at("2026-03");
-    await decideOverspend("a1", gid, null, "2026-03", "permanent", 400);
-    at("2026-07");
-
-    await undoOverspendDecision("a1", gid, null, "2026-03");
-
-    expect(amountsOf(gid)).toEqual([["2026-01", 300], ["2026-04", 400]]);
-    expect(getOverspendDecision(db, "a1", gid, null, "2026-03")).toMatchObject({ decision: "permanent" });
-  });
-
-  test("accepte d'annuler une décision du mois courant", async () => {
-    const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
-    at("2026-01");
-    setBudgetAmount(db, gid, "2026-01", 300);
-    at("2026-07");
-    await decideOverspend("a1", gid, null, "2026-07", "permanent", 400);
-
-    await undoOverspendDecision("a1", gid, null, "2026-07");
-
-    expect(amountsOf(gid)).toEqual([["2026-01", 300]]);
-    expect(getOverspendDecision(db, "a1", gid, null, "2026-07")).toBeNull();
   });
 });
 

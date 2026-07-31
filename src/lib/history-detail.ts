@@ -4,7 +4,7 @@
 // porte son montant. Ces fonctions sont pures : elles ne dépendent que des données
 // déjà calculées par computeHistory / computeSolde, jamais du rendu.
 import { monthLabel } from "./transactions-view";
-import type { HistorySection, HistoryRow, HistoryTxn, MonthCell, SoldeColumn, PendingOverspend } from "./history";
+import type { HistorySection, HistoryRow, HistoryTxn, MonthCell, SoldeColumn } from "./history";
 import {
   type CellDetail,
   type DetailNode,
@@ -161,54 +161,6 @@ export function soldeActuelDetail(
     ],
     { subtitle: monthLabel(month), result: opts.result },
   );
-}
-
-// Détail minimal ouvert par le bandeau, une pastille ou une Balance rouge : le
-// montant du dépassement et le bloc de décision. cellRef surligne la Balance du bon
-// mois quand il est affiché (monthIdx), sinon le panneau s'ouvre sans surbrillance.
-// currentBudget : budget/provision du groupe en vigueur au mois courant, pour
-// pré-remplir le champ « Permanent » ; null si inconnu. overspentLines : lignes du
-// récurrent en dépassement à item.month (voir overspentLinesOf) ; vide pour une
-// enveloppe et pour les non catégorisés.
-export function overspendDecisionDetail(
-  item: PendingOverspend,
-  accountId: string,
-  monthIdx: number | null,
-  decision: "exceptional" | "permanent" | null,
-  currentBudget: number | null = null,
-): CellDetail {
-  return {
-    title: "Dépassement",
-    subtitle: `${item.name} · ${monthLabel(item.month)}`,
-    nodes: [],
-    result: item.amount,
-    // La case visée est celle de ce qui déborde : la Balance de la LIGNE pour un
-    // récurrent, celle du groupe pour une enveloppe, celle de la section pour les non
-    // catégorisés. Viser le groupe surlignerait une case qui n'est plus décidable.
-    cellRef:
-      monthIdx != null
-        ? cellKey(
-            item.lineId !== null
-              ? subRow(item.lineId)
-              : item.groupId === 0
-                ? sectionRow("uncategorized")
-                : groupRow(item.groupId),
-            "reste",
-            monthIdx,
-          )
-        : undefined,
-    overspendAction: {
-      accountId,
-      groupId: item.groupId,
-      groupName: item.name,
-      groupKind: item.kind,
-      lineId: item.lineId,
-      month: item.month,
-      amount: item.amount,
-      decision,
-      currentBudget,
-    },
-  };
 }
 
 // Ce qu'une case « Budget dép. » de ligne de groupe laisse modifier. Une enveloppe

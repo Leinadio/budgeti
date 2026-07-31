@@ -1,6 +1,5 @@
 import { resolveOwnership, type OwnableGroup, type OwnedTxn } from "./ownership";
 import { type Group, type Txn, isGroupAlive } from "./forecast";
-import { isMonthClosed } from "./month-lock";
 
 // Montants en vigueur (budgets et lignes datés) : déplacés dans budget-in-force.ts
 // pour éviter un cycle d'import avec forecast.ts (qui a aussi besoin de ces
@@ -587,29 +586,24 @@ export function uncatOverspendOf(outT?: MonthCell, inT?: MonthCell): number {
   return Math.max(0, (outT?.depense ?? 0) - (inT?.recu ?? 0) - (outT?.budgeted ?? 0));
 }
 
-// Dépassements par (groupe x mois), avec l'état de décision de l'utilisateur.
-// pending : le dépassement à trancher par groupe (et non catégorisés), pour les pastilles.
-// pendingByMonth : les mêmes, groupés par mois (bandeaux par mois).
+// Dépassements par (ce qui porte un budget) x mois, groupés par mois.
 //
-// Un dépassement n'est « à trancher » que dans le mois courant. Passé ce mois, il
-// compte comme exceptionnel d'office : son mois est clos, plus rien ne peut y être
-// écrit (voir src/lib/month-lock.ts), il n'y a donc plus de décision à prendre —
-// et surtout plus de rappel sans issue, à réclamer une décision sur un mois que
-// l'app refuserait ensuite de modifier.
-// Un dépassement tranché (exceptionnel ou permanent) n'alimente plus rien ici : il n'y a
-// plus de report sur le prévisionnel des mois futurs (cf. `computePlannedSoldes`).
-// kind : nature du groupe qui dépasse. Les non catégorisés (groupe 0) sont donnés
-// pour une enveloppe : ils ont une provision, pas des lignes datées.
+// Un dépassement se signale, il ne se tranche pas : l'app dit qu'il a eu lieu, et c'est
+// tout. Relever un budget pour la suite est un geste à part, que l'utilisateur fait dans
+// les cases des mois qu'il veut changer — un dépassement ne modifie donc jamais un
+// budget tout seul, ni ne se reconduit sur le prévisionnel.
+//
+// kind : nature de ce qui dépasse. Les non catégorisés (groupe 0) sont donnés pour une
+// enveloppe : ils ont une provision, pas des lignes datées.
 //
 // lineId : la ligne d'un récurrent qui déborde, null pour une enveloppe et pour les
 // non catégorisés. Un récurrent n'a pas de budget à lui — son budget est la somme de
-// ses lignes — donc c'est chaque LIGNE qui déborde ou non, et c'est sur elle que la
-// décision se prend : Sosh Internet, pas Abonnements. Le groupe n'apparaît jamais ici.
-// Depuis que toute dépense d'un récurrent appartient forcément à une de ses lignes
+// ses lignes — donc c'est chaque LIGNE qui déborde ou non. Le groupe n'apparaît jamais
+// ici. Depuis que toute dépense d'un récurrent appartient forcément à une de ses lignes
 // (canAttachToGroup), la somme des débordements de lignes couvre tout ce que le groupe
 // peut déborder : aucun dépassement ne peut échapper à ce découpage.
 // `name` est celui de ce qui déborde — le nom de la ligne, donc, pour un récurrent.
-export type PendingOverspend = {
+export type Overspend = {
   groupId: number;
   lineId: number | null;
   name: string;
@@ -618,34 +612,13 @@ export type PendingOverspend = {
   kind: "envelope" | "recurring";
 };
 
-// Identité d'une case à trancher. Une ligne et son groupe ne sont pas la même case :
-// sans lineId dans la clé, une décision prise sur l'un ferait taire l'autre.
-export function decisionKey(groupId: number, lineId: number | null, month: string): string {
-  return `${groupId}::${lineId ?? 0}::${month}`;
-}
-
-// Groupes qui ont encore quelque chose à trancher, par mois — clés « groupe::mois ».
-// Un groupe récurrent ne se tranche plus lui-même : ce sont ses lignes qui portent la
-// décision. Mais replié, aucune de ses lignes n'est visible, et rien ne dirait qu'une
-// décision attend : sa case Balance garde donc l'étiquette « à trancher », comme un
-// signal de ce qu'il contient. Les mois clos n'y figurent jamais, puisque
-// computeOverspends n'y met plus rien à trancher.
-export function groupsWithPending(pendingByMonth: Record<string, PendingOverspend[]>): Set<string> {
-  const out = new Set<string>();
-  for (const [month, items] of Object.entries(pendingByMonth)) {
-    for (const it of items) out.add(`${it.groupId}::${month}`);
-  }
-  return out;
-}
-
 export function computeOverspends(
   groups: Group[],
   txns: Txn[],
   currentMonth: string,
-  decided: { groupId: number; lineId?: number | null; month: string; decision?: "exceptional" | "permanent" }[],
   dated?: DatedBudgets,
   datedLines?: DatedLineAmounts,
-): { pending: PendingOverspend[]; pendingByMonth: Record<string, PendingOverspend[]> } {
+): { byMonth: Record<string, Overspend[]> } {
   const ownable = groups.map(toOwnable);
   const owned = txns.map((t) => {
     const o: OwnedTxn = { id: t.id, date: t.date, amount: t.amount, label: t.label, accountId: t.accountId, groupId: t.groupId, excluded: t.excluded };
@@ -654,23 +627,12 @@ export function computeOverspends(
     const g = res.status === "manual" ? groups.find((x) => x.id === res.groupId) : undefined;
     return { t, ownerId: g && isGroupAlive(g, month) ? g.id : null, month };
   });
-  const decidedBy = new Map(decided.map((d) => [decisionKey(d.groupId, d.lineId ?? null, d.month), d.decision]));
+  // Un mois à venir n'a rien de réel : aucune dépense n'y a encore eu lieu.
   const months = monthsWithData(txns).filter((m) => m <= currentMonth);
 
-  const pendingByMonth: Record<string, PendingOverspend[]> = {};
-  // Le dépassement à trancher, par case (groupe ou ligne) : pastilles. Il n'y en a
-  // plus qu'un possible par case, celui du mois courant.
-  const toDecide = new Map<string, PendingOverspend>();
-  // Classe un dépassement : il n'alimente les rappels (bandeaux, pastilles) que s'il
-  // n'est pas tranché ET que son mois est encore ouvert. Un mois clos est derrière
-  // nous — son dépassement vaut exceptionnel, sans qu'on ait à l'écrire nulle part.
-  const classify = (item: PendingOverspend) => {
-    if (isMonthClosed(item.month, currentMonth)) return;
-    const key = decisionKey(item.groupId, item.lineId, item.month);
-    if (decidedBy.get(key) === undefined) {
-      (pendingByMonth[item.month] ??= []).push(item);
-      toDecide.set(`${item.groupId}::${item.lineId ?? 0}`, item);
-    }
+  const byMonth: Record<string, Overspend[]> = {};
+  const noter = (item: Overspend) => {
+    (byMonth[item.month] ??= []).push(item);
   };
   for (const m of months) {
     for (const g of groups) {
@@ -684,27 +646,48 @@ export function computeOverspends(
             .reduce((s, o) => s + Math.abs(o.t.amount), 0);
           const os = Math.max(0, spent - lineAmountInForce(l.id, m, datedLines));
           if (os <= 0.005) continue;
-          classify({ groupId: g.id, lineId: l.id, name: l.name, month: m, amount: os, kind: "recurring" });
+          noter({ groupId: g.id, lineId: l.id, name: l.name, month: m, amount: os, kind: "recurring" });
         }
         continue;
       }
       const spent = owned.filter((o) => o.ownerId === g.id && o.month === m).reduce((s, o) => s + Math.abs(o.t.amount), 0);
       const os = Math.max(0, spent - budgetInForce(g, m, dated, datedLines));
       if (os <= 0.005) continue;
-      classify({ groupId: g.id, lineId: null, name: g.name, month: m, amount: os, kind: g.kind });
+      noter({ groupId: g.id, lineId: null, name: g.name, month: m, amount: os, kind: g.kind });
     }
     const uncat = owned.filter((o) => o.ownerId === null && o.month === m);
     const dep = uncat.filter((o) => o.t.amount < 0).reduce((s, o) => s + Math.abs(o.t.amount), 0);
     const rec = uncat.filter((o) => o.t.amount > 0).reduce((s, o) => s + o.t.amount, 0);
     const os = Math.max(0, dep - rec - provisionInForce(dated, m));
-    if (os > 0.005) classify({ groupId: 0, lineId: null, name: "Non catégorisés", month: m, amount: os, kind: "envelope" });
+    if (os > 0.005) noter({ groupId: 0, lineId: null, name: "Non catégorisés", month: m, amount: os, kind: "envelope" });
   }
-  // Tri : par mois puis nom, pour un bandeau et des pastilles stables.
-  const byMonthThenName = (a: PendingOverspend, b: PendingOverspend) =>
-    a.month < b.month ? -1 : a.month > b.month ? 1 : a.name.localeCompare(b.name);
-  for (const m of Object.keys(pendingByMonth)) pendingByMonth[m].sort(byMonthThenName);
-  const pending = [...toDecide.values()].sort(byMonthThenName);
-  return { pending, pendingByMonth };
+  // Tri par nom, pour un bandeau et des étiquettes stables.
+  for (const m of Object.keys(byMonth)) byMonth[m].sort((a, b) => a.name.localeCompare(b.name));
+  return { byMonth };
+}
+
+// Cases qui portent un dépassement — clés « groupe::ligne::mois », la ligne valant 0
+// pour une enveloppe et les non catégorisés. C'est la seule source de l'étiquette
+// affichée sous un montant : la lire ici et nulle part ailleurs est ce qui fait qu'un
+// dépassement acquitté (« Vu ») perd son étiquette, puisqu'il quitte cette liste.
+export function overspentCells(byMonth: Record<string, Overspend[]>): Set<string> {
+  const out = new Set<string>();
+  for (const [month, items] of Object.entries(byMonth)) {
+    for (const it of items) out.add(`${it.groupId}::${it.lineId ?? 0}::${month}`);
+  }
+  return out;
+}
+
+// Groupes qui ont un dépassement, par mois — clés « groupe::mois ». Un groupe récurrent
+// ne déborde pas lui-même : ce sont ses lignes. Mais replié, aucune de ses lignes n'est
+// visible, et rien ne dirait qu'il y a un dépassement chez lui : sa case Balance porte
+// donc l'étiquette, comme un signal de ce qu'il contient.
+export function groupsWithPending(byMonth: Record<string, Overspend[]>): Set<string> {
+  const out = new Set<string>();
+  for (const [month, items] of Object.entries(byMonth)) {
+    for (const it of items) out.add(`${it.groupId}::${month}`);
+  }
+  return out;
 }
 
 // Chaînes de solde « plan » : prévu (revenus − budget) et « si dépassement »

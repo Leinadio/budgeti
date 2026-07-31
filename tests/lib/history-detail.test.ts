@@ -11,7 +11,6 @@ import {
   labelOfSection,
   sectionRowKey,
   soldeActuelDetail,
-  overspendDecisionDetail,
   budgetEditOfGroup,
   budgetEditOfLine,
   detailKey,
@@ -303,52 +302,6 @@ describe("L'invariant de lecture du panneau : un total est la somme de ce qu'il 
         expect(parts[2], `mois inattendu dans ${n.ref}`).toBe("1");
       },
     );
-  });
-});
-
-describe("Le dépassement ouvert depuis un bandeau ou une pastille", () => {
-  const item = { groupId: 7, lineId: null, name: "Courses", month: "2026-06", amount: 50, kind: "envelope" as const };
-
-  it("devrait viser la Balance du groupe, au mois affiché", () => {
-    const d = overspendDecisionDetail(item, "a1", 2, null, 300);
-    expect(d.cellRef).toBe("group:7::reste::2");
-    expect(d.result).toBe(50);
-    expect(d.overspendAction).toMatchObject({ accountId: "a1", groupId: 7, month: "2026-06", amount: 50, currentBudget: 300 });
-  });
-
-  it("devrait viser la ligne des non catégorisés pour le groupe 0", () => {
-    const d = overspendDecisionDetail({ ...item, groupId: 0, name: "Non catégorisés" }, "a1", 0, null);
-    expect(d.cellRef).toBe("section:uncategorized::reste::0");
-  });
-
-  it("ne devrait rien surligner quand le mois du dépassement n'est pas affiché", () => {
-    // Sans colonne à l'écran, un renvoi pointerait dans le vide.
-    const d = overspendDecisionDetail(item, "a1", null, null);
-    expect(d.cellRef).toBeUndefined();
-  });
-
-  it("devrait reporter la décision déjà prise", () => {
-    expect(overspendDecisionDetail(item, "a1", 1, "permanent").overspendAction!.decision).toBe("permanent");
-  });
-
-  it("devrait porter la nature du groupe (envelope/recurring) issue de l'item", () => {
-    expect(overspendDecisionDetail(item, "a1", 1, null).overspendAction!.groupKind).toBe("envelope");
-    expect(overspendDecisionDetail({ ...item, kind: "recurring" }, "a1", 1, null).overspendAction!.groupKind).toBe(
-      "recurring",
-    );
-  });
-
-  it("devrait porter le budget en vigueur transmis, pour pré-remplir « Permanent »", () => {
-    expect(overspendDecisionDetail(item, "a1", 1, null, 300).overspendAction!.currentBudget).toBe(300);
-  });
-
-  // Le dépassement d'un récurrent est celui d'une de ses LIGNES : le panneau doit viser
-  // la case de la ligne, pas celle du groupe, qui n'est plus décidable.
-  it("devrait viser la Balance de la ligne pour un récurrent", () => {
-    const ligne = { ...item, groupId: 13, lineId: 3, name: "Sosh Internet", kind: "recurring" as const };
-    const d = overspendDecisionDetail(ligne, "a1", 2, null);
-    expect(d.cellRef).toBe("subrow:3::reste::2");
-    expect(d.overspendAction!.lineId).toBe(3);
   });
 });
 

@@ -1,10 +1,9 @@
 "use client";
 import type { AccountForecast } from "@/lib/forecast";
-import { budgetKey, type MonthCell, type HistorySection, type SoldeColumn, type PlannedSoldes, type PendingOverspend, type IgnoredBlock } from "@/lib/history";
+import type { MonthCell, HistorySection, SoldeColumn, PlannedSoldes, Overspend, IgnoredBlock } from "@/lib/history";
 import type { BudgetChange } from "@/lib/budget-history";
 import { CenterScroll } from "@/components/center-scroll";
 import { HistoryGrid } from "@/components/history-grid";
-import { OverspendBanner } from "@/components/overspend-banner";
 import { useDetailSidebar } from "@/components/detail-sidebar";
 
 type SelectGroup = {
@@ -33,52 +32,14 @@ export function HistoryWithDetail(props: {
   groups: SelectGroup[];
   solde: SoldeColumn;
   planned: PlannedSoldes;
-  // Compte affiché et décisions déjà prises sur des dépassements : nécessaires au
-  // bloc de décision du side panel (Task 6).
   accountId: string;
-  decisions?: { groupId: number; lineId: number | null; month: string; decision: "exceptional" | "permanent" }[];
-  // Tous les dépassements non tranchés, un par groupe (pastilles) ; budgets courants
-  // par groupe, pour pré-remplir l'édition de budget d'un groupe (gestion de groupe).
-  pending?: PendingOverspend[];
-  // Dépassements non tranchés groupés par mois : pastilles sous chaque en-tête de
-  // mois dans la grille (Task 4).
-  pendingByMonth?: Record<string, PendingOverspend[]>;
-  // Budgets par groupe ET par mois (clé budgetKey), pour pré-remplir le formulaire
-  // « Permanent » d'un dépassement au mois de CE dépassement. Le groupe 0 y porte la
-  // provision des non catégorisés.
-  budgetsForOverspend?: Record<string, number>;
+  // Dépassements groupés par mois : le bandeau d'alerte au-dessus du tableau, et
+  // l'étiquette « dépassement » sur les cases concernées.
+  overspendsByMonth?: Record<string, Overspend[]>;
 }) {
   const { setDetail, selected, anchor } = useDetailSidebar();
-  // Bandeau : les dépassements à trancher de TOUS les mois affichés (mois courant
-  // inclus), dans l'ordre de la fenêtre. On les prend dans pendingByMonth (groupés
-  // par mois, déjà triés par nom) restreint aux mois affichés : un mois hors fenêtre
-  // n'apparaît donc pas dans le bandeau.
-  const bannerItems = props.pendingByMonth
-    ? props.months.flatMap((m) => props.pendingByMonth![m] ?? [])
-    : [];
-  // Lignes de groupe du tableau, indexées par id : sert à retrouver, pour chaque
-  // item du bandeau, ses lignes en dépassement (overspentLinesOfPending). Comme
-  // bannerItems ne contient que des mois affichés, le résultat n'est jamais null
-  // ici — la fenêtre couvre toujours le mois de chaque item.
-  // Budget en vigueur de ce qui déborde. Pour une ligne de récurrent, il se lit dans sa
-  // propre case du mois : la table par groupe ne le connaît pas et proposerait 0.
-  const budgetOfPending = (item: PendingOverspend): number | null => {
-    if (item.lineId === null) return props.budgetsForOverspend?.[budgetKey(item.groupId, item.month)] ?? null;
-    const idx = props.months.indexOf(item.month);
-    if (idx === -1) return null;
-    const row = props.sections.flatMap((s) => s.rows).find((r) => r.id === item.groupId);
-    return row?.subRows.find((sr) => sr.id === item.lineId)?.cells[idx]?.budgeted ?? null;
-  };
   return (
     <div className="flex flex-col gap-3">
-      {bannerItems.length > 0 && (
-        <OverspendBanner
-          items={bannerItems}
-          accountId={props.accountId}
-          months={props.months}
-          budgetOf={budgetOfPending}
-        />
-      )}
       <CenterScroll>
         <HistoryGrid {...props} onSelect={setDetail} selected={selected} anchor={anchor} />
       </CenterScroll>

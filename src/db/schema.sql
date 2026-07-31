@@ -111,6 +111,10 @@ CREATE TABLE IF NOT EXISTS budget_amounts (
   UNIQUE(group_id, effective_month, scope)
 );
 
+-- VESTIGE : plus lue ni écrite par l'application. Un dépassement ne se tranche plus,
+-- il se signale ; relever un budget pour la suite est un geste à part, fait à la main
+-- dans les cases des mois concernés. La table survit pour ne pas détruire l'historique
+-- des décisions déjà prises ; elle peut être supprimée sans conséquence.
 -- Décision de l'utilisateur sur un dépassement (un groupe x un mois).
 -- group_id = 0 désigne les Non catégorisés du compte (pas de FK volontairement).
 -- L'absence de ligne = non tranché. Le dernier choix gagne (upsert).
@@ -145,4 +149,13 @@ CREATE TABLE IF NOT EXISTS line_amounts (
   -- clé d'unicité — sinon écrire l'une effacerait l'autre.
   scope TEXT NOT NULL DEFAULT 'ongoing',
   UNIQUE(line_id, effective_month, scope)
+);
+
+-- Notifications fermées d'une croix par l'utilisateur. L'identité est celle que
+-- construit overspendNotifications (« compte::cible::mois ») : on écarte par identité,
+-- pas par montant, pour qu'un dépassement qui continue de grossir ne fasse pas
+-- reparaître une notification déjà écartée.
+CREATE TABLE IF NOT EXISTS dismissed_notifications (
+  id TEXT PRIMARY KEY,
+  dismissed_at TEXT NOT NULL   -- ISO datetime
 );

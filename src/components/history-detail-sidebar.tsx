@@ -3,16 +3,14 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { X, ChevronRight, ChevronDown, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { closedOverspendText, type CellDetail, type OverspendActionInfo, type GroupManageInfo, type LineManageInfo, type UncatProvisionInfo, type BudgetEditInfo } from "@/lib/history-explain";
-import { monthLabel, monthPhrase, deMonthPhrase } from "@/lib/transactions-view";
-import { nextMonthKey } from "@/lib/history";
+import type { CellDetail, GroupManageInfo, LineManageInfo, UncatProvisionInfo, BudgetEditInfo } from "@/lib/history-explain";
+import { monthLabel } from "@/lib/transactions-view";
 import { formatEur } from "@/lib/money";
 import { detailKey } from "@/lib/history-detail";
+import { OverspendNotice } from "@/components/overspend-notice";
 import { flattenNodes, cellsForNode, cellsForTotal, TOTAL_ROW, type PanelRow } from "@/lib/history-nav";
 import { amountAtMonth, type BudgetChange } from "@/lib/budget-history";
 import {
-  decideOverspend,
-  undoOverspendDecision,
   renameGroupAction,
   deleteGroupAction,
   setGroupAmount,
@@ -98,149 +96,6 @@ function DetailRow({ row, selected, onToggle, onSelect }: {
         </div>
       </TableCell>
     </TableRow>
-  );
-}
-
-// Bloc de décision d'un dépassement : affiché sous le détail quand la case cliquée est
-// une Balance en dépassement. « Exceptionnel » enregistre en un clic ; « Permanent »
-// déplie un champ, un seul montant.
-//
-// Un seul montant partout, désormais : on ne tranche plus que ce qui PORTE un budget —
-// une enveloppe, les non catégorisés, ou une ligne de récurrent. Le groupe d'un
-// récurrent n'en porte pas (son budget est la somme de ses lignes) et n'est donc jamais
-// décidable. C'est ce qui a fait disparaître l'ancien formulaire de ventilation, où il
-// fallait répartir à la main un dépassement de groupe entre ses lignes.
-function OverspendActionBlock({ action }: { action: OverspendActionInfo }) {
-  const router = useRouter();
-  const [openForm, setOpenForm] = useState(false);
-  const [value, setValue] = useState(() => String(Math.round(((action.currentBudget ?? 0) + action.amount) * 100) / 100));
-  const [busy, setBusy] = useState(false);
-  // Le serveur peut refuser une décision (montant invalide, mois clos, groupe non
-  // décidable) : ce message ne s'affiche que dans ce cas, pour ne jamais laisser croire
-  // qu'une décision a été prise quand ce n'est pas vrai. Il ne doit pas non plus
-  // survivre à une correction : effacé dès que le formulaire se referme ou qu'un champ
-  // change.
-  const [error, setError] = useState<string | null>(null);
-  // Décision affichée : celle déjà en base à l'ouverture, mise à jour tout de suite
-  // après un choix pour que la question disparaisse sans attendre un nouveau clic —
-  // mais seulement si le serveur a réellement enregistré la décision (decide) :
-  // sinon l'écran annoncerait une décision qui n'a pas eu lieu.
-  const [decided, setDecided] = useState<"exceptional" | "permanent" | null>(action.decision);
-  const decide = async (decision: "exceptional" | "permanent", newBudget?: number) => {
-    setBusy(true);
-    setError(null);
-    const ok = await decideOverspend(action.accountId, action.groupId, action.lineId, action.month, decision, newBudget);
-    setBusy(false);
-    if (!ok) {
-      // Le serveur ne dit pas pourquoi il a refusé : on n'affirme que ce qui est
-      // toujours vrai.
-      setError("La décision n'a pas été enregistrée.");
-      return;
-    }
-    setOpenForm(false);
-    setDecided(decision);
-    router.refresh();
-  };
-  // Annule le choix en base : le dépassement redevient « à trancher » et, si c'était
-  // « permanent », la hausse de budget est retirée.
-  const undo = async () => {
-    setBusy(true);
-    await undoOverspendDecision(action.accountId, action.groupId, action.lineId, action.month);
-    setBusy(false);
-    setDecided(null);
-    router.refresh();
-  };
-  // Mois clos : rien à trancher, rien à défaire. On ne montre que ce qui s'applique —
-  // la décision prise en son temps, ou l'exceptionnel d'office quand rien n'a été
-  // tranché. Le serveur refuse de toute façon les deux actions : ce n'est pas qu'un
-  // masquage.
-  if (action.closed) {
-    return (
-      <div className="mt-4 rounded-md border p-3 text-muted-foreground text-sm">
-        <p>{closedOverspendText(action.decision, fmtAbs(action.amount), monthPhrase(action.month))}</p>
-      </div>
-    );
-  }
-  if (decided) {
-    return (
-      <div className="mt-4 rounded-md border p-3 text-sm">
-        <p>
-          Décidé : {decided === "exceptional" ? "exceptionnel" : "permanent"} pour le dépassement de{" "}
-          {fmtAbs(action.amount)} en {monthPhrase(action.month)}.
-        </p>
-        <div className="mt-2 flex gap-3">
-          <button type="button" disabled={busy} onClick={() => setDecided(null)} className="text-muted-foreground underline decoration-dotted underline-offset-2 hover:no-underline">
-            Modifier
-          </button>
-          <button type="button" disabled={busy} onClick={undo} className="text-muted-foreground underline decoration-dotted underline-offset-2 hover:no-underline">
-            Annuler
-          </button>
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className="mt-4 rounded-md border p-3 text-sm">
-      <p>
-        Dépassement de {fmtAbs(action.amount)} en {monthPhrase(action.month)} — va-t-il revenir ?
-      </p>
-      <div className="mt-2 flex gap-2">
-        <button type="button" disabled={busy} onClick={() => decide("exceptional")} className="rounded-md border px-2 py-1 hover:bg-muted">
-          Exceptionnel
-        </button>
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => {
-            setOpenForm((v) => !v);
-            setError(null);
-          }}
-          className="rounded-md border px-2 py-1 hover:bg-muted"
-        >
-          Permanent
-        </button>
-      </div>
-      {/* Le budget en vigueur est affiché À CÔTÉ du montant proposé, et le mois d'effet
-          en clair au-dessus. Sans ça, le champ n'affichait qu'un nombre — le budget PLUS
-          le dépassement — qui ne correspondait à aucun montant existant : on croyait lire
-          le budget actuel et on lisait la proposition. */}
-      {openForm && (
-        <div className="mt-2 flex flex-col gap-2">
-          <p className="text-muted-foreground">
-            Nouveau montant, à partir {deMonthPhrase(nextMonthKey(action.month))} :
-          </p>
-          <div className="flex items-center gap-2">
-            <label className="text-muted-foreground" htmlFor="new-budget">
-              {action.groupId === 0 ? "Provision" : "Budget"}
-            </label>
-            {action.currentBudget != null && (
-              <span className="text-muted-foreground tabular-nums">{formatEur(action.currentBudget)} →</span>
-            )}
-            <input
-              id="new-budget"
-              type="number"
-              step="0.01"
-              min="0"
-              value={value}
-              onChange={(e) => {
-                setValue(e.target.value);
-                setError(null);
-              }}
-              className="w-24 rounded-md border px-2 py-1 text-right tabular-nums"
-            />
-            <button
-              type="button"
-              disabled={busy || !(parseFloat(value) > 0)}
-              onClick={() => decide("permanent", parseFloat(value))}
-              className="bg-primary text-primary-foreground rounded-md px-2 py-1"
-            >
-              Valider
-            </button>
-          </div>
-        </div>
-      )}
-      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
-    </div>
   );
 }
 
@@ -795,7 +650,13 @@ function DetailBody({ detail, onClose, selectedPanel, onSelectRow }: {
             })()}
           </TableBody>
         </Table>
-        {detail.overspendAction && <OverspendActionBlock action={detail.overspendAction} />}
+        {/* Le dépassement de cette case, sous son calcul : c'est là qu'on se demande
+            d'où vient le rouge. « Vu » retire le bandeau ET l'étiquette du tableau. */}
+        {detail.overspendNotice && (
+          <div className="mt-4">
+            <OverspendNotice {...detail.overspendNotice} />
+          </div>
+        )}
         {/* Édition du montant sous la décomposition de la case « Budget dép. » : la
             décomposition reste visible, c'est elle qui dit d'où vient le chiffre. */}
         {detail.budgetEdit && <BudgetEditBlock info={detail.budgetEdit} />}

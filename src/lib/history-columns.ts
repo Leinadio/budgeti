@@ -72,10 +72,9 @@ export const COL_INFO: Record<ColKey, string[]> = {
     "Par exemple : tu démarres à −120 €, tu attends 650 €, tu prévois 555 € de dépenses. Il te resterait −25 € en fin de mois.",
   ],
   soldeDepass: [
-    "C'est ton plan mis à l'épreuve : le Solde prévu, duquel on retire les dépassements qui risquent de continuer.",
-    "Sur les mois passés et le mois en cours, ce sont tes dépassements réels qui sont retirés. Sur les mois à venir, uniquement ceux que tu as marqués « Permanent » : par défaut un dépassement est vu comme un accident ponctuel, on ne le reconduit pas tout seul.",
-    "Quand un budget déborde, l'app te demande de décider : exceptionnel (un accident, on l'oublie) ou permanent (ça va revenir). « Permanent » ne touche ni à ton budget ni à ton Solde prévu : il reporte simplement le dépassement ici, sur les mois futurs.",
-    "Tant que rien n'est marqué permanent, cette colonne rejoint le Solde prévu sur les mois à venir. L'écart entre les deux mesure ce que tes dépassements récurrents coûtent vraiment à ta projection.",
+    "C'est ton plan mis à l'épreuve : le Solde prévu, duquel on retire ce que tu as dépensé au-delà de tes budgets.",
+    "Sur les mois passés et le mois en cours, ce sont tes dépassements réels qui sont retirés : l'écart avec le Solde prévu te dit ce que tes débordements t'ont coûté pour de vrai.",
+    "Sur les mois à venir, cette colonne rejoint le Solde prévu : un dépassement n'est jamais reconduit tout seul. Si tu penses qu'il va revenir, c'est à toi de relever le budget des mois concernés — clique leur case et fixe le nouveau montant.",
   ],
 };
 

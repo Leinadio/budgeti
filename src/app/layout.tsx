@@ -3,6 +3,8 @@ import { Fraunces, IBM_Plex_Sans, IBM_Plex_Mono } from "next/font/google";
 import { AppSidebar } from "@/components/app-sidebar";
 import { DetailSidebarProvider } from "@/components/detail-sidebar";
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
+import { NotificationsButton } from "@/components/notifications-button";
+import { appNotifications } from "@/lib/app-notifications";
 
 export const metadata = { title: "Budget CIC" };
 
@@ -46,7 +48,12 @@ const mono = IBM_Plex_Mono({
 const themeScript =
   "document.documentElement.classList.toggle('dark', window.matchMedia('(prefers-color-scheme: dark)').matches)";
 
+// Rendu à chaque navigation : les notifications se recalculent avec la base, sans quoi
+// un dépassement corrigé resterait affiché.
+export const dynamic = "force-dynamic";
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const notifications = appNotifications();
   return (
     <html
       lang="fr"
@@ -75,6 +82,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   arrondis de la carte. */}
               <header className="flex shrink-0 items-center gap-2 border-b px-4 py-2">
                 <SidebarTrigger />
+                {/* ml-auto : le bouton se pose à droite de l'en-tête, à l'opposé de
+                    l'ouverture du menu. */}
+                <div className="ml-auto">
+                  <NotificationsButton items={notifications} />
+                </div>
               </header>
               <div className="flex-1 overflow-y-auto px-6 py-6">{children}</div>
             </SidebarInset>

@@ -1,7 +1,5 @@
 "use server";
-import type Database from "better-sqlite3";
 import { db } from "../../db/index";
-import { setOverspendDecision, deleteOverspendDecision, getOverspendDecision } from "../../db/repositories/overspend-decisions";
 import { setBudgetAmount, deleteBudgetAmount, deleteBudgetAmountsAfter, listBudgetAmounts } from "../../db/repositories/budget-amounts";
 import { listLineAmounts, setLineAmount, deleteLineAmount, deleteLineAmountsAfter } from "../../db/repositories/line-amounts";
 import {
@@ -13,12 +11,10 @@ import {
   renameLine,
   deleteLine,
   hasIncomeGroup,
-  getGroupKind,
 } from "../../db/repositories/groups";
-import { toDatedBudgets, toDatedLineAmounts, nextMonthKey, type BudgetScope } from "../../lib/history";
+import { toDatedBudgets, toDatedLineAmounts, type BudgetScope } from "../../lib/history";
 import { canRemoveBudgetChange, budgetChanges, type BudgetChange } from "../../lib/budget-history";
 import { isMonthClosed, currentMonthKey } from "../../lib/month-lock";
-import { envelopeWrites, undoWrites, amountAt, normalizeWrites, type BudgetWrite } from "../../lib/overspend-writes";
 import { revalidatePath } from "next/cache";
 
 // Mois où l'on peut encore toucher à un budget : bien formé, et pas clos. Un mois
@@ -32,114 +28,6 @@ import { revalidatePath } from "next/cache";
 // ne peut pas être clos si celui-ci ne l'est pas.
 function monthWritable(month: string): boolean {
   return /^\d{4}-\d{2}$/.test(month) && !isMonthClosed(month, currentMonthKey(new Date()));
-}
-
-// Défait les écritures d'une décision « permanent » : restaure les entrées qui
-// avaient un montant d'avant, supprime celles qui n'en avaient pas, laisse
-// intactes celles modifiées à la main depuis (undoWrites, pur, fait le tri).
-// Partagée par decideOverspend (avant de reposer de nouvelles écritures sur la
-// même case) et undoOverspendDecision (annulation).
-function applyUndo(database: Database.Database, writes: BudgetWrite[]): void {
-  const dated = toDatedBudgets(listBudgetAmounts(database));
-  const datedLines = toDatedLineAmounts(listLineAmounts(database));
-  const enPlace = (w: BudgetWrite) => amountAt(w.target === "line" ? (datedLines[w.id] ?? []) : (dated[w.id] ?? []), w.month);
-  const { restore, remove } = undoWrites(writes, enPlace);
-  for (const w of restore) {
-    if (w.target === "line") setLineAmount(database, w.id, w.month, w.before!);
-    else setBudgetAmount(database, w.id, w.month, w.before!);
-  }
-  for (const w of remove) {
-    if (w.target === "line") deleteLineAmount(database, w.id, w.month);
-    else deleteBudgetAmount(database, w.id, w.month);
-  }
-}
-
-// Enregistre la décision de l'utilisateur sur un dépassement. La case tranchée est
-// ce qui PORTE un budget : une enveloppe (groupId, lineId null), les non catégorisés
-// (groupId 0), ou UNE LIGNE de récurrent (lineId). Un récurrent n'a pas de budget à
-// lui — son budget est la somme de ses lignes — donc son groupe ne se tranche jamais :
-// il n'y aurait rien où écrire.
-//
-// « Permanent » relève le budget au mois qui SUIT celui du dépassement : le mois du
-// dépassement garde son budget réel, c'est un fait passé. Re-trancher une case déjà
-// décidée défait d'abord les écritures de la décision existante (applyUndo) avant d'en
-// poser de nouvelles : sans ça, le montant d'avant capturé par la nouvelle décision
-// serait celui posé par l'ancienne, pas la vraie valeur d'origine — orpheline, sans
-// recours, une fois la nouvelle décision annulée.
-//
-// Rend true si la décision a bien été enregistrée, false si elle a été refusée : le
-// side panel s'en sert pour ne jamais annoncer une décision qui n'a pas eu lieu.
-export async function decideOverspend(
-  accountId: string,
-  groupId: number,
-  lineId: number | null,
-  month: string,
-  decision: "exceptional" | "permanent",
-  newBudget?: number,
-): Promise<boolean> {
-  // Un dépassement ne se tranche que dans son mois. Après, il compte comme
-  // exceptionnel d'office (computeOverspends ne le propose même plus) : « permanent »
-  // poserait un montant au mois suivant, en pleine époque close, et « exceptionnel »
-  // n'apprendrait rien tout en laissant une trace en base sur un mois présenté comme
-  // figé. Le refus vaut donc pour les deux décisions.
-  if (!monthWritable(month)) return false;
-  const database = db();
-
-  // Le groupe d'un récurrent ne porte aucun montant : le trancher ferait taire une
-  // alerte sans rien relever. Ce sont ses lignes qui se tranchent.
-  if (lineId === null && groupId !== 0 && getGroupKind(database, groupId) === "recurring") return false;
-  // Une décision « permanent » qui ne relève rien laisserait le dépassement revenir
-  // à l'identique le mois suivant, l'alerte en moins : autant ne pas la prendre.
-  if (decision === "permanent" && !(newBudget != null && Number.isFinite(newBudget) && newBudget > 0)) return false;
-
-  const existing = getOverspendDecision(database, accountId, groupId, lineId, month);
-  if (existing?.writes?.length) applyUndo(database, existing.writes);
-
-  let writes: BudgetWrite[] | null = null;
-  if (decision === "permanent") {
-    // Mois d'effet, déterminé une seule fois ici : envelopeWrites le reçoit tel quel,
-    // sans le recalculer (cf. overspend-writes.ts). C'est aussi ce même `cible` qui
-    // sert à capturer `before` — les deux visent donc toujours le même mois.
-    const cible = nextMonthKey(month);
-    if (lineId !== null) {
-      const datedLines = toDatedLineAmounts(listLineAmounts(database));
-      const before = amountAt(datedLines[lineId] ?? [], cible);
-      writes = [{ target: "line", id: lineId, month: cible, amount: newBudget!, before }];
-      setLineAmount(database, lineId, cible, newBudget!);
-    } else {
-      const dated = toDatedBudgets(listBudgetAmounts(database));
-      const before = amountAt(dated[groupId] ?? [], cible);
-      writes = envelopeWrites(groupId, cible, newBudget!, before);
-      for (const w of writes) setBudgetAmount(database, w.id, w.month, w.amount);
-    }
-    writes = normalizeWrites(writes);
-  }
-
-  setOverspendDecision(database, {
-    accountId, groupId, lineId, month, decision, decidedAt: new Date().toISOString(), writes,
-  });
-  revalidatePath("/historique");
-  revalidatePath("/");
-  return true;
-}
-
-// Annule une décision : le dépassement redevient « à trancher ». Les montants
-// posés par une décision « permanent » sont défaits — restaurés à leur valeur
-// d'avant, ou supprimés s'il n'y en avait pas — sauf ceux modifiés à la main
-// depuis, qu'on laisse tels quels.
-// Refusée sur un mois clos : défaire des écritures, c'est retirer un montant du
-// passé. Une décision prise en son temps reste donc telle quelle, et le panneau
-// n'en propose plus l'annulation (voir aussi decideOverspend).
-export async function undoOverspendDecision(
-  accountId: string, groupId: number, lineId: number | null, month: string,
-): Promise<void> {
-  if (!monthWritable(month)) return;
-  const database = db();
-  const existing = getOverspendDecision(database, accountId, groupId, lineId, month);
-  if (existing?.writes?.length) applyUndo(database, existing.writes);
-  deleteOverspendDecision(database, accountId, groupId, lineId, month);
-  revalidatePath("/historique");
-  revalidatePath("/");
 }
 
 // Création inline d'un groupe (enveloppe ou récurrent) depuis le tableau de

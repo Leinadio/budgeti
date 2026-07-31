@@ -10,30 +10,8 @@ import {
   groupRow,
   subRow,
   txnRow,
-  closedOverspendText,
   type DetailNode,
 } from "../../src/lib/history-explain";
-
-// Ce que le bloc de décision affiche quand le mois du dépassement est clos : plus
-// de boutons, plus d'annulation, seulement ce qui s'applique et pourquoi c'est
-// définitif. Le texte vit ici pour être lisible d'un coup et vérifié, plutôt que
-// dispersé dans les branches d'un composant.
-describe("Texte d'un dépassement dont le mois est clos", () => {
-  it("dit l'exceptionnel d'office quand rien n'a été tranché", () => {
-    expect(closedOverspendText(null, "150,00 €", "mars 2026")).toBe(
-      "Dépassement de 150,00 € en mars 2026. Ce mois est terminé : il compte comme exceptionnel, et son budget ne se modifie plus.",
-    );
-  });
-
-  it("rappelle la décision prise, sans proposer de la changer", () => {
-    expect(closedOverspendText("permanent", "150,00 €", "mars 2026")).toBe(
-      "Dépassement de 150,00 € en mars 2026, tranché permanent. Ce mois est terminé, cette décision ne se modifie plus.",
-    );
-    expect(closedOverspendText("exceptional", "40,50 €", "avril 2026")).toBe(
-      "Dépassement de 40,50 € en avril 2026, tranché exceptionnel. Ce mois est terminé, cette décision ne se modifie plus.",
-    );
-  });
-});
 
 describe("Le détail affiché dans le panneau latéral quand on clique une cellule", () => {
   it("devrait additionner les montants signés de chaque ligne du détail", () => {
