@@ -1,11 +1,3 @@
-# Style de réponse
-
-- Toujours très court. Des phrases, de la prose, pas de télégramme.
-- Pas de symboles décoratifs. Les listes à puces ou numérotées sont autorisées
-  uniquement quand il y a vraiment une liste à énumérer.
-- Vocabulaire de tous les jours, celui qu'on emploie en parlant. Le but est que ce
-  soit compris du premier coup, sans jargon technique inutile.
-
 # Le projet : Budget CIC
 
 App web locale et personnelle de suivi de budget. Elle se connecte au compte CIC
