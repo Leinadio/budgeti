@@ -1,4 +1,3 @@
-import { isMonthClosed } from "./month-lock";
 import { amountInForce, type BudgetScope, type DatedEntry } from "./budget-in-force";
 
 // Un montant dans la vie d'un budget : le mois où il prend effet, sa valeur, sa portée
@@ -47,15 +46,16 @@ export function amountAtMonth(changes: BudgetChange[], month: string): number {
   );
 }
 
-// Une entrée de la frise porte-t-elle encore une corbeille ? Deux raisons de dire non,
-// pour deux motifs distincts : le montant de départ (rien ne prendrait le relais des
-// mois qui le précèdent, cf. canRemoveBudgetChange) et un mois clos, où le serveur
-// refuse toute écriture comme toute suppression (month-lock.ts). Une exception n'est
-// jamais un montant de départ : elle se retire toujours, tant que son mois est ouvert.
-// La question se pose par ENTRÉE et non par mois : deux portées peuvent partager un
-// mois, et retirer l'exception ne doit pas emporter le montant durable.
-export function canRemoveChange(c: BudgetChange, currentMonth: string): boolean {
-  return !c.isStart && !isMonthClosed(c.month, currentMonth);
+// Une entrée de la frise porte-t-elle encore une corbeille ? Une seule raison de dire
+// non : le montant de départ, dont rien ne prendrait le relais pour les mois qui le
+// précèdent (cf. canRemoveBudgetChange). Le calendrier n'entre pas dans la question —
+// une entrée posée sur un mois écoulé se retire comme les autres, sans quoi un montant
+// mis là par erreur ne pourrait plus jamais en repartir. Une exception n'est jamais un
+// montant de départ : elle se retire toujours. La question se pose par ENTRÉE et non
+// par mois : deux portées peuvent partager un mois, et retirer l'exception ne doit pas
+// emporter le montant durable.
+export function canRemoveChange(c: BudgetChange): boolean {
+  return !c.isStart;
 }
 
 // Une entrée DURABLE ne se supprime que s'il en existe une autre, durable et antérieure,

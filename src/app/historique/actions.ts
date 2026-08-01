@@ -12,23 +12,21 @@ import {
   deleteLine,
   hasIncomeGroup,
 } from "../../db/repositories/groups";
-import { toDatedBudgets, toDatedLineAmounts, type BudgetScope } from "../../lib/history";
+import { toDatedBudgets, toDatedLineAmounts, isMonthKey, type BudgetScope } from "../../lib/history";
 import { canRemoveBudgetChange, budgetChanges, type BudgetChange } from "../../lib/budget-history";
-import { isMonthClosed, currentMonthKey } from "../../lib/month-lock";
 import { revalidatePath } from "next/cache";
 
-// Mois où l'on peut encore toucher à un budget : bien formé, et pas clos. Un mois
-// écoulé est un fait, plus rien n'y entre ni n'en sort (voir src/lib/month-lock.ts).
-// Le verrou est tenu ICI, côté serveur, et pas seulement à l'écran : masquer un
-// bouton n'empêche pas d'appeler l'action directement — même raisonnement que
-// canRemoveBudgetChange, qui protège déjà le montant de départ des deux côtés.
+// --- Ce que ces actions vérifient avant d'écrire ---------------------------
+// Le mois se valide sur sa FORME et rien d'autre (isMonthKey, une clé « YYYY-MM ») :
+// le calendrier n'entre pas dans la question. Un mois écoulé s'écrit comme le mois
+// courant — c'est tout le sens de pouvoir corriger un budget après coup, une fois le
+// relevé sous les yeux. Ce qui reste refusé l'est pour la cohérence des données et
+// jamais pour l'ancienneté : un mois mal formé se comparerait n'importe comment aux
+// autres en base, et canRemoveBudgetChange protège toujours le montant de départ
+// d'une frise, dont rien ne prendrait le relais pour les mois d'avant.
 //
-// Vérifier le seul mois demandé suffit, y compris en portée « ce mois seulement » :
-// la seconde écriture que celle-ci pose tombe au mois SUIVANT, donc plus tard — il
-// ne peut pas être clos si celui-ci ne l'est pas.
-function monthWritable(month: string): boolean {
-  return /^\d{4}-\d{2}$/.test(month) && !isMonthClosed(month, currentMonthKey(new Date()));
-}
+// Ces vérifications sont tenues ICI, côté serveur, et pas seulement à l'écran :
+// masquer un champ n'empêche pas d'appeler l'action directement.
 
 // Création inline d'un groupe (enveloppe ou récurrent) depuis le tableau de
 // l'Historique. Toujours en dépense (« out ») et sans rémunération associée ;
@@ -117,7 +115,7 @@ export async function setGroupAmount(
   scope: "once" | "ongoing",
 ): Promise<BudgetChange[]> {
   const database = db();
-  if (monthWritable(month) && Number.isFinite(amount) && amount >= 0) {
+  if (isMonthKey(month) && Number.isFinite(amount) && amount >= 0) {
     setBudgetAmount(database, groupId, month, amount, scope);
     await revalidate();
   }
@@ -139,7 +137,7 @@ export async function setGroupAmount(
 // rendu qui s'intercalerait montrerait un état que personne n'a demandé.
 export async function spreadGroupAmount(groupId: number, month: string, amount: number): Promise<BudgetChange[]> {
   const database = db();
-  if (monthWritable(month) && Number.isFinite(amount) && amount >= 0) {
+  if (isMonthKey(month) && Number.isFinite(amount) && amount >= 0) {
     deleteBudgetAmountsAfter(database, groupId, month);
     deleteBudgetAmount(database, groupId, month, "once");
     setBudgetAmount(database, groupId, month, amount, "ongoing");
@@ -151,7 +149,7 @@ export async function spreadGroupAmount(groupId: number, month: string, amount: 
 // Même chose pour la provision des non catégorisés (groupe 0), gardée à part comme
 // setUncatProvision l'est de setGroupAmount.
 export async function spreadUncatProvision(month: string, amount: number): Promise<void> {
-  if (!monthWritable(month) || !Number.isFinite(amount) || amount < 0) return;
+  if (!isMonthKey(month) || !Number.isFinite(amount) || amount < 0) return;
   const database = db();
   deleteBudgetAmountsAfter(database, 0, month);
   deleteBudgetAmount(database, 0, month, "once");
@@ -163,7 +161,7 @@ export async function spreadUncatProvision(month: string, amount: number): Promi
 // Même chose pour le montant d'une ligne de récurrent.
 export async function spreadGroupLineAmount(lineId: number, month: string, amount: number): Promise<BudgetChange[]> {
   const database = db();
-  if (monthWritable(month) && Number.isFinite(amount) && amount >= 0) {
+  if (isMonthKey(month) && Number.isFinite(amount) && amount >= 0) {
     deleteLineAmountsAfter(database, lineId, month);
     deleteLineAmount(database, lineId, month, "once");
     setLineAmount(database, lineId, month, amount, "ongoing");
@@ -184,7 +182,7 @@ export async function removeGroupAmount(
 ): Promise<BudgetChange[]> {
   const database = db();
   const entries = toDatedBudgets(listBudgetAmounts(database))[groupId] ?? [];
-  if (monthWritable(month) && canRemoveBudgetChange(entries, month, scope)) {
+  if (isMonthKey(month) && canRemoveBudgetChange(entries, month, scope)) {
     deleteBudgetAmount(database, groupId, month, scope);
     await revalidate();
     return budgetChanges(toDatedBudgets(listBudgetAmounts(database))[groupId] ?? []);
@@ -200,7 +198,7 @@ export async function setUncatProvision(
   amount: number,
   scope: "once" | "ongoing",
 ): Promise<void> {
-  if (!monthWritable(month) || !Number.isFinite(amount) || amount < 0) return;
+  if (!isMonthKey(month) || !Number.isFinite(amount) || amount < 0) return;
   const database = db();
   setBudgetAmount(database, 0, month, amount, scope);
   revalidatePath("/historique");
@@ -213,7 +211,7 @@ export async function addGroupLine(
   groupId: number, name: string, amount: number, day: number, month: string,
 ): Promise<number> {
   const trimmed = name.trim();
-  if (!trimmed || !monthWritable(month)) return -1;
+  if (!trimmed || !isMonthKey(month)) return -1;
   const database = db();
   const id = insertLine(database, groupId, trimmed, amount, day);
   setLineAmount(database, id, month, amount);
@@ -225,8 +223,7 @@ export async function addGroupLine(
 // tous les mois, et donc les seules qu'on puisse changer depuis un panneau qui
 // n'affiche aucun mois. Le montant, lui, est daté : il se fixe depuis la case
 // « Budget dép. » de la ligne (setGroupLineAmount), au mois de sa colonne. Aucun mois
-// n'entre ici, donc rien à verrouiller : renommer une ligne ne réécrit pas le passé,
-// ça corrige un libellé.
+// n'entre ici, donc rien à valider côté calendrier.
 export async function editGroupLine(lineId: number, name: string, day: number): Promise<void> {
   const trimmed = name.trim();
   if (!trimmed) return;
@@ -244,7 +241,7 @@ export async function setGroupLineAmount(
   lineId: number, month: string, amount: number, scope: "once" | "ongoing",
 ): Promise<BudgetChange[]> {
   const database = db();
-  if (monthWritable(month) && Number.isFinite(amount) && amount >= 0) {
+  if (isMonthKey(month) && Number.isFinite(amount) && amount >= 0) {
     setLineAmount(database, lineId, month, amount, scope);
     await revalidate();
   }
@@ -267,7 +264,7 @@ export async function removeLineAmount(
 ): Promise<BudgetChange[]> {
   const database = db();
   const entries = toDatedLineAmounts(listLineAmounts(database))[lineId] ?? [];
-  if (monthWritable(month) && canRemoveBudgetChange(entries, month, scope)) {
+  if (isMonthKey(month) && canRemoveBudgetChange(entries, month, scope)) {
     deleteLineAmount(database, lineId, month, scope);
     await revalidate();
     return budgetChanges(toDatedLineAmounts(listLineAmounts(database))[lineId] ?? []);

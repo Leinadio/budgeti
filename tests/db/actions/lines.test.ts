@@ -80,13 +80,13 @@ test("setGroupLineAmount « ce mois seulement » ne vaut que pour son mois, sans
   expect(listLineAmounts(db).some((l) => l.lineId === lid && l.effectiveMonth === "2026-08")).toBe(false);
 });
 
-test("setGroupLineAmount refuse un mois clos", async () => {
+test("setGroupLineAmount écrit dans un mois passé", async () => {
   const lid = await addGroupLine(gid, "Spotify", 10, 3, "2026-01");
   at("2026-07");
 
   await setGroupLineAmount(lid, "2026-03", 99, "ongoing");
 
-  expect(lineAmountInForce(lid, "2026-03", toDatedLineAmounts(listLineAmounts(db)))).toBe(10);
+  expect(lineAmountInForce(lid, "2026-03", toDatedLineAmounts(listLineAmounts(db)))).toBe(99);
 });
 
 test("setGroupLineAmount renvoie la vie du montant à jour de la ligne", async () => {

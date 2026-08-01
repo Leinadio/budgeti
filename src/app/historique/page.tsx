@@ -15,7 +15,7 @@ import { withoutDismissed } from "../../lib/notifications";
 import { listDismissedNotifications } from "../../db/repositories/dismissed-notifications";
 import { computeForecast, type Group, type Txn } from "../../lib/forecast";
 import { ForecastDetailSheet } from "@/components/forecast-detail-sheet";
-import { monthKey } from "../../lib/money";
+import { currentMonthKey } from "../../lib/current-month";
 import { accountLabel, effectiveBalance } from "../../lib/account";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { HistoryWithDetail } from "@/components/history-with-detail";
@@ -31,7 +31,7 @@ export default async function HistoriquePage({
   searchParams: Promise<{ from?: string | string[]; to?: string | string[] }>;
 }) {
   const database = db();
-  const currentMonth = monthKey(new Date().toISOString().slice(0, 10));
+  const currentMonth = currentMonthKey(new Date());
   const accounts = listAccounts(database);
   const allGroups = listGroups(database);
   const datedBudgets = toDatedBudgets(listBudgetAmounts(database));

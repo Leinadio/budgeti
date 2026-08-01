@@ -2,10 +2,11 @@ import { describe, it, expect } from "vitest";
 import { budgetChanges, amountAtMonth, canRemoveBudgetChange, canRemoveChange, type BudgetChange } from "../../src/lib/budget-history";
 
 // La frise affichée sous une case de budget propose une corbeille sur ses entrées.
-// Deux raisons de ne pas la proposer : le montant de départ (plus rien ne prendrait
-// le relais des mois d'avant) et un mois clos (le serveur refuse d'y toucher). La
-// question se pose par ENTRÉE et non par mois : deux portées peuvent partager un mois,
-// et l'exception s'y retire sans toucher au permanent.
+// Une seule raison de ne pas la proposer : le montant de départ, dont plus rien ne
+// prendrait le relais pour les mois d'avant. Le calendrier n'entre pas dans la
+// question — une entrée d'un mois écoulé se retire comme les autres. Elle se pose
+// par ENTRÉE et non par mois : deux portées peuvent partager un mois, et l'exception
+// s'y retire sans toucher au permanent.
 describe("entrées de la frise encore supprimables", () => {
   const changes = budgetChanges([
     { effectiveMonth: "2026-01", amount: 300 },
@@ -13,26 +14,24 @@ describe("entrées de la frise encore supprimables", () => {
     { effectiveMonth: "2026-07", amount: 350 },
     { effectiveMonth: "2026-09", amount: 400 },
   ]);
-  const removables = (cs: BudgetChange[], now: string) => cs.filter((c) => canRemoveChange(c, now)).map((c) => c.month);
+  const removables = (cs: BudgetChange[]) => cs.filter(canRemoveChange).map((c) => c.month);
 
-  it("ne garde que les mois ouverts, montant de départ exclu", () => {
-    expect(removables(changes, "2026-07")).toEqual(["2026-07", "2026-09"]);
+  // Y compris 2026-03 et 2026-07, révolus si l'on est en 2027 : un mois passé n'est
+  // pas figé, on y corrige un budget après coup.
+  it("garde toutes les entrées sauf le montant de départ", () => {
+    expect(removables(changes)).toEqual(["2026-03", "2026-07", "2026-09"]);
   });
 
-  it("n'en garde aucune quand tous les changements sont déjà passés", () => {
-    expect(removables(changes, "2027-01")).toEqual([]);
-  });
-
-  it("exclut le montant de départ même dans un mois ouvert", () => {
+  it("exclut le montant de départ", () => {
     const seule = budgetChanges([{ effectiveMonth: "2026-07", amount: 300 }]);
-    expect(removables(seule, "2026-07")).toEqual([]);
+    expect(removables(seule)).toEqual([]);
   });
 
   // Une exception n'est jamais le montant de départ : rien ne dépend d'elle, elle se
-  // retire toujours tant que son mois est ouvert — même si c'est la seule entrée.
-  it("laisse toujours retirer une exception d'un mois ouvert", () => {
+  // retire toujours — même si c'est la seule entrée.
+  it("laisse toujours retirer une exception", () => {
     const seule = budgetChanges([{ effectiveMonth: "2026-07", amount: 400, scope: "once" }]);
-    expect(removables(seule, "2026-07")).toEqual(["2026-07"]);
+    expect(removables(seule)).toEqual(["2026-07"]);
   });
 });
 

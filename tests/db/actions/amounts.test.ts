@@ -239,8 +239,8 @@ describe("propager un montant aux mois suivants", () => {
     ]);
   });
 
-  // Les mois d'AVANT ne bougent pas : la propagation regarde devant, et le passé est
-  // clos de toute façon.
+  // Les mois d'AVANT ne bougent pas : la propagation regarde devant, quel que soit
+  // le mois d'où elle part.
   test("ne touche à aucun mois antérieur", async () => {
     const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
@@ -254,7 +254,9 @@ describe("propager un montant aux mois suivants", () => {
     expect(budgetInForce(g, "2026-05", dated, {})).toBe(320);
   });
 
-  test("refuse un mois clos", async () => {
+  // Partir d'un mois passé ne change rien à la règle : le montant devient durable à
+  // partir de là, et tout ce qui suit est effacé, y compris un changement futur.
+  test("propage depuis un mois passé", async () => {
     const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
     setBudgetAmount(db, gid, "2026-09", 250);
@@ -264,7 +266,7 @@ describe("propager un montant aux mois suivants", () => {
 
     expect(listBudgetAmounts(db).filter((b) => b.groupId === gid)).toEqual([
       { groupId: gid, effectiveMonth: "2026-01", amount: 300, scope: "ongoing" },
-      { groupId: gid, effectiveMonth: "2026-09", amount: 250, scope: "ongoing" },
+      { groupId: gid, effectiveMonth: "2026-03", amount: 350, scope: "ongoing" },
     ]);
   });
 

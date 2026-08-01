@@ -359,7 +359,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
   // Classe de revenu (pour les colonnes Budg./Revenus des rémunérations).
   incomeKind?: "principal" | "supplementary" | null;
   // Ce que la case « Budget dép. » de cette ligne laisse modifier, au mois donné, ou
-  // null si rien (mois clos, groupe récurrent dont le budget est une somme). Calculé
+  // null si rien (groupe récurrent, dont le budget est la somme de ses lignes). Calculé
   // par l'appelant, seul à savoir s'il rend une enveloppe, un récurrent ou une de ses
   // lignes — voir budgetEditOfGroup / budgetEditOfLine.
   budgetEditOf?: (month: string) => BudgetEditInfo | null;
@@ -1423,13 +1423,14 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
     // teinté pour le distinguer du bloc entrant (Rémunérations) au-dessus — cf. OUT_TINT.
     const outTint = !topLevel && r.direction === "out";
     // Détail « gestion du groupe » ouvert par l'icône au survol. Le mois visé est le
-    // mois courant s'il est affiché, sinon le premier mois de la frise (jamais dans le
-    // passé : c'est le mois où prendra effet le montant de départ d'une ligne ajoutée,
-    // et le passé est verrouillé). Nature et lignes viennent du SelectGroup enrichi
-    // (pas de requête supplémentaire), réduites à ce qui ne dépend pas du mois : les
-    // montants ne se modifient plus ici mais dans leur case (cf. BudgetEditBlock).
+    // mois courant s'il est affiché, sinon le premier mois de la frise — c'est là que
+    // prendra effet le montant de départ d'une ligne ajoutée, et sur une fenêtre
+    // entièrement passée, ce mois-là est le bon : on y ajoute une ligne oubliée à sa
+    // vraie date. Nature et lignes viennent du SelectGroup enrichi (pas de requête
+    // supplémentaire), réduites à ce qui ne dépend pas du mois : les montants ne se
+    // modifient plus ici mais dans leur case (cf. BudgetEditBlock).
     const sg = groups.find((g) => g.id === r.id);
-    const manageMonth = months.includes(currentMonth) ? currentMonth : months[0] >= currentMonth ? months[0] : currentMonth;
+    const manageMonth = months.includes(currentMonth) ? currentMonth : months[0];
     const manageDetail: CellDetail = {
       title: r.name,
       nodes: [],

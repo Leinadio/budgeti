@@ -20,7 +20,6 @@ import {
   txnNode,
 } from "./history-explain";
 import { amountAtMonth, type BudgetChange } from "./budget-history";
-import { isMonthClosed } from "./month-lock";
 
 // Nature du montant porté par un nœud : les trois colonnes chiffrées du tableau,
 // plus le « net » (recu − depense) que lisent les chaînes de solde.
@@ -168,15 +167,15 @@ export function soldeActuelDetail(
 // n'en a pas — son budget est la somme de ses lignes, il n'y a rien à écrire au
 // niveau du groupe : sa case reste en lecture, et c'est chaque ligne qui se modifie
 // dans SA case (budgetEditOfLine ci-dessous).
-// Rend null aussi sur un mois clos : le serveur refuserait l'écriture (month-lock),
-// la case ne doit donc pas proposer de formulaire — et sur un groupe inconnu, où il
+// Le mois de la colonne n'entre pas en compte : un mois écoulé s'édite comme les
+// autres, on y corrige un budget après coup. Rend null sur un groupe inconnu, où il
 // n'y aurait ni frise ni montant à proposer.
 export function budgetEditOfGroup(
   group: { id: number; name: string; kind: "envelope" | "recurring"; changes: BudgetChange[] } | undefined,
   month: string,
   currentMonth: string,
 ): BudgetEditInfo | null {
-  if (!group || group.kind !== "envelope" || isMonthClosed(month, currentMonth)) return null;
+  if (!group || group.kind !== "envelope") return null;
   return {
     target: "group",
     id: group.id,
@@ -189,14 +188,14 @@ export function budgetEditOfGroup(
 }
 
 // Même chose pour une ligne de récurrent, qui porte son montant daté comme une
-// enveloppe. Une ligne n'a pas de nature : il n'y a rien à écarter d'autre qu'un
-// mois clos ou une ligne inconnue.
+// enveloppe. Une ligne n'a pas de nature : il n'y a rien à écarter d'autre qu'une
+// ligne inconnue.
 export function budgetEditOfLine(
   line: { id: number; name: string; changes: BudgetChange[] } | undefined,
   month: string,
   currentMonth: string,
 ): BudgetEditInfo | null {
-  if (!line || isMonthClosed(month, currentMonth)) return null;
+  if (!line) return null;
   return {
     target: "line",
     id: line.id,

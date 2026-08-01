@@ -4,6 +4,7 @@ import { listTransactions, sumIgnoredByAccount } from "../db/repositories/transa
 import { listGroups } from "../db/repositories/groups";
 import { resolveOwnership } from "../lib/ownership";
 import { formatEur, monthKey } from "../lib/money";
+import { currentMonthKey } from "../lib/current-month";
 import { accountLabel, effectiveBalance } from "../lib/account";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
@@ -12,7 +13,7 @@ export const dynamic = "force-dynamic";
 
 export default function Dashboard() {
   const database = db();
-  const month = monthKey(new Date().toISOString().slice(0, 10));
+  const month = currentMonthKey(new Date());
   const accounts = listAccounts(database);
   // Une transaction non comptabilisée doit se comporter comme si elle n'existait
   // pas, y compris dans le solde affiché : le solde de la banque la contient, on la

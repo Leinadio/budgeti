@@ -345,10 +345,10 @@ describe("Ce qu'une case « Budget dép. » laisse modifier", () => {
     expect(budgetEditOfGroup({ ...courses, kind: "recurring" }, "2026-07", "2026-07")).toBeNull();
   });
 
-  // Un mois révolu est un fait : le serveur refuse d'y écrire (month-lock), la case
-  // ne doit donc pas proposer de formulaire du tout.
-  it("ne laisse rien modifier dans un mois clos", () => {
-    expect(budgetEditOfGroup(courses, "2026-03", "2026-07")).toBeNull();
+  // Un mois révolu s'édite comme les autres : on y corrige un budget après coup, la
+  // case doit donc proposer son formulaire, avec le montant qui valait CE mois-là.
+  it("laisse modifier un mois passé", () => {
+    expect(budgetEditOfGroup(courses, "2026-03", "2026-07")).toMatchObject({ month: "2026-03", amount: 300 });
   });
 
   it("laisse modifier un mois futur", () => {
@@ -374,9 +374,9 @@ describe("Ce qu'une case « Budget dép. » laisse modifier", () => {
     });
   });
 
-  it("ne laisse rien modifier sur une ligne dans un mois clos, ni sur une ligne inconnue", () => {
+  it("laisse modifier une ligne dans un mois passé, mais rien sur une ligne inconnue", () => {
     const netflix = { id: 12, name: "Netflix", changes: [{ month: "2026-01", amount: 13.99, isStart: true, scope: "ongoing" as const }] };
-    expect(budgetEditOfLine(netflix, "2026-03", "2026-07")).toBeNull();
+    expect(budgetEditOfLine(netflix, "2026-03", "2026-07")).toMatchObject({ month: "2026-03", amount: 13.99 });
     expect(budgetEditOfLine(undefined, "2026-07", "2026-07")).toBeNull();
   });
 

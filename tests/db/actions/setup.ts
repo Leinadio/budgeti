@@ -17,12 +17,12 @@ import { upsertAccount } from "../../../src/db/repositories/accounts";
 // réassignerait directement (la factory garderait alors sa valeur `null` d'origine).
 export const ctx: { db: Database.Database | null } = { db: null };
 
-// Mois « courant » de tous les tests d'actions. Le verrou des mois passés
-// (src/lib/month-lock.ts) fait dépendre plusieurs actions de la date du jour :
-// sans horloge figée, ces tests passeraient aujourd'hui et échoueraient le mois
-// suivant, en accusant le code au lieu du calendrier. Choisi assez tôt pour que
-// tous les mois manipulés par ces suites (2025-02 et après) restent ouverts ; un
-// test qui veut un mois clos avance l'horloge lui-même.
+// Mois « courant » de tous les tests d'actions. Plusieurs suites raisonnent sur la
+// position d'un mois par rapport à aujourd'hui : sans horloge figée, ces tests
+// passeraient aujourd'hui et échoueraient le mois suivant, en accusant le code au
+// lieu du calendrier. Choisi assez tôt pour que tous les mois manipulés par ces
+// suites (2025-02 et après) soient devant ; un test qui veut un mois derrière lui
+// avance l'horloge lui-même.
 export const NOW_MONTH = "2025-01";
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));

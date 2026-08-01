@@ -21,7 +21,8 @@ const MONTH_AT_PARIS = new Intl.DateTimeFormat("fr-FR", {
 
 // Mois courant d'une horloge, à l'heure de Paris. C'est la seule source du mois
 // courant dans l'app, écran comme actions serveur : deux lectures différentes
-// laisseraient un même mois clos d'un côté et ouvert de l'autre.
+// placeraient la frontière du réel à deux endroits, et le tableau ne dirait plus
+// la même chose que ce que le serveur calcule.
 //
 // Surtout, ne pas repasser par toISOString() : entre minuit à Paris et minuit
 // UTC, l'UTC est encore la veille — le 1er août à 1h du matin, l'app affichait

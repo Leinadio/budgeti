@@ -8,7 +8,7 @@ import { listDismissedNotifications } from "../db/repositories/dismissed-notific
 import { computeOverspends, toDatedBudgets, toDatedLineAmounts } from "./history";
 import { overspendNotifications, type Notification } from "./notifications";
 import { accountLabel } from "./account";
-import { monthKey } from "./money";
+import { currentMonthKey } from "./current-month";
 import type { Group, Txn } from "./forecast";
 
 // Notifications affichées dans l'en-tête, tous comptes confondus. Vit à part de la page
@@ -19,7 +19,7 @@ import type { Group, Txn } from "./forecast";
 // et tient dans quelques centaines de lignes.
 export function appNotifications(): Notification[] {
   const database = db();
-  const currentMonth = monthKey(new Date().toISOString().slice(0, 10));
+  const currentMonth = currentMonthKey(new Date());
   const groups = listGroups(database) as Group[];
   const dated = toDatedBudgets(listBudgetAmounts(database));
   const datedLines = toDatedLineAmounts(listLineAmounts(database));

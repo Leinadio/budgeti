@@ -194,8 +194,10 @@ function LineManageBlock({ info, onClose }: { info: LineManageInfo; onClose: () 
 // Répondre après plutôt qu'avant, c'est répondre en voyant le montant qu'on vient de
 // poser, et non un choix abstrait à faire de tête au moment de la saisie.
 //
-// Ne s'affiche jamais sur un mois clos ni sur un groupe récurrent : budgetEditOfGroup /
-// budgetEditOfLine rendent alors null et la case n'a pas de bloc du tout.
+// S'affiche sur n'importe quel mois, écoulé compris : un budget se corrige après coup,
+// une fois le relevé sous les yeux. Le seul cas sans bloc du tout est la case d'un
+// groupe récurrent, où budgetEditOfGroup rend null — son budget est la somme de ses
+// lignes, il n'y a rien à écrire à son niveau.
 function BudgetEditBlock({ info }: { info: BudgetEditInfo }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
