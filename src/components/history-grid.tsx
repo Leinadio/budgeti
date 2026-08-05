@@ -1,5 +1,5 @@
 "use client";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, cloneElement, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, ArrowDownRight, ChevronDown, ChevronRight, Plus, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { monthLabel } from "@/lib/transactions-view";
@@ -133,12 +133,28 @@ const COL1_W = 320;
 // explication) vit dans src/lib/history-columns.ts : c'est une règle, pas du rendu.
 
 
-// Plus aucune teinte de fond dans ce tableau : ni par colonne (soldes, Balance),
-// ni par nature de mois, ni par bloc entrant/sortant, ni bandes grises de totaux.
-// Ce qui distingue une colonne d'une autre est son en-tête ; ce qui distingue un
-// bloc du suivant, son filet et sa graisse. Restent les fonds qui ne sont pas des
-// couleurs mais des états : le survol d'une ligne, et l'anneau de la case
-// sélectionnée depuis le side panel.
+// Le fond ne dit plus qu'une chose, mais il la dit bien : à quelle famille appartient
+// une colonne. Trois familles, trois fonds — les colonnes de mouvement du mois (tout
+// ce qui est à gauche de Balance) en partagent un seul, Balance a le sien, et les
+// trois chaînes de solde partagent le dernier. Rien d'autre n'est teinté : ni la
+// nature du mois, ni le bloc entrant/sortant, ni les bandes de totaux.
+//
+// Posés sur CHAQUE cellule (via renderCols) plutôt que sur le <colgroup> : un fond de
+// cellule recouvre celui de sa ligne, si bien que la teinte reste lisible partout,
+// y compris sous une ligne survolée.
+const DATA_TINT = "bg-[color-mix(in_oklab,var(--muted)_30%,var(--background))]";
+const BALANCE_TINT = "bg-[color-mix(in_oklab,oklch(0.75_0.16_80)_16%,var(--background))]";
+const SOLDE_TINT = "bg-[color-mix(in_oklab,oklch(0.75_0.10_210)_15%,var(--background))]";
+const COL_TINT: Record<ColKey, string> = {
+  budgetRem: DATA_TINT,
+  budgetDep: DATA_TINT,
+  dep: DATA_TINT,
+  recu: DATA_TINT,
+  reste: BALANCE_TINT,
+  soldeReel: SOLDE_TINT,
+  soldePrevu: SOLDE_TINT,
+  soldeDepass: SOLDE_TINT,
+};
 
 // Séparation entre deux mois : un filet vertical plus du blanc tournant, posés sur
 // la première colonne de chaque mois. Surtout PAS une bande épaisse peinte à la
@@ -156,9 +172,14 @@ type ColCell = React.ReactElement<{ className?: string }>;
 // première colonne du mois » (bordure de séparation).
 export type ColSlots = Record<ColKey, (border: boolean) => ColCell>;
 
-// Rend les cellules d'un mois (une par colonne).
+// Rend les cellules d'un mois (une par colonne), chacune sur le fond de sa famille.
 function renderCols(cols: ColKey[], slots: ColSlots): React.ReactNode[] {
-  return cols.map((col, idx) => slots[col](idx === 0));
+  return cols.map((col, idx) => {
+    const cell = slots[col](idx === 0);
+    // Le fond est posé AVANT la className propre de la cellule, pour que l'anneau de
+    // sélection et les bordures restent au-dessus.
+    return cloneElement(cell, { className: cn(COL_TINT[col], cell.props.className) });
+  });
 }
 
 // Cellule vide (colonne non renseignée pour cette ligne), avec bordure de mois si
@@ -1832,6 +1853,7 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
                   <TableHead
                     key={col}
                     className={cn(
+                      COL_TINT[col],
                       idx === 0 && MONTH_GAP,
                       "text-muted-foreground h-auto py-1.5 text-right align-bottom font-sans text-[10px] font-medium tracking-[0.09em] uppercase",
                     )}
@@ -2187,7 +2209,7 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
     // pas quand le panneau de détail s'ouvre.
     // Ce conteneur sert aussi d'ancre pour retrouver, par data-cellkey, la case
     // sélectionnée à faire défiler dans la vue.
-    <div ref={gridRef} className="flex w-max items-start gap-6">
+    <div ref={gridRef} className="flex w-max items-start gap-10">
       {months.map((m, mi) => (
         <div key={m}>{monthTable(m, mi)}</div>
       ))}
