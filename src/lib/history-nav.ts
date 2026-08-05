@@ -15,6 +15,22 @@ export const rowOpenKey = (groupId: number) => `g:${groupId}`;
 export const lineOpenKey = (lineId: number) => `l:${lineId}`;
 export const uncatOpenKey = (direction: "in" | "out") => (direction === "in" ? "s:uncat-in" : "s:uncat");
 
+// Le tableau affiche un tableau par mois, et les mêmes lignes s'y répètent. Un
+// dépliage appartient donc au mois où on l'a ouvert : sans son mois, la clé était
+// la même partout et déplier un groupe en juillet le dépliait aussi en août, jusque
+// dans des mois qu'on ne regardait pas.
+export const openKeyIn = (key: string, month: string) => `${key}@${month}`;
+
+// Index de mois d'une case du tableau (`ligne::colonne::index`, cf. cellKey). Sert à
+// savoir dans QUEL tableau de mois révéler une ligne choisie depuis le side panel.
+export function monthIndexOf(cell: string | null): number | null {
+  if (!cell) return null;
+  const parts = cell.split("::");
+  if (parts.length < 3) return null;
+  const i = Number(parts[2]);
+  return Number.isInteger(i) ? i : null;
+}
+
 // Pour chaque ligne masquable (transaction, sous-ligne d'un récurrent) : clés de
 // dépliage de ses ancêtres (groupe, et éventuelle ligne), afin de la révéler dans
 // le tableau quand on la sélectionne depuis le side panel.
@@ -186,13 +202,17 @@ export function rowKeyOf(cell: string | null): string | null {
 // Dépliage effectif = celui de l'utilisateur, plus les ancêtres de la ligne
 // sélectionnée, afin de la révéler sans muter l'état de dépliage manuel. Rend
 // l'ensemble d'origine (même référence) quand il n'y a rien à ajouter.
+// `month` est le mois de la case cliquée : on n'ouvre que dans CE tableau de mois,
+// comme le fait un clic direct sur le chevron. Sans mois (case introuvable ou mal
+// formée), on ne touche à rien : ouvrir partout serait pire que ne rien ouvrir.
 export function withRevealed(
   open: Set<string>,
   selRowKey: string | null,
   revealKeys: Map<string, string[]>,
+  month: string | null,
 ): Set<string> {
-  if (!selRowKey) return open;
-  const keys = revealKeys.get(selRowKey);
+  if (!selRowKey || !month) return open;
+  const keys = revealKeys.get(selRowKey)?.map((k) => openKeyIn(k, month));
   if (!keys || keys.every((k) => open.has(k))) return open;
   const next = new Set(open);
   for (const k of keys) next.add(k);

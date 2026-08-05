@@ -18,7 +18,7 @@ import { IgnoreTxnToggle } from "@/components/ignore-txn-toggle";
 import { NewGroupInline } from "@/components/new-group-inline";
 import { NewRemunerationInline } from "@/components/new-remuneration-inline";
 import { type ColKey, monthType, monthColumns, COL_LABEL, COL_INFO, budgetChangePoints } from "@/lib/history-columns";
-import { computeRevealKeys, computePrevDisplayed, rowOpenKey, lineOpenKey, uncatOpenKey, highlightedCells, rowKeyOf, withRevealed } from "@/lib/history-nav";
+import { computeRevealKeys, computePrevDisplayed, rowOpenKey, lineOpenKey, uncatOpenKey, highlightedCells, rowKeyOf, withRevealed, openKeyIn, monthIndexOf } from "@/lib/history-nav";
 import {
   netCol,
   txnChildren,
@@ -1404,8 +1404,18 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
   // Dépliage effectif = dépliage utilisateur, plus les ancêtres de la ligne
   // sélectionnée (transaction ou sous-ligne, pour la révéler sans muter l'état de
   // dépliage manuel). Dérivé plutôt que posé dans un effet : pas de setState en cascade.
-  const effectiveOpen = useMemo(() => withRevealed(open, selRowKey, revealOpenKeys), [open, selRowKey, revealOpenKeys]);
-  const isOpen = (k: string) => effectiveOpen.has(k);
+  // Le mois de la case cliquée : la révélation n'ouvre que dans ce tableau-là.
+  const selMonthIndex = monthIndexOf(activeCell);
+  const selMonth = selMonthIndex === null ? null : months[selMonthIndex] ?? null;
+  const effectiveOpen = useMemo(
+    () => withRevealed(open, selRowKey, revealOpenKeys, selMonth),
+    [open, selRowKey, revealOpenKeys, selMonth],
+  );
+  // Un dépliage vaut pour le seul mois où on l'a ouvert (cf. openKeyIn) : chaque
+  // tableau de mois montre les mêmes lignes, et déplier un groupe en juillet ne doit
+  // pas le déplier en août.
+  const isOpen = (k: string, month: string) => effectiveOpen.has(openKeyIn(k, month));
+  const toggleIn = (k: string, month: string) => toggle(openKeyIn(k, month));
 
   // Nombre de colonnes d'un tableau de mois (Catégorie + les colonnes de ce mois),
   // pour l'attribut colSpan des lignes d'espacement entre sections.
@@ -1453,7 +1463,9 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
     const gKey = rowOpenKey(r.id);
     const selfKey = groupRow(r.id);
     const hasChildren = r.subRows.length > 0 || r.txns.length > 0;
-    const gOpen = isOpen(gKey);
+    // Le dépliage vaut pour le mois de CE tableau, pas pour tous.
+    const gMonth = months[mi];
+    const gOpen = isOpen(gKey, gMonth);
     // Bloc sortant (Récurrents / Enveloppes, r.direction === "out") : fond légèrement
     // teinté pour le distinguer du bloc entrant (Rémunérations) au-dessus — cf. OUT_TINT.
     const outTint = !topLevel && r.direction === "out";
@@ -1482,7 +1494,7 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
     return (
       <Fragment key={r.id}>
         <TableRow className={cn("group", topLevel ? "bg-muted/40 hover:bg-muted/40 font-medium" : hasChildren && "hover:bg-muted/50", outTint && OUT_TINT)}>
-          <NameCell indent={0} bg={topLevel ? MUTED40 : outTint ? OUT_TINT : undefined} expandable={hasChildren} expanded={gOpen} onToggle={hasChildren ? () => toggle(gKey) : undefined}>
+          <NameCell indent={0} bg={topLevel ? MUTED40 : outTint ? OUT_TINT : undefined} expandable={hasChildren} expanded={gOpen} onToggle={hasChildren ? () => toggleIn(gKey, gMonth) : undefined}>
             {r.direction === "in" ? (
               <ArrowUpRight className="size-4 shrink-0 text-sky-600" />
             ) : (
@@ -1539,7 +1551,7 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
           <>
             {r.subRows.map((sub: HistorySubRow) => {
               const lKey = lineOpenKey(sub.id);
-              const lOpen = isOpen(lKey);
+              const lOpen = isOpen(lKey, gMonth);
               const subHasTxns = sub.txns.length > 0;
               // Ligne synthétisée à partir du poste : réutilise les helpers de détail
               // (budgetNodes → nœud unique, txnChildren → transactions du poste). Sans
@@ -1563,7 +1575,7 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
               return (
                 <Fragment key={sub.id}>
                   <TableRow className={cn("group text-sm", subHasTxns && "hover:bg-muted/50")}>
-                    <NameCell indent={1} expandable={subHasTxns} expanded={lOpen} onToggle={subHasTxns ? () => toggle(lKey) : undefined}>
+                    <NameCell indent={1} expandable={subHasTxns} expanded={lOpen} onToggle={subHasTxns ? () => toggleIn(lKey, gMonth) : undefined}>
                       <span className="min-w-0 truncate">{sub.name}</span>
                       {/* Gérer la ligne : même crayon discret que sur la ligne de
                           groupe, révélé au survol. Une ligne est un poste à part
@@ -1672,7 +1684,8 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
   const renderUncatRows = (sec: HistorySection, secs: HistorySection[], mi: number) => {
     const dir = sec.uncatDirection ?? "out";
     const uKey = uncatOpenKey(dir);
-    const uOpen = isOpen(uKey);
+    const uMonth = months[mi];
+    const uOpen = isOpen(uKey, uMonth);
     const hasTxns = (sec.txns?.length ?? 0) > 0;
     const rowKey = sectionRowKey(sec);
     // Valeurs courues des chaînes du plan à cette étape (calculées par
@@ -1683,7 +1696,7 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
     return (
       <>
         <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
-          <NameCell indent={0} bg={MUTED40} expandable={hasTxns} expanded={uOpen} onToggle={hasTxns ? () => toggle(uKey) : undefined}>
+          <NameCell indent={0} bg={MUTED40} expandable={hasTxns} expanded={uOpen} onToggle={hasTxns ? () => toggleIn(uKey, uMonth) : undefined}>
             <span className="min-w-0 truncate">Non catégorisés</span>
           </NameCell>
           <SectionTotalsCells
@@ -1715,13 +1728,14 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
   const renderIgnoredBlock = (block: IgnoredBlock, mi: number) => {
     const isIn = block.direction === "in";
     const key = `s:ignored-${block.direction}`;
-    const opened = isOpen(key);
+    const bMonth = months[mi];
+    const opened = isOpen(key, bMonth);
     const title = isIn ? "Non comptabilisées — Reçus" : "Non comptabilisées — Dépenses";
     const rowId = sectionRow(`ignored-${block.direction}`);
     return (
       <Fragment key={key}>
         <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
-          <NameCell indent={0} bg={MUTED40} expandable expanded={opened} onToggle={() => toggle(key)}>
+          <NameCell indent={0} bg={MUTED40} expandable expanded={opened} onToggle={() => toggleIn(key, bMonth)}>
             <span className="min-w-0 truncate">{title}</span>
           </NameCell>
           {months.map((m, i) => {

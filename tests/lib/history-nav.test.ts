@@ -3,7 +3,7 @@ import type { HistorySection, HistoryRow, HistoryTxn, MonthCell, SoldeColumn, Pl
 import {
   computeRevealKeys, computePrevDisplayed, rowOpenKey, lineOpenKey, uncatOpenKey,
   flattenNodes, cellsForNode, cellsForTotal, highlightedCells, rowKeyOf, withRevealed,
-  selectionForDetail, selectionForRow, TOTAL_ROW,
+  openKeyIn, monthIndexOf, selectionForDetail, selectionForRow, TOTAL_ROW,
 } from "../../src/lib/history-nav";
 import type { DetailNode } from "../../src/lib/history-explain";
 
@@ -272,31 +272,67 @@ describe("Retrouver la ligne du tableau visée par une case", () => {
   });
 });
 
+describe("Un dépliage appartient au mois où il a été ouvert", () => {
+  it("devrait attacher la clé de dépliage à son mois", () => {
+    expect(openKeyIn("g:1", "2026-07")).toBe("g:1@2026-07");
+  });
+
+  it("devrait distinguer le même groupe d'un mois à l'autre", () => {
+    expect(openKeyIn("g:1", "2026-07")).not.toBe(openKeyIn("g:1", "2026-08"));
+  });
+
+  it("devrait lire l'index de mois d'une case du tableau", () => {
+    expect(monthIndexOf("group:1::reste::2")).toBe(2);
+  });
+
+  it("ne devrait rien lire d'une case absente ou mal formée", () => {
+    expect(monthIndexOf(null)).toBeNull();
+    expect(monthIndexOf("group:1")).toBeNull();
+    expect(monthIndexOf("group:1::reste::x")).toBeNull();
+  });
+});
+
 describe("Révéler dans le tableau la ligne choisie dans le panneau", () => {
   const reveal = new Map<string, string[]>([["txn:t1", ["g:1", "l:21"]]]);
 
-  it("devrait ouvrir les dépliages qui la cachent, sans toucher à ceux de l'utilisateur", () => {
-    const open = new Set(["g:9"]);
-    const eff = withRevealed(open, "txn:t1", reveal);
-    expect([...eff].sort()).toEqual(["g:1", "g:9", "l:21"]);
+  it("devrait ouvrir les dépliages qui la cachent, dans le seul mois de la case, sans toucher à ceux de l'utilisateur", () => {
+    const open = new Set(["g:9@2026-07"]);
+    const eff = withRevealed(open, "txn:t1", reveal, "2026-07");
+    expect([...eff].sort()).toEqual(["g:1@2026-07", "g:9@2026-07", "l:21@2026-07"]);
     // L'état de l'utilisateur n'est pas muté : refermer le panneau le retrouve intact.
-    expect([...open]).toEqual(["g:9"]);
+    expect([...open]).toEqual(["g:9@2026-07"]);
   });
 
-  it("devrait rendre l'état inchangé quand la ligne est déjà visible", () => {
+  it("ne devrait pas révéler la ligne dans les autres mois", () => {
+    const eff = withRevealed(new Set<string>(), "txn:t1", reveal, "2026-07");
+    expect(eff.has("g:1@2026-08")).toBe(false);
+  });
+
+  it("devrait rendre l'état inchangé quand la ligne est déjà visible ce mois-là", () => {
     // Même objet : la grille ne se redessine pas pour rien.
-    const open = new Set(["g:1", "l:21"]);
-    expect(withRevealed(open, "txn:t1", reveal)).toBe(open);
+    const open = new Set(["g:1@2026-07", "l:21@2026-07"]);
+    expect(withRevealed(open, "txn:t1", reveal, "2026-07")).toBe(open);
+  });
+
+  it("devrait révéler quand même si la ligne n'est ouverte que dans un autre mois", () => {
+    const open = new Set(["g:1@2026-08", "l:21@2026-08"]);
+    const eff = withRevealed(open, "txn:t1", reveal, "2026-07");
+    expect(eff.has("g:1@2026-07")).toBe(true);
   });
 
   it("devrait rendre l'état inchangé quand rien n'est sélectionné", () => {
-    const open = new Set(["g:1"]);
-    expect(withRevealed(open, null, reveal)).toBe(open);
+    const open = new Set(["g:1@2026-07"]);
+    expect(withRevealed(open, null, reveal, "2026-07")).toBe(open);
+  });
+
+  it("devrait rendre l'état inchangé quand le mois de la case est introuvable", () => {
+    const open = new Set<string>();
+    expect(withRevealed(open, "txn:t1", reveal, null)).toBe(open);
   });
 
   it("devrait rendre l'état inchangé pour une ligne toujours visible, qui n'a rien à révéler", () => {
     const open = new Set<string>();
-    expect(withRevealed(open, "group:3", reveal)).toBe(open);
+    expect(withRevealed(open, "group:3", reveal, "2026-07")).toBe(open);
   });
 });
 
