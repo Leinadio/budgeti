@@ -6,6 +6,8 @@ import { monthLabel } from "@/lib/transactions-view";
 import type { AccountForecast } from "@/lib/forecast";
 import { type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn, type SoldeColumn, type PlannedSoldes, type Overspend, type IgnoredBlock, uncatOverspend, uncatOverspendOf, computeTableEstimate, rowRevenus, rowOverspend, groupsWithPending } from "@/lib/history";
 import { sectionsAtMonth } from "@/lib/history-month-view";
+import { groupsForMonth } from "@/lib/group-options";
+import { groupPeriodLabel } from "@/lib/group-period-label";
 import { notificationId } from "@/lib/notifications";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -59,6 +61,10 @@ type SelectGroup = {
   id: number;
   name: string;
   kind: "envelope" | "recurring";
+  // Durée de vie : le menu d'une transaction ne propose que les groupes qui vivent
+  // son mois (cf. src/lib/group-options.ts).
+  startMonth?: string | null;
+  endMonth?: string | null;
   changes: BudgetChange[];
   lines: { id: number; name: string; amount: number; day: number; changes: BudgetChange[] }[];
 };
@@ -1245,9 +1251,10 @@ function TxnRow({ txn, months, currentMonth, groups, indent, onSelect, selCellKe
             <IgnoreTxnToggle txnId={txn.id} ignored withLabel />
           ) : (
             <div className="flex min-w-0 items-center gap-1">
+              {/* Seuls les groupes qui vivent le mois de CETTE transaction. */}
               <GroupSelectField
                 txnId={txn.id}
-                groups={groups}
+                groups={groupsForMonth(groups, txn.month, txn.groupId)}
                 defaultGroupId={txn.groupId}
                 defaultLineId={txn.lineId}
                 className="min-w-0 flex-1"
@@ -1467,6 +1474,8 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
         name: r.name,
         kind: sg?.kind ?? "envelope",
         month: manageMonth,
+        startMonth: sg?.startMonth,
+        endMonth: sg?.endMonth,
         lines: (sg?.lines ?? []).map((l) => ({ id: l.id, name: l.name, day: l.day })),
       },
     };
@@ -1480,6 +1489,18 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
               <ArrowDownRight className="size-4 shrink-0 text-muted-foreground" />
             )}
             <span className="min-w-0 truncate font-medium">{r.name}</span>
+            {/* Durée de vie du groupe, dite en clair : « ce mois uniquement »,
+                « permanent », ou la plage. Sans elle, une enveloppe de vacances
+                et une enveloppe de courses se ressemblent trait pour trait, et
+                rien ne dit pourquoi l'une disparaît le mois suivant. Même
+                micro-typographie que la mention « projection » des en-têtes de
+                mois : une étiquette, pas un contenu. */}
+            <span
+              title={groupPeriodLabel(sg?.startMonth, sg?.endMonth)}
+              className="text-muted-foreground/60 min-w-0 truncate text-[9px] font-normal tracking-[0.12em] uppercase"
+            >
+              {groupPeriodLabel(sg?.startMonth, sg?.endMonth)}
+            </span>
             {/* Gérer le groupe : icône discrète révélée au survol de la ligne. */}
             <button
               type="button"

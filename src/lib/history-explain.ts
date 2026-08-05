@@ -65,6 +65,10 @@ export type GroupManageInfo = {
   name: string;
   kind: "envelope" | "recurring";
   month: string; // mois où le panneau se place (montant de départ d'une ligne ajoutée)
+  // Durée de vie du groupe, dite dans le panneau comme elle l'est dans le tableau
+  // (cf. group-period-label.ts) : on doit lire la même chose des deux côtés.
+  startMonth?: string | null;
+  endMonth?: string | null;
   lines: { id: number; name: string; day: number }[];
 };
 

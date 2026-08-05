@@ -23,6 +23,7 @@ import {
   spreadGroupLineAmount,
   spreadUncatProvision,
 } from "@/app/historique/actions";
+import { groupPeriodLabel } from "@/lib/group-period-label";
 import { Sidebar, SidebarHeader, SidebarContent } from "@/components/ui/sidebar";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -321,6 +322,11 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
           <div className="min-w-0">
             <p className="text-muted-foreground text-sm">Gérer le groupe</p>
             <h2 className="font-semibold">{info.name}</h2>
+            {/* Sa durée de vie, dite comme dans la colonne de gauche du tableau :
+                « ce mois uniquement », « permanent », ou la plage. */}
+            <p className="text-muted-foreground/70 text-[10px] tracking-[0.12em] uppercase">
+              {groupPeriodLabel(info.startMonth, info.endMonth)}
+            </p>
           </div>
           <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground shrink-0 rounded p-1" aria-label="Fermer">
             <X className="size-4" />
