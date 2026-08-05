@@ -101,15 +101,17 @@ function DetailRow({ row, selected, onToggle, onSelect }: {
 }
 
 // Vue de gestion d'une ligne de récurrent, ouverte par le crayon au survol de la
-// ligne dans le tableau. Son nom et son jour, les deux seules propriétés qui valent
-// pour tous les mois, et sa suppression. Aucun montant : il est daté et se fixe depuis
-// la case « Budget dép. » de la ligne, au mois de la colonne — exactement comme pour
+// ligne dans le tableau. Son nom, seule propriété qui vaille pour tous les mois, et
+// sa suppression. Aucun montant : il est daté et se fixe depuis la case
+// « Budget dép. » de la ligne, au mois de la colonne — exactement comme pour
 // une enveloppe, et pour la même raison (voir BudgetEditBlock).
+// Plus de jour du mois non plus : il ne pilotait plus rien d'affiché, et un champ
+// qu'on remplit sans effet coûte plus qu'il ne rapporte. La valeur déjà en base
+// reste intacte, on la repasse telle quelle au renommage.
 function LineManageBlock({ info, onClose }: { info: LineManageInfo; onClose: () => void }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState(info.name);
-  const [day, setDay] = useState(String(info.day));
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
     await fn();
@@ -132,18 +134,14 @@ function LineManageBlock({ info, onClose }: { info: LineManageInfo; onClose: () 
       <SidebarContent className="space-y-6 p-4">
         <div className="flex flex-col gap-2">
           <Label className="font-normal">Nom de la ligne</Label>
-          <Input value={name} onChange={(e) => setName(e.target.value)} className="h-9" />
-        </div>
-        <div className="flex flex-col gap-2">
-          <Label className="font-normal">Jour du mois</Label>
           <div className="flex items-center gap-2">
-            <Input type="number" min="1" max="31" value={day} onChange={(e) => setDay(e.target.value)} className="h-9 w-20 text-right tabular-nums" />
+            <Input value={name} onChange={(e) => setName(e.target.value)} className="h-9 flex-1" />
             <Button
               type="button"
               size="sm"
               variant="secondary"
-              disabled={busy || !name.trim() || (name.trim() === info.name && day === String(info.day))}
-              onClick={() => run(() => editGroupLine(info.lineId, name.trim(), parseInt(day, 10) || 1))}
+              disabled={busy || !name.trim() || name.trim() === info.name}
+              onClick={() => run(() => editGroupLine(info.lineId, name.trim(), info.day))}
             >
               Enregistrer
             </Button>
@@ -302,7 +300,6 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
   const [name, setName] = useState(info.name);
   const [newName, setNewName] = useState("");
   const [newAmount, setNewAmount] = useState("");
-  const [newDay, setNewDay] = useState("1");
   // Liste des lignes affichée, en état local optimiste : `info.lines` est un
   // instantané capturé à l'ouverture du panneau, que router.refresh() ne met pas à
   // jour. On la maintient ici pour que l'ajout / la suppression se reflètent tout de
@@ -372,10 +369,6 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
                 <Label className="text-muted-foreground text-xs font-normal">Montant de départ</Label>
                 <Input type="number" step="0.01" min="0" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} className="h-8 text-right tabular-nums" placeholder="0.00" />
               </div>
-              <div className="flex w-14 flex-col gap-1">
-                <Label className="text-muted-foreground text-xs font-normal">Jour</Label>
-                <Input type="number" min="1" max="31" value={newDay} onChange={(e) => setNewDay(e.target.value)} className="h-8 text-right tabular-nums" />
-              </div>
               <Button
                 type="button"
                 size="sm"
@@ -385,7 +378,9 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
                   run(async () => {
                     const n = newName.trim();
                     const a = parseFloat(newAmount) || 0;
-                    const d = parseInt(newDay, 10) || 1;
+                    // Le jour ne se demande plus (il ne pilotait rien d'affiché) : la
+                    // colonne existe toujours en base, on y pose 1 sans le dire.
+                    const d = 1;
                     const id = await addGroupLine(info.groupId, n, a, d, info.month);
                     // On n'ajoute la ligne optimiste qu'avec le vrai id en base : sinon
                     // une suppression/édition immédiate (sans refermer le panneau)
@@ -395,7 +390,6 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
                     }
                     setNewName("");
                     setNewAmount("");
-                    setNewDay("1");
                   })
                 }
               >

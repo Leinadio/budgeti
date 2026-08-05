@@ -76,9 +76,13 @@ export type GroupManageInfo = {
 // au survol de la ligne. Une ligne a son propre crayon parce qu'elle est un poste à
 // part entière : Sosh Internet n'est pas Sosh Mobile, et les renommer depuis le
 // panneau du groupe obligeait à chercher la bonne parmi toutes les autres.
-// Nom et jour seulement : ce sont ses deux propriétés qui valent pour tous les mois.
-// Son montant est daté et se fixe depuis sa case du tableau (voir BudgetEditInfo) —
-// même règle que pour une enveloppe, et pour la même raison.
+// Le nom seul se modifie : c'est la seule propriété qui vaille pour tous les mois et
+// qui change encore quelque chose à l'écran. Son montant est daté et se fixe depuis sa
+// case du tableau (voir BudgetEditInfo) — même règle que pour une enveloppe, et pour
+// la même raison.
+// `day` n'est plus affiché ni saisissable ; il reste transporté pour être repassé tel
+// quel au renommage, qui écrit nom et jour d'un seul geste : sans lui, renommer une
+// ligne écraserait son jour en base.
 export type LineManageInfo = {
   lineId: number;
   name: string;
