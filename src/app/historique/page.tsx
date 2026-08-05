@@ -141,6 +141,7 @@ export default async function HistoriquePage({
             id: g.id,
             name: g.name,
             kind: g.kind,
+            direction: g.direction,
             startMonth: g.startMonth,
             endMonth: g.endMonth,
             changes: budgetChanges(datedBudgets[g.id] ?? []),

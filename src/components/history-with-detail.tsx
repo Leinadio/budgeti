@@ -1,18 +1,13 @@
 "use client";
 import type { AccountForecast } from "@/lib/forecast";
 import type { MonthCell, HistorySection, SoldeColumn, PlannedSoldes, Overspend, IgnoredBlock } from "@/lib/history";
-import type { BudgetChange } from "@/lib/budget-history";
 import { CenterScroll } from "@/components/center-scroll";
-import { HistoryGrid } from "@/components/history-grid";
+import { HistoryGrid, type SelectGroup } from "@/components/history-grid";
 import { useDetailSidebar } from "@/components/detail-sidebar";
 
-type SelectGroup = {
-  id: number;
-  name: string;
-  kind: "envelope" | "recurring";
-  changes: BudgetChange[];
-  lines: { id: number; name: string; amount: number; day: number; changes: BudgetChange[] }[];
-};
+// SelectGroup vient de HistoryGrid, à qui ce composant ne fait que passer la main.
+// Le redéclarer ici l'avait déjà laissé dériver : il lui manquait les bornes de mois,
+// et TypeScript ne le voyait pas tant que les champs manquants restaient optionnels.
 
 // Le tableau de l'Historique : un clic sur un montant envoie son détail à la
 // sidebar de droite, montée au niveau du shell (voir DetailSidebarProvider).

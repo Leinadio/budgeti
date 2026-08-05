@@ -57,10 +57,13 @@ import { type BudgetChange } from "@/lib/budget-history";
 
 // Groupes du compte, pour le menu de (ré)assignation sur chaque transaction et la
 // gestion d'un groupe (Task 6 : kind + lignes complètes pour alimenter le side panel).
-type SelectGroup = {
+export type SelectGroup = {
   id: number;
   name: string;
   kind: "envelope" | "recurring";
+  // Sens du groupe : sépare les rémunérations des dépenses dans le menu de
+  // rattachement (cf. src/lib/group-select-options.ts).
+  direction: "in" | "out";
   // Durée de vie : le menu d'une transaction ne propose que les groupes qui vivent
   // son mois (cf. src/lib/group-options.ts).
   startMonth?: string | null;

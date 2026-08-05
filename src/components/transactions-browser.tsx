@@ -71,8 +71,9 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
   const groupsOfTxn = (t: TxnView) =>
     groupsForMonth(groups.filter((g) => g.accountId === t.accountId), t.date.slice(0, 7), t.groupId)
       // kind : le sélecteur en a besoin pour ne pas proposer un récurrent comme
-      // destination (seules ses lignes le sont).
-      .map((g) => ({ id: g.id, name: g.name, kind: g.kind, lines: g.lines }));
+      // destination (seules ses lignes le sont). direction : pour ranger les
+      // rémunérations dans leur propre section plutôt qu'avec les enveloppes.
+      .map((g) => ({ id: g.id, name: g.name, kind: g.kind, direction: g.direction, lines: g.lines }));
   const lineName = (id: number) => {
     for (const g of groups) {
       const l = g.lines.find((x) => x.id === id);

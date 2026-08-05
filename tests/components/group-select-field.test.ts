@@ -18,11 +18,12 @@ const rendu = (groups: Parameters<typeof GroupSelectField>[0]["groups"]) =>
     createElement(GroupSelectField, { txnId: "t1", groups, defaultGroupId: null, defaultLineId: null }),
   );
 
-const courses = { id: 1, name: "Courses", kind: "envelope" as const, lines: [] };
+const courses = { id: 1, name: "Courses", kind: "envelope" as const, direction: "out" as const, lines: [] };
 const sosh = {
-  id: 2, name: "Sosh", kind: "recurring" as const,
+  id: 2, name: "Sosh", kind: "recurring" as const, direction: "out" as const,
   lines: [{ id: 10, name: "Internet" }],
 };
+const salaire = { id: 21, name: "Rémunération Principale", kind: "envelope" as const, direction: "in" as const, lines: [] };
 
 describe("GroupSelectField", () => {
   it("sépare les récurrents des enveloppes, récurrents d'abord", () => {
@@ -35,6 +36,14 @@ describe("GroupSelectField", () => {
 
   it("n'ouvre pas de section quand la nature est absente", () => {
     expect(rendu([courses])).not.toContain("Récurrents");
+  });
+
+  it("donne aux rémunérations leur propre section, en tête", () => {
+    const html = rendu([courses, sosh, salaire]);
+    expect(html).toContain('<optgroup label="Rémunérations">');
+    expect(html.indexOf('label="Rémunérations"')).toBeLessThan(html.indexOf('label="Récurrents"'));
+    // Et elle ne traîne plus au milieu des enveloppes.
+    expect(html.indexOf("Rémunération Principale")).toBeLessThan(html.indexOf("Courses"));
   });
 
   it("laisse choisir une enveloppe", () => {

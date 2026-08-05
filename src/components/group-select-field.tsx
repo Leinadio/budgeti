@@ -6,7 +6,9 @@ import { groupSelectSections } from "@/lib/group-select-options";
 import { cn } from "@/lib/utils";
 
 type LineOpt = { id: number; name: string };
-type GroupOpt = { id: number; name: string; kind: "envelope" | "recurring"; lines: LineOpt[] };
+// direction : le sens sépare les rémunérations des dépenses dans le menu (cf.
+// groupSelectSections). Il ne filtre rien ici, il nomme la section.
+type GroupOpt = { id: number; name: string; kind: "envelope" | "recurring"; direction: "in" | "out"; lines: LineOpt[] };
 
 // Retrait des lignes sous leur groupe, avec des espaces insécables pour que le
 // menu déroulant ne les collapse pas.
