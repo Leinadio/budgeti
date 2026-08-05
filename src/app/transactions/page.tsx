@@ -19,6 +19,8 @@ export default function TransactionsPage() {
     name: g.name,
     direction: g.direction,
     kind: g.kind,
+    startMonth: g.startMonth,
+    endMonth: g.endMonth,
     lines: g.kind === "recurring" ? g.lines.map((l) => ({ id: l.id, name: l.name })) : [],
   }));
 

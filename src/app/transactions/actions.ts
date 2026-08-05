@@ -4,6 +4,7 @@ import {
   setTransactionGroup,
   setTransactionIgnored,
   setTransactionComment,
+  getTransactionDate,
   insertManualTransaction,
   updateManualTransaction,
   deleteManualTransaction,
@@ -13,7 +14,8 @@ import {
 import { isValidManualForm, toManualInput, type ManualFormInput } from "@/lib/manual-txn";
 import { normalizeComment } from "@/lib/txn-comment";
 import { canAttachToGroup } from "@/lib/ownership";
-import { getGroupKind, getLineGroupId } from "../../db/repositories/groups";
+import { isGroupAlive } from "@/lib/forecast";
+import { getGroupKind, getLineGroupId, getGroupLifespan } from "../../db/repositories/groups";
 import { revalidatePath } from "next/cache";
 
 function revalidateAll() {
@@ -44,6 +46,14 @@ export async function setGroup(
     // Une ligne d'un AUTRE groupe écrirait un couple (groupe, ligne) incohérent, que
     // plus aucun calcul ne relit correctement.
     if (lid !== null && getLineGroupId(database, lid) !== gid) return;
+    // Un groupe ne vit que certains mois : une enveloppe créée pour juillet ne peut
+    // pas recevoir une dépense d'août. Rattachée quand même, elle ne compterait
+    // nulle part — computeHistory ne reconnaît un propriétaire que s'il est vivant
+    // ce mois-là — et la transaction disparaîtrait dans les non catégorisés sans
+    // qu'on comprenne pourquoi.
+    const date = getTransactionDate(database, txnId);
+    const bornes = getGroupLifespan(database, gid);
+    if (date === null || bornes === null || !isGroupAlive(bornes, date.slice(0, 7))) return;
   }
   setTransactionGroup(database, txnId, gid, false, lid);
   revalidateAll();
@@ -63,16 +73,25 @@ export async function setIgnored(txnId: string, ignored: boolean) {
   revalidateAll();
 }
 
+// Le groupe demandé à la saisie, s'il vit bien le mois de la date saisie ; null
+// sinon. Même règle que setGroup, à l'autre bout : la transaction est enregistrée,
+// mais non catégorisée — on ne perd pas la saisie pour un groupe mal choisi.
+function groupeTenable(form: ManualFormInput): number | null {
+  if (form.groupId === null) return null;
+  const bornes = getGroupLifespan(db(), form.groupId);
+  return bornes && isGroupAlive(bornes, form.date.slice(0, 7)) ? form.groupId : null;
+}
+
 export async function addTransaction(form: ManualFormInput) {
   if (!isValidManualForm(form)) return;
-  insertManualTransaction(db(), toManualInput(form));
+  insertManualTransaction(db(), { ...toManualInput(form), groupId: groupeTenable(form) });
   revalidateAll();
 }
 
 export async function editTransaction(id: string, form: ManualFormInput) {
   if (!isValidManualForm(form)) return;
   const { accountId: _accountId, ...rest } = toManualInput(form);
-  updateManualTransaction(db(), id, rest);
+  updateManualTransaction(db(), id, { ...rest, groupId: groupeTenable(form) });
   revalidateAll();
 }
 

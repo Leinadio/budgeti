@@ -109,6 +109,13 @@ export function setTransactionGroup(
   );
 }
 
+// Date d'une transaction (YYYY-MM-DD), null si elle n'existe pas. Sert à savoir de
+// quel mois elle relève avant de la rattacher à un groupe.
+export function getTransactionDate(db: Database.Database, id: string): string | null {
+  const row = db.prepare(`SELECT date FROM transactions WHERE id = ?`).get(id) as { date: string } | undefined;
+  return row ? row.date : null;
+}
+
 // Pose (ou retire, avec null) le commentaire d'une transaction. Rien d'autre n'est
 // touché : le commentaire s'ajoute au libellé de la banque, il ne le remplace pas.
 export function setTransactionComment(db: Database.Database, id: string, comment: string | null): void {

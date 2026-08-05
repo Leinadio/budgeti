@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { GroupSelectField } from "@/components/group-select-field";
+import { groupsForMonth } from "@/lib/group-options";
 import { TruncatedText } from "@/components/truncated-text";
 import { TxnCommentField } from "@/components/txn-comment-field";
 import { AddTransactionSheet } from "@/components/add-transaction-sheet";
@@ -24,7 +25,14 @@ import { Badge } from "@/components/ui/badge";
 import { ManualTxnActions } from "@/components/manual-txn-actions";
 import { IgnoreTxnToggle } from "@/components/ignore-txn-toggle";
 
-type ClientGroup = OwnableGroup & { name: string; lines: { id: number; name: string }[] };
+// startMonth / endMonth : durée de vie du groupe, pour ne proposer au rattachement
+// d'une transaction que les groupes qui vivent son mois.
+type ClientGroup = OwnableGroup & {
+  name: string;
+  startMonth?: string | null;
+  endMonth?: string | null;
+  lines: { id: number; name: string }[];
+};
 
 export function TransactionsBrowser({ transactions, groups, accounts }: { transactions: TxnView[]; groups: ClientGroup[]; accounts: { id: string; label: string }[] }) {
   const [filters, setFilters] = useState<TxnFilters>(EMPTY_FILTERS);
@@ -37,7 +45,7 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
       return next;
     });
   const ownable: OwnableGroup[] = groups;
-  const formGroups = groups.map((g) => ({ id: g.id, name: g.name, accountId: g.accountId, direction: g.direction }));
+  const formGroups = groups.map((g) => ({ id: g.id, name: g.name, accountId: g.accountId, direction: g.direction, startMonth: g.startMonth, endMonth: g.endMonth }));
 
   const renderLabel = (t: TxnView) => (
     <span className="group/txn flex flex-col gap-0.5">
@@ -58,9 +66,10 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
     t.ignored ? "text-right font-medium whitespace-nowrap line-through" : "text-right font-medium whitespace-nowrap";
 
   const groupName = (id: number) => groups.find((g) => g.id === id)?.name ?? "?";
-  const groupsOfAccount = (accountId: string) =>
-    groups
-      .filter((g) => g.accountId === accountId)
+  // Les groupes proposés à une transaction : ceux de son compte, et parmi eux ceux
+  // qui vivent le mois de la transaction (cf. src/lib/group-options.ts).
+  const groupsOfTxn = (t: TxnView) =>
+    groupsForMonth(groups.filter((g) => g.accountId === t.accountId), t.date.slice(0, 7), t.groupId)
       // kind : le sélecteur en a besoin pour ne pas proposer un récurrent comme
       // destination (seules ses lignes le sont).
       .map((g) => ({ id: g.id, name: g.name, kind: g.kind, lines: g.lines }));
@@ -215,7 +224,7 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
                     <TableCell className="text-muted-foreground whitespace-nowrap">{t.accountLabel}</TableCell>
                     <TableCell>{renderLabel(t)}</TableCell>
                     <TableCell>
-                      <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} disabled={t.ignored} />
+                      <GroupSelectField txnId={t.id} groups={groupsOfTxn(t)} defaultGroupId={t.groupId} defaultLineId={t.lineId} disabled={t.ignored} />
                     </TableCell>
                     <TableCell className="text-muted-foreground">
                       <TruncatedText text={statusLabel(t)} className="max-w-[200px]" />
@@ -273,7 +282,7 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
                           <TableCell className="text-muted-foreground">{t.date}</TableCell>
                           <TableCell>{renderLabel(t)}</TableCell>
                           <TableCell>
-                            <GroupSelectField txnId={t.id} groups={groupsOfAccount(t.accountId)} defaultGroupId={t.groupId} defaultLineId={t.lineId} disabled={t.ignored} />
+                            <GroupSelectField txnId={t.id} groups={groupsOfTxn(t)} defaultGroupId={t.groupId} defaultLineId={t.lineId} disabled={t.ignored} />
                           </TableCell>
                           <TableCell className="text-muted-foreground">
                             <TruncatedText text={statusLabel(t)} className="max-w-[200px]" />

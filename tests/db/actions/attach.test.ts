@@ -7,7 +7,7 @@
 import { beforeEach, expect, test, vi } from "vitest";
 import type Database from "better-sqlite3";
 import { freshDb } from "./setup";
-import { setGroup } from "../../../src/app/transactions/actions";
+import { setGroup, addTransaction } from "../../../src/app/transactions/actions";
 import { revalidatePath } from "next/cache";
 import { insertEnvelopeGroup, insertRecurringGroup, insertLine } from "../../../src/db/repositories/groups";
 import { insertManualTransaction } from "../../../src/db/repositories/transactions";
@@ -92,4 +92,44 @@ test("refuse une ligne qui n'appartient pas au groupe visé", async () => {
   await setGroup(id, a, ligneDeB);
 
   expect(rattachement(id)).toEqual({ groupId: null, lineId: null });
+});
+
+// Un groupe ne vit que certains mois : une enveloppe créée pour juillet ne peut pas
+// recevoir une dépense d'août. Le menu ne la propose plus, mais masquer une option
+// n'empêche pas d'appeler l'action — la règle est tenue ici aussi. Un rattachement
+// refusé ne défait rien : la transaction garde ce qu'elle avait.
+test("refuse de rattacher une transaction à un groupe qui ne vit pas son mois", async () => {
+  const juillet = insertEnvelopeGroup(db, "a1", "Sucreries", "out", 40, null, "2026-07", "2026-07");
+  const id = insertManualTransaction(db, {
+    accountId: "a1", date: "2026-08-03", amount: -12, label: "BOULANGERIE",
+    groupId: null, lineId: null, incomeKind: null,
+  });
+
+  await setGroup(id, juillet, null);
+
+  expect(rattachement(id)).toEqual({ groupId: null, lineId: null });
+});
+
+test("accepte le rattachement au mois où le groupe vit", async () => {
+  const juillet = insertEnvelopeGroup(db, "a1", "Sucreries", "out", 40, null, "2026-07", "2026-07");
+  const id = nouvelleTxn(); // 2026-07-23
+
+  await setGroup(id, juillet, null);
+
+  expect(rattachement(id)).toEqual({ groupId: juillet, lineId: null });
+});
+
+// Même règle à la saisie manuelle : le formulaire ne propose plus un groupe qui ne
+// vit pas le mois de la date saisie, et l'action ne l'accepte pas davantage. La
+// transaction est créée, mais non catégorisée : on ne perd pas la saisie.
+test("une transaction saisie à la main ne part pas dans un groupe qui ne vit pas son mois", async () => {
+  const juillet = insertEnvelopeGroup(db, "a1", "Sucreries", "out", 40, null, "2026-07", "2026-07");
+
+  await addTransaction({
+    accountId: "a1", date: "2026-08-03", direction: "out", amount: 12,
+    label: "BOULANGERIE", groupId: juillet, lineId: null, incomeKind: null,
+  });
+
+  const row = db.prepare(`SELECT group_id AS groupId FROM transactions WHERE label = 'BOULANGERIE'`).get();
+  expect(row).toEqual({ groupId: null });
 });

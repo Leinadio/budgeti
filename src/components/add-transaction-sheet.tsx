@@ -4,12 +4,17 @@ import { useRouter } from "next/navigation";
 import { Plus, Pencil } from "lucide-react";
 import { addTransaction, editTransaction } from "@/app/transactions/actions";
 import type { ManualFormInput } from "@/lib/manual-txn";
+import { groupsForMonth } from "@/lib/group-options";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetTrigger, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 
 type AccountOpt = { id: string; label: string };
-type GroupOpt = { id: number; name: string; accountId: string; direction: "in" | "out" };
+type GroupOpt = {
+  id: number; name: string; accountId: string; direction: "in" | "out";
+  // Durée de vie : on ne propose que les groupes qui vivent le mois de la date saisie.
+  startMonth?: string | null; endMonth?: string | null;
+};
 type EditData = {
   id: string; accountId: string; date: string; direction: "in" | "out";
   amount: number; label: string; groupId: number | null; incomeKind: "principal" | "supplementary" | null;
@@ -27,7 +32,12 @@ export function AddTransactionSheet({ accounts, groups, edit }: { accounts: Acco
   const [label, setLabel] = useState(edit?.label ?? "");
   const [groupId, setGroupId] = useState<number | null>(edit?.groupId ?? null);
 
-  const groupChoices = groups.filter((g) => g.accountId === accountId && g.direction === direction);
+  // Le compte et le sens filtrent comme avant ; le mois de la date saisie s'y ajoute,
+  // puisqu'un groupe ne vit pas forcément tous les mois. Tant qu'aucune date n'est
+  // saisie, on ne sait pas de quel mois il s'agit : rien n'est écarté à ce titre.
+  const mois = /^\d{4}-\d{2}/.test(date) ? date.slice(0, 7) : null;
+  const duCompte = groups.filter((g) => g.accountId === accountId && g.direction === direction);
+  const groupChoices = mois ? groupsForMonth(duCompte, mois, edit?.groupId ?? null) : duCompte;
 
   const submit = () => {
     const form: ManualFormInput = {
@@ -74,7 +84,21 @@ export function AddTransactionSheet({ accounts, groups, edit }: { accounts: Acco
 
           <label className="flex flex-col gap-1 text-sm">
             Date
-            <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+            {/* Changer de date peut retirer le groupe choisi de la liste (il ne vit
+                pas ce mois-là) : on le lâche, plutôt que de garder un choix invisible
+                qui partirait quand même à l'enregistrement. */}
+            <Input
+              type="date"
+              value={date}
+              onChange={(e) => {
+                const v = e.target.value;
+                setDate(v);
+                const m = /^\d{4}-\d{2}/.test(v) ? v.slice(0, 7) : null;
+                if (m && groupId !== null && !groupsForMonth(duCompte, m).some((g) => g.id === groupId)) {
+                  setGroupId(null);
+                }
+              }}
+            />
           </label>
 
           <label className="flex flex-col gap-1 text-sm">

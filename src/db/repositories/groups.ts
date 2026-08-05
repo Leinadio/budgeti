@@ -28,6 +28,19 @@ export function getGroupKind(db: Database.Database, id: number): "envelope" | "r
   return row ? row.kind : null;
 }
 
+// Durée de vie d'un groupe (mois de départ / de fin, null = sans borne de ce
+// côté), ou null s'il n'existe pas. Sert à refuser d'y rattacher une transaction
+// d'un mois où il ne vit pas.
+export function getGroupLifespan(
+  db: Database.Database,
+  id: number,
+): { startMonth: string | null; endMonth: string | null } | null {
+  const row = db
+    .prepare(`SELECT start_month AS startMonth, end_month AS endMonth FROM groups WHERE id = ?`)
+    .get(id) as { startMonth: string | null; endMonth: string | null } | undefined;
+  return row ?? null;
+}
+
 // Groupe auquel appartient une ligne, null si la ligne n'existe pas. Sert à vérifier
 // qu'un couple (groupe, ligne) est cohérent avant de l'écrire sur une transaction.
 export function getLineGroupId(db: Database.Database, lineId: number): number | null {
