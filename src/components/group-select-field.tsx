@@ -1,7 +1,8 @@
 "use client";
-import { Fragment, useMemo, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { setGroup } from "@/app/transactions/actions";
+import { groupSelectSections } from "@/lib/group-select-options";
 import { cn } from "@/lib/utils";
 
 type LineOpt = { id: number; name: string };
@@ -41,6 +42,7 @@ export function GroupSelectField({
     for (const g of groups) for (const l of g.lines) m.set(l.id, g.id);
     return m;
   }, [groups]);
+  const sections = useMemo(() => groupSelectSections(groups), [groups]);
 
   // Affiche tout de suite le choix (valeur optimiste), puis suit la vérité
   // serveur : quand l'état serveur change après le refresh, on se resynchronise.
@@ -77,26 +79,28 @@ export function GroupSelectField({
       }}
     >
       <option value="">Non catégorisé</option>
-      {groups.map((g) =>
-        // Un récurrent n'est pas une destination : ses dépenses appartiennent à une de
-        // ses lignes (Direct Assurance, Sosh Internet…), jamais au groupe lui-même. Son
-        // nom reste affiché, mais comme un titre non sélectionnable — d'où optgroup,
-        // qui dit exactement ça au navigateur comme aux lecteurs d'écran.
-        g.kind === "recurring" ? (
-          <optgroup key={g.id} label={g.name}>
-            {g.lines.map((l) => (
-              <option key={l.id} value={`l:${l.id}`}>{l.name}</option>
-            ))}
-          </optgroup>
-        ) : (
-          <Fragment key={g.id}>
-            <option value={`g:${g.id}`}>{g.name}</option>
-            {g.lines.map((l) => (
-              <option key={l.id} value={`l:${l.id}`}>{INDENT + l.name}</option>
-            ))}
-          </Fragment>
-        ),
-      )}
+      {/* Deux sections nommées, « Récurrents » puis « Enveloppes » comme dans le
+          tableau : l'optgroup met son titre en gras et décale ce qu'il contient,
+          si bien que la nature d'un choix se voit avant de le lire. */}
+      {sections.map((sec) => (
+        <optgroup key={sec.label} label={sec.label}>
+          {sec.items.map((item) =>
+            item.type === "line" ? (
+              <option key={`l:${item.id}`} value={`l:${item.id}`}>{INDENT + item.name}</option>
+            ) : item.selectable ? (
+              <option key={`g:${item.id}`} value={`g:${item.id}`}>{item.name}</option>
+            ) : (
+              // Un récurrent n'est pas une destination : ses dépenses appartiennent à
+              // une de ses lignes (Sosh Internet, Sosh Mobile…), jamais au groupe.
+              // Son nom reste affiché, en titre inerte, pour qu'on voie à qui
+              // appartiennent les lignes juste en dessous. La valeur « t: » ne
+              // correspond à aucun état possible : l'option ne peut pas être choisie
+              // et ne se confond pas avec « Non catégorisé », dont la valeur est vide.
+              <option key={`t:${item.id}`} value={`t:${item.id}`} disabled>{item.name}</option>
+            ),
+          )}
+        </optgroup>
+      ))}
     </select>
   );
 }
