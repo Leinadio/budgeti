@@ -1214,11 +1214,14 @@ function TxnRow({ txn, months, currentMonth, groups, indent, onSelect, selCellKe
           className="border-border/60 flex h-full flex-col gap-1 border-r py-2 pr-2 font-sans"
           style={{ width: COL1_W, paddingLeft: `${0.5 + indent * 1.25}rem` }}
         >
-          <div className="flex items-center gap-1.5 overflow-hidden">
+          {/* La date au-dessus, le libellé en dessous : côte à côte, la date mangeait
+              un tiers de la colonne et coupait presque tous les libellés. Empilés, le
+              libellé dispose de toute la largeur et déborde bien plus rarement. */}
+          <div className="flex flex-col gap-0.5 overflow-hidden">
             {/* La date reste en chasse fixe : c'est une donnée, elle s'aligne
                 d'une ligne à l'autre comme les montants. */}
-            <span className="text-muted-foreground/80 shrink-0 font-mono text-xs">{txn.date}</span>
-            <TruncatedText text={txn.label} className="min-w-0 flex-1" />
+            <span className="text-muted-foreground/80 font-mono text-xs">{txn.date}</span>
+            <TruncatedText text={txn.label} className="leading-5" lines={2} />
           </div>
           {ignored ? (
             <IgnoreTxnToggle txnId={txn.id} ignored withLabel />
@@ -1267,11 +1270,12 @@ function scrollableAncestor(el: HTMLElement, axis: "x" | "y"): HTMLElement | nul
   return null;
 }
 
-export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections, ignoredBlocks, overspend, grand, groups, solde, planned, onSelect, selected, anchor, accountId, overspendsByMonth }: {
+export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast, sections, ignoredBlocks, overspend, grand, groups, solde, planned, onSelect, selected, anchor, accountId, overspendsByMonth }: {
   months: string[];
   currentMonth: string;
-  // Borne haute de la frise : plage sélectionnable du mois de départ dans le
-  // formulaire de création inline d'un groupe (Task 5).
+  // Bornes de la frise : les mois que le calendrier du formulaire de création
+  // inline d'un groupe accepte, passé compris.
+  stripMin: string;
   stripMax: string;
   forecast: AccountForecast;
   sections: HistorySection[];
@@ -1331,7 +1335,9 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
   const [adding, setAdding] = useState<null | "recurring" | "envelope" | "principal" | "supplementary">(null);
   // Mois de départ par défaut proposé au formulaire : le premier mois affiché
   // dans la frise, sauf s'il est déjà dans le passé (jamais de création rétroactive).
-  const defaultMonth = months.length > 0 && months[0] >= currentMonth ? months[0] : currentMonth;
+  // Mois proposé d'emblée à la création : celui qu'on a sous les yeux, à gauche du
+  // tableau. Il peut être passé, on crée aussi bien en arrière qu'en avant.
+  const defaultMonth = months.length > 0 ? months[0] : currentMonth;
 
   // Case active (B) choisie dans le panneau : sert au défilement et à la révélation.
   // S'il y en a plusieurs (somme), on défile vers la première.
@@ -2045,7 +2051,7 @@ export function HistoryGrid({ months, currentMonth, stripMax, forecast, sections
                       <NewGroupInline
                         accountId={accountId}
                         kind={sectionKind}
-                        currentMonth={currentMonth}
+                        stripMin={stripMin}
                         stripMax={stripMax}
                         defaultMonth={defaultMonth}
                         onDone={() => setAdding(null)}

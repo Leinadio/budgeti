@@ -8,7 +8,7 @@ import { revalidatePath } from "next/cache";
 import { listGroups } from "../../../src/db/repositories/groups";
 import { listBudgetAmounts } from "../../../src/db/repositories/budget-amounts";
 import { toDatedBudgets, budgetInForce } from "../../../src/lib/history";
-import type { Group } from "../../../src/lib/forecast";
+import { isGroupAlive, type Group } from "../../../src/lib/forecast";
 
 let db: Database.Database;
 beforeEach(() => {
@@ -16,20 +16,68 @@ beforeEach(() => {
   vi.mocked(revalidatePath).mockClear();
 });
 
-test("une enveloppe créée a son montant lisible dès son mois de départ, et 0 avant", async () => {
-  await createGroup({ accountId: "a1", kind: "envelope", name: "Activités", amount: 250, startMonth: "2026-03", scope: "ongoing" });
+// Le budget que le tableau AFFICHE pour ce mois : hors de sa durée de vie, un groupe
+// vaut 0 quel que soit son montant daté. C'est la composition de src/lib/history.ts
+// (rowFor) — la refaire ici évite de croire une plage respectée alors que seul le
+// montant l'était.
+const budgetVu = (g: Group, month: string, dated: ReturnType<typeof toDatedBudgets>) =>
+  isGroupAlive(g, month) ? budgetInForce(g, month, dated, {}) : 0;
 
-  const row = listGroups(db).find((g) => g.name === "Activités")!;
+// Le Group tel que le calcul le lit, reconstruit depuis la ligne réellement écrite :
+// les bornes viennent de la base, c'est ce qu'on veut vérifier.
+const groupOf = (name: string): Group => {
+  const row = listGroups(db).find((g) => g.name === name)!;
   expect(row).toBeDefined();
-  const g: Group = { id: row.id, accountId: "a1", name: row.name, direction: "out", kind: "envelope", monthlyAmount: null, lines: [], startMonth: "2026-03", endMonth: null };
+  return {
+    id: row.id, accountId: "a1", name: row.name, direction: "out", kind: row.kind,
+    monthlyAmount: null, lines: [], startMonth: row.startMonth, endMonth: row.endMonth,
+  };
+};
+
+test("une enveloppe sans fin a son montant lisible dès son mois de départ, et 0 avant", async () => {
+  await createGroup({ accountId: "a1", kind: "envelope", name: "Activités", amount: 250, startMonth: "2026-03", period: "from" });
+
+  const g = groupOf("Activités");
+  expect(g.endMonth).toBeNull();
   const dated = toDatedBudgets(listBudgetAmounts(db));
-  expect(budgetInForce(g, "2026-02", dated, {})).toBe(0);
-  expect(budgetInForce(g, "2026-03", dated, {})).toBe(250);
-  expect(budgetInForce(g, "2027-01", dated, {})).toBe(250);
+  expect(budgetVu(g, "2026-02", dated)).toBe(0);
+  expect(budgetVu(g, "2026-03", dated)).toBe(250);
+  expect(budgetVu(g, "2027-01", dated)).toBe(250);
+});
+
+// « De mars à mai » : le groupe vit trois mois et disparaît, sans qu'on ait à revenir
+// le supprimer à la main.
+test("une enveloppe bornée ne compte que dans sa plage", async () => {
+  await createGroup({ accountId: "a1", kind: "envelope", name: "Stage", amount: 120, startMonth: "2026-03", endMonth: "2026-05", period: "range" });
+
+  const g = groupOf("Stage");
+  expect([g.startMonth, g.endMonth]).toEqual(["2026-03", "2026-05"]);
+  const dated = toDatedBudgets(listBudgetAmounts(db));
+  expect(budgetVu(g, "2026-02", dated)).toBe(0);
+  expect(budgetVu(g, "2026-03", dated)).toBe(120);
+  expect(budgetVu(g, "2026-05", dated)).toBe(120);
+  expect(budgetVu(g, "2026-06", dated)).toBe(0);
+});
+
+test("une enveloppe d'un seul mois commence et finit au même mois", async () => {
+  await createGroup({ accountId: "a1", kind: "envelope", name: "Vacances", amount: 800, startMonth: "2026-08", period: "single" });
+
+  const g = groupOf("Vacances");
+  expect([g.startMonth, g.endMonth]).toEqual(["2026-08", "2026-08"]);
+  const dated = toDatedBudgets(listBudgetAmounts(db));
+  expect(budgetVu(g, "2026-08", dated)).toBe(800);
+  expect(budgetVu(g, "2026-09", dated)).toBe(0);
+});
+
+// Une plage qui finit avant de commencer ne décrit aucun mois vécu : rien n'est créé.
+test("refuse une fin antérieure au départ", async () => {
+  await createGroup({ accountId: "a1", kind: "envelope", name: "Impossible", amount: 50, startMonth: "2026-08", endMonth: "2026-05", period: "range" });
+
+  expect(listGroups(db).find((g) => g.name === "Impossible")).toBeUndefined();
 });
 
 test("un récurrent créé n'a aucune entrée de groupe", async () => {
-  await createGroup({ accountId: "a1", kind: "recurring", name: "Abonnements", amount: null, startMonth: "2026-03", scope: "ongoing" });
+  await createGroup({ accountId: "a1", kind: "recurring", name: "Abonnements", amount: null, startMonth: "2026-03", period: "from" });
 
   const row = listGroups(db).find((g) => g.name === "Abonnements")!;
   expect(row).toBeDefined();

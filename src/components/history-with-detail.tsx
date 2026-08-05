@@ -19,8 +19,10 @@ type SelectGroup = {
 export function HistoryWithDetail(props: {
   months: string[];
   currentMonth: string;
-  // Borne haute de la frise (12 mois de projection) : sert au sélecteur de mois
-  // du formulaire de création inline d'un groupe (Task 5).
+  // Bornes de la frise (du premier mois avec des transactions de ce compte jusqu'à
+  // 12 mois de projection) : ce sont les mois que le calendrier du formulaire de
+  // création inline d'un groupe accepte.
+  stripMin: string;
   stripMax: string;
   forecast: AccountForecast;
   sections: HistorySection[];

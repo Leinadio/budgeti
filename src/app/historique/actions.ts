@@ -14,6 +14,7 @@ import {
 } from "../../db/repositories/groups";
 import { toDatedBudgets, toDatedLineAmounts, isMonthKey, type BudgetScope } from "../../lib/history";
 import { canRemoveBudgetChange, budgetChanges, type BudgetChange } from "../../lib/budget-history";
+import { groupPeriod, type PeriodMode } from "../../lib/group-period";
 import { revalidatePath } from "next/cache";
 
 // --- Ce que ces actions vérifient avant d'écrire ---------------------------
@@ -29,22 +30,27 @@ import { revalidatePath } from "next/cache";
 // masquer un champ n'empêche pas d'appeler l'action directement.
 
 // Création inline d'un groupe (enveloppe ou récurrent) depuis le tableau de
-// l'Historique. Toujours en dépense (« out ») et sans rémunération associée ;
-// la durée de vie fixe la portée : « ce mois seulement » (endMonth = startMonth)
-// ou permanente (endMonth = null).
+// l'Historique. Toujours en dépense (« out ») et sans rémunération associée.
+//
+// La durée de vie arrive telle que le formulaire l'a demandée — un seul mois, une
+// plage, ou un début sans fin — et c'est groupPeriod qui la traduit en bornes, ici
+// et non côté écran : une plage qui finit avant de commencer ne doit pas entrer en
+// base, quel que soit l'appelant.
 export async function createGroup(input: {
   accountId: string;
   kind: "envelope" | "recurring";
   name: string;
   amount: number | null;
   startMonth: string;
-  scope: "once" | "ongoing";
+  endMonth?: string;
+  period: PeriodMode;
 }): Promise<void> {
-  const { accountId, kind, name, amount, startMonth, scope } = input;
-  if (!/^\d{4}-\d{2}$/.test(startMonth)) return;
+  const { accountId, kind, name, amount, period } = input;
+  const bornes = groupPeriod(period, input.startMonth, input.endMonth);
+  if (!bornes) return;
+  const { startMonth, endMonth } = bornes;
   const trimmed = name.trim();
   if (!trimmed) return;
-  const endMonth = scope === "once" ? startMonth : null;
   const database = db();
   if (kind === "envelope") {
     const gid = insertEnvelopeGroup(database, accountId, trimmed, "out", amount ?? 0, null, startMonth, endMonth);
