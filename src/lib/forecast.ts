@@ -34,6 +34,8 @@ export type Txn = {
   lineId?: number | null;
   excluded?: boolean;
   incomeKind?: "principal" | "supplementary" | null;
+  // Commentaire libre de l'utilisateur, affiché sous le libellé de la banque.
+  comment?: string | null;
 };
 
 // Un groupe est vivant au mois m si son mois de départ est atteint et que sa

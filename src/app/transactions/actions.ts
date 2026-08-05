@@ -3,6 +3,7 @@ import { db } from "../../db/index";
 import {
   setTransactionGroup,
   setTransactionIgnored,
+  setTransactionComment,
   insertManualTransaction,
   updateManualTransaction,
   deleteManualTransaction,
@@ -10,6 +11,7 @@ import {
   ignoreMatch as ignoreMatchRepo,
 } from "../../db/repositories/transactions";
 import { isValidManualForm, toManualInput, type ManualFormInput } from "@/lib/manual-txn";
+import { normalizeComment } from "@/lib/txn-comment";
 import { canAttachToGroup } from "@/lib/ownership";
 import { getGroupKind, getLineGroupId } from "../../db/repositories/groups";
 import { revalidatePath } from "next/cache";
@@ -44,6 +46,14 @@ export async function setGroup(
     if (lid !== null && getLineGroupId(database, lid) !== gid) return;
   }
   setTransactionGroup(database, txnId, gid, false, lid);
+  revalidateAll();
+}
+
+// Pose un commentaire sous le libellé d'une transaction. Champ vidé = commentaire
+// retiré : normalizeComment en fait un null, pour que la base dise « aucun
+// commentaire » plutôt qu'un commentaire vide.
+export async function setComment(txnId: string, comment: string) {
+  setTransactionComment(db(), txnId, normalizeComment(comment));
   revalidateAll();
 }
 

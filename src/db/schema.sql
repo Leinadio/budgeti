@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS transactions (
   ignored INTEGER NOT NULL DEFAULT 0,   -- 1 = non comptabilisée (invisible pour tout calcul)
   manual INTEGER NOT NULL DEFAULT 0,    -- 1 = saisie manuelle
   income_kind TEXT,                     -- 'principal' | 'supplementary' | NULL
-  note TEXT                             -- commentaire ; libellé manuel après fusion
+  note TEXT,                            -- libellé de la saisie manuelle, conservé après fusion
+  comment TEXT                          -- commentaire libre de l'utilisateur, affiché sous le libellé
 );
 
 CREATE TABLE IF NOT EXISTS budgets (

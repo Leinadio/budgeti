@@ -348,3 +348,22 @@ export function migrateOverspendWrites(db: Database.Database): void {
   if (cols.some((c) => c.name === "writes")) return;
   db.exec(`ALTER TABLE overspend_decisions ADD COLUMN writes TEXT`);
 }
+
+// Ajoute la colonne comment : la note libre que l'utilisateur pose sous le libellé
+// d'une transaction. Une colonne à elle, et non la réutilisation de note : note
+// reçoit le libellé de la saisie manuelle lors d'une fusion (mergeTransactions),
+// un commentaire écrit à la main y serait écrasé sans prévenir.
+//
+// custom_label est l'ancien nom de cette même colonne, du temps où elle devait
+// remplacer le libellé plutôt que le commenter. Renommée si on la trouve : la
+// colonne est neuve et la sémantique la même (un texte libre de l'utilisateur),
+// donc rien à convertir. Idempotent.
+export function migrateTransactionComment(db: Database.Database): void {
+  const cols = db.prepare("PRAGMA table_info(transactions)").all() as { name: string }[];
+  if (cols.some((c) => c.name === "comment")) return;
+  if (cols.some((c) => c.name === "custom_label")) {
+    db.exec(`ALTER TABLE transactions RENAME COLUMN custom_label TO comment`);
+    return;
+  }
+  db.exec(`ALTER TABLE transactions ADD COLUMN comment TEXT`);
+}

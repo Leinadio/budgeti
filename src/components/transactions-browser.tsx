@@ -18,6 +18,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { GroupSelectField } from "@/components/group-select-field";
 import { TruncatedText } from "@/components/truncated-text";
+import { TxnCommentField } from "@/components/txn-comment-field";
 import { AddTransactionSheet } from "@/components/add-transaction-sheet";
 import { Badge } from "@/components/ui/badge";
 import { ManualTxnActions } from "@/components/manual-txn-actions";
@@ -39,13 +40,15 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
   const formGroups = groups.map((g) => ({ id: g.id, name: g.name, accountId: g.accountId, direction: g.direction }));
 
   const renderLabel = (t: TxnView) => (
-    <span className="flex flex-col gap-0.5">
+    <span className="group/txn flex flex-col gap-0.5">
       <span className="flex items-center gap-1.5">
         <TruncatedText text={t.label} className="max-w-[380px]" />
         {t.manual && <Badge variant="outline">manuel · en attente</Badge>}
         {t.ignored && <Badge variant="outline">non comptabilisée</Badge>}
       </span>
       {t.note && <span className="text-muted-foreground text-xs">{t.note}</span>}
+      {/* Le commentaire vient juste sous le libellé. */}
+      <TxnCommentField txnId={t.id} comment={t.comment} className="max-w-[380px]" />
     </span>
   );
 

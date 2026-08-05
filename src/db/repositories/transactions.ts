@@ -24,6 +24,8 @@ export type TxnView = {
   manual: boolean;
   incomeKind: "principal" | "supplementary" | null;
   note: string | null;
+  // Commentaire libre de l'utilisateur, affiché sous le libellé (cf. src/lib/txn-comment.ts).
+  comment: string | null;
 };
 
 export type ReconcileSuggestion = { manual: TxnView; synced: TxnView };
@@ -62,6 +64,7 @@ export function listTransactions(
   let sql =
     `SELECT t.id, t.date, t.amount, t.label, t.group_id AS groupId, t.line_id AS lineId, t.excluded AS excluded,
             t.ignored AS ignored, t.manual AS manual, t.income_kind AS incomeKind, t.note AS note,
+            t.comment AS comment,
             t.account_id AS accountId,
             COALESCE(COALESCE(a.custom_name, a.name) || ' ' || a.iban_masked, COALESCE(a.custom_name, a.name)) AS accountLabel
      FROM transactions t
@@ -104,6 +107,12 @@ export function setTransactionGroup(
     excluded ? 1 : 0,
     id,
   );
+}
+
+// Pose (ou retire, avec null) le commentaire d'une transaction. Rien d'autre n'est
+// touché : le commentaire s'ajoute au libellé de la banque, il ne le remplace pas.
+export function setTransactionComment(db: Database.Database, id: string, comment: string | null): void {
+  db.prepare("UPDATE transactions SET comment = ? WHERE id = ?").run(comment, id);
 }
 
 // Marque une transaction comme non comptabilisée (ou la remet dans les calculs).

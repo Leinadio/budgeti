@@ -47,6 +47,7 @@ export default async function HistoriquePage({
     lineId: t.lineId,
     excluded: t.excluded,
     incomeKind: t.incomeKind,
+    comment: t.comment,
   });
   // Les transactions des calculs : listTransactions écarte les non comptabilisées.
   const allTxns: Txn[] = listTransactions(database).map(toTxn);

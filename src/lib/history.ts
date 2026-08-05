@@ -29,6 +29,8 @@ export type HistoryTxn = {
   month: string; // YYYY-MM
   groupId: number | null;
   lineId: number | null;
+  // Commentaire libre de l'utilisateur, affiché sous le libellé (cf. txn-comment.ts).
+  comment?: string | null;
 };
 // Un sous-groupe = une ligne d'un récurrent (Spotify, Direct Assurance…).
 export type HistorySubRow = {
@@ -153,7 +155,7 @@ export function computeHistory(
 
   const toHistoryTxn = (t: Txn): HistoryTxn => ({
     id: t.id, date: t.date, label: t.label, amount: t.amount, month: t.date.slice(0, 7),
-    groupId: t.groupId, lineId: t.lineId ?? null,
+    groupId: t.groupId, lineId: t.lineId ?? null, comment: t.comment ?? null,
   });
 
   // On ne liste que les transactions des mois affichés.
