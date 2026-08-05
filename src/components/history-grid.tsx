@@ -1,5 +1,5 @@
 "use client";
-import { Fragment, cloneElement, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, ArrowDownRight, ChevronDown, ChevronRight, Plus, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { monthLabel } from "@/lib/transactions-view";
@@ -71,9 +71,10 @@ export type SelectGroup = {
   changes: BudgetChange[];
   lines: { id: number; name: string; amount: number; day: number; changes: BudgetChange[] }[];
 };
-const MUTED40 = "bg-[color-mix(in_oklab,var(--muted)_40%,var(--background))]";
-// Surbrillance de la case sélectionnée depuis le side panel : fond teinté + anneau.
-const CELL_HL = "bg-[color-mix(in_oklab,var(--primary)_22%,var(--background))] ring-1 ring-inset ring-primary/60";
+// Surbrillance de la case sélectionnée depuis le side panel : un anneau seul. Le fond
+// teinté qui l'accompagnait est parti avec les autres couleurs de fond — l'anneau
+// désigne la case aussi bien, et c'est un état, pas une couleur de tableau.
+const CELL_HL = "ring-1 ring-inset ring-primary/60";
 
 // « 2026-07 » → « Juillet ». L'année est affichée à part dans l'en-tête, en
 // chasse fixe et en retrait, pour que le nom du mois porte seul le titre.
@@ -132,80 +133,32 @@ const COL1_W = 320;
 // explication) vit dans src/lib/history-columns.ts : c'est une règle, pas du rendu.
 
 
-// Colonnes de solde (cumulé, se traîne de mois en mois). Chacune porte SA teinte,
-// pour qu'on distingue les trois chaînes d'un coup d'œil sans relire l'en-tête :
-// bleu-vert pour le réel (le certain), indigo pour le prévu (le plan), rosé pour le
-// plan mis à l'épreuve. Chromas faibles pour que les montants rouges et verts
-// restent lisibles par-dessus, et teintes distinctes de l'ambré de la Balance.
-// Comme BALANCE_TINT, elles sont posées sur CHAQUE cellule (via renderCols) et
-// passent donc au-dessus de la teinte du mois.
-const SOLDE_TINTS: Partial<Record<ColKey, string>> = {
-  soldeReel: "bg-[color-mix(in_oklab,oklch(0.75_0.10_210)_15%,var(--background))]",
-  soldePrevu: "bg-[color-mix(in_oklab,oklch(0.70_0.10_285)_15%,var(--background))]",
-  soldeDepass: "bg-[color-mix(in_oklab,oklch(0.72_0.08_340)_15%,var(--background))]",
-};
-// Teinte de fond de la colonne Balance (ex-« Reste/Manque ») : un ambré doux qui
-// la distingue de la bande grise des soldes. Posée sur CHAQUE cellule Balance (via
-// renderCols), pas sur le <colgroup>, pour rester visible même sous un fond de
-// ligne opaque (totaux gris, teinte entrant/sortant).
+// Plus aucune teinte de fond dans ce tableau : ni par colonne (soldes, Balance),
+// ni par nature de mois, ni par bloc entrant/sortant, ni bandes grises de totaux.
+// Ce qui distingue une colonne d'une autre est son en-tête ; ce qui distingue un
+// bloc du suivant, son filet et sa graisse. Restent les fonds qui ne sont pas des
+// couleurs mais des états : le survol d'une ligne, et l'anneau de la case
+// sélectionnée depuis le side panel.
+
 // Séparation entre deux mois : un filet vertical plus du blanc tournant, posés sur
 // la première colonne de chaque mois. Surtout PAS une bande épaisse peinte à la
 // couleur du fond : elle perçait les fonds de ligne et coupait les filets
 // horizontaux, et comme elle défile avec les colonnes, ça donnait un trou mobile
 // qui faisait passer le tableau « en dessous ». Ici la ligne reste continue d'un
-// bout à l'autre ; ce sont la teinte du mois et le filet qui détachent les blocs.
+// bout à l'autre ; c'est le filet qui détache les blocs.
 // Ça évite aussi d'insérer une colonne de séparation dans toute la structure du
 // tableau (colgroup, deux rangées d'en-tête, chaque constructeur de ligne, totalCols).
 const MONTH_GAP = "border-l border-l-border/70 pl-5";
 
-const BALANCE_TINT = "bg-[color-mix(in_oklab,oklch(0.75_0.16_80)_16%,var(--background))]";
-
-// Teinte de fond du bloc sortant (Récurrents, Enveloppes) : très légère, juste de
-// quoi séparer visuellement ce bloc du bloc entrant (Rémunérations) au-dessus,
-// sans gêner la lecture des montants rouges/verts. Posée uniquement sur les
-// lignes de groupe et les sous-totaux de section qui n'ont pas déjà de fond
-// (les bandes grises « Total … » gardent leur teinte existante, déjà assez
-// marquée pour se distinguer).
-const OUT_TINT = "bg-[color-mix(in_oklab,var(--muted)_12%,var(--background))]";
-
-// Teinte de fond selon la NATURE du mois, posée sur tout le bloc du mois via le
-// <colgroup>. Comme les autres teintes de colonne, elle passe sous les fonds de
-// ligne opaques (totaux gris, teintes entrant/sortant) : elle colore donc surtout
-// les cellules de données et l'en-tête du mois. Gris = mois passés, bleu doux =
-// mois courant, vert doux = premier mois futur (le « pont » qui repart de l'estimé
-// de fin du mois courant). Les mois futurs suivants (N+2, …) restent neutres.
-const MONTH_TINT_PAST = "bg-[color-mix(in_oklab,oklch(0.6_0.03_255)_22%,var(--background))]";
-const MONTH_TINT_CURRENT = "bg-[color-mix(in_oklab,oklch(0.72_0.13_240)_14%,var(--background))]";
-const MONTH_TINT_NEXT = "bg-[color-mix(in_oklab,oklch(0.75_0.14_155)_15%,var(--background))]";
-function monthTint(m: string, mi: number, months: string[], currentMonth: string): string | undefined {
-  if (m < currentMonth) return MONTH_TINT_PAST;
-  if (m === currentMonth) return MONTH_TINT_CURRENT;
-  if (mi > 0 && months[mi - 1] === currentMonth) return MONTH_TINT_NEXT; // premier mois futur (N+1)
-  return undefined; // mois futurs suivants : fond par défaut
-}
-
-// Rend les cellules d'un mois (une par colonne). `tint` est la teinte de fond selon
-// la nature du mois (passé / courant / premier mois futur) : on la pose en BASE de
-// CHAQUE cellule pour qu'elle couvre tout le bloc du mois, y compris sous les lignes
-// de total grises (le fond d'une cellule recouvre celui de sa ligne). La Balance et
-// les trois colonnes de solde gardent leur teinte propre par-dessus, et les mois sans
-// teinte (undefined) restent neutres.
-// Une cellule de tableau, avec sa className : le type dit ce que renderCols exige
-// pour pouvoir y poser la teinte du mois, au lieu de le supposer par un cast.
+// Une cellule de tableau, avec sa className.
 type ColCell = React.ReactElement<{ className?: string }>;
 // Un jeu de slots : une fonction de rendu par colonne, qui reçoit « est-ce la
 // première colonne du mois » (bordure de séparation).
 export type ColSlots = Record<ColKey, (border: boolean) => ColCell>;
 
-function renderCols(cols: ColKey[], slots: ColSlots, tint?: string): React.ReactNode[] {
-  return cols.map((col, idx) => {
-    const cell = slots[col](idx === 0);
-    // Base de cellule, posée AVANT sa className propre pour que la surbrillance de
-    // sélection (CELL_HL) reste au-dessus.
-    const base = col === "reste" ? BALANCE_TINT : SOLDE_TINTS[col] ?? tint;
-    if (!base) return cell;
-    return cloneElement(cell, { className: cn(base, cell.props.className) });
-  });
+// Rend les cellules d'un mois (une par colonne).
+function renderCols(cols: ColKey[], slots: ColSlots): React.ReactNode[] {
+  return cols.map((col, idx) => slots[col](idx === 0));
 }
 
 // Cellule vide (colonne non renseignée pour cette ligne), avec bordure de mois si
@@ -627,7 +580,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
           soldeDepass: (b) => plannedSoldeCell("soldeDepass", soldeDepass?.[i] ?? null, b, soldeDepassDetail, onSelect, ck("soldeDepass"), selCellKey, mouvementPrevu - ownOs),
         };
 
-        return <Fragment key={i}>{renderCols(cols, slots, monthTint(months[i], i, months, currentMonth))}</Fragment>;
+        return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
       })}
     </>
   );
@@ -880,7 +833,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
               : plannedSoldeCol("soldeDepass", null, b),
         };
 
-        return <Fragment key={i}>{renderCols(cols, slots, monthTint(months[i], i, months, currentMonth))}</Fragment>;
+        return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
       })}
     </>
   );
@@ -942,7 +895,7 @@ function IncomeTotalCells({ sec, months, currentMonth, onSelect, selCellKey, onl
           soldeDepass: (b) => blankCol("soldeDepass", b),
         };
 
-        return <Fragment key={i}>{renderCols(cols, slots, monthTint(months[i], i, months, currentMonth))}</Fragment>;
+        return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
       })}
     </>
   );
@@ -1132,7 +1085,7 @@ function GrandTotalsCells({ sections, grand, solde, planned, months, currentMont
           soldeDepass: (b) => plannedSoldeCell("soldeDepass", planned.depassClosings[i], b, soldeDepassDetail, onSelect, ck("soldeDepass"), selCellKey),
         };
 
-        return <Fragment key={i}>{renderCols(cols, slots, monthTint(months[i], i, months, currentMonth))}</Fragment>;
+        return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
       })}
     </>
   );
@@ -1185,24 +1138,25 @@ function TxnCells({ txn, months, currentMonth, onSelect, selCellKey, only }: Onl
           soldePrevu: (b) => blankCol("soldePrevu", b),
           soldeDepass: (b) => blankCol("soldeDepass", b),
         };
-        return <Fragment key={i}>{renderCols(cols, slots, monthTint(months[i], i, months, currentMonth))}</Fragment>;
+        return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
       })}
     </>
   );
 }
 
 // Cellule gauche (sticky) d'une ligne, avec retrait et chevron optionnel.
-function NameCell({ children, indent, expandable, expanded, onToggle, bg = "bg-background" }: {
+// Plus de prop `bg` : elle ne servait qu'à porter les teintes de bloc et de bande,
+// que le tableau n'a plus. La cellule prend le fond de la page comme les autres.
+function NameCell({ children, indent, expandable, expanded, onToggle }: {
   children: React.ReactNode;
   indent: number;
   expandable?: boolean;
   expanded?: boolean;
   onToggle?: () => void;
-  bg?: string;
 }) {
   return (
     <TableCell
-      className={cn(bg, "h-px p-0", expandable && "cursor-pointer")}
+      className={cn("bg-background h-px p-0", expandable && "cursor-pointer")}
       onClick={onToggle}
     >
       <FirstColBox indent={indent}>
@@ -1469,9 +1423,6 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
     // Le dépliage vaut pour le mois de CE tableau, pas pour tous.
     const gMonth = months[mi];
     const gOpen = isOpen(gKey, gMonth);
-    // Bloc sortant (Récurrents / Enveloppes, r.direction === "out") : fond légèrement
-    // teinté pour le distinguer du bloc entrant (Rémunérations) au-dessus — cf. OUT_TINT.
-    const outTint = !topLevel && r.direction === "out";
     // Détail « gestion du groupe » ouvert par l'icône au survol. Le mois visé est
     // celui du tableau où on a cliqué : c'est là que prendra effet le montant de
     // départ d'une ligne ajoutée, et c'est le mois qu'on avait sous les yeux.
@@ -1496,8 +1447,8 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
     };
     return (
       <Fragment key={r.id}>
-        <TableRow className={cn("group", topLevel ? "bg-muted/40 hover:bg-muted/40 font-medium" : hasChildren && "hover:bg-muted/50", outTint && OUT_TINT)}>
-          <NameCell indent={0} bg={topLevel ? MUTED40 : outTint ? OUT_TINT : undefined} expandable={hasChildren} expanded={gOpen} onToggle={hasChildren ? () => toggleIn(gKey, gMonth) : undefined}>
+        <TableRow className={cn("group", topLevel ? "font-medium" : hasChildren && "hover:bg-muted/50")}>
+          <NameCell indent={0} expandable={hasChildren} expanded={gOpen} onToggle={hasChildren ? () => toggleIn(gKey, gMonth) : undefined}>
             {r.direction === "in" ? (
               <ArrowUpRight className="size-4 shrink-0 text-sky-600" />
             ) : (
@@ -1646,10 +1597,8 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
     if (!sec) return null;
     const rowKey = `reste:${kind}`;
     return (
-      // Sous-total de section (bloc sortant) : même teinte que les lignes de groupe
-      // Récurrents/Enveloppes juste au-dessus (cf. OUT_TINT).
-      <TableRow className={cn("text-sm", OUT_TINT)}>
-        <TableCell className={cn(OUT_TINT, "h-px p-0")}>
+      <TableRow className="text-sm">
+        <TableCell className="h-px p-0">
           <FirstColBox><span className="text-muted-foreground">{label}</span></FirstColBox>
         </TableCell>
         {months.map((m, i) => {
@@ -1675,7 +1624,7 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
           );
           const slots = blankSlots();
           slots.reste = resteCell;
-          return <Fragment key={i}>{renderCols(cols, slots, monthTint(months[i], i, months, currentMonth))}</Fragment>;
+          return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
         })}
       </TableRow>
     );
@@ -1698,8 +1647,8 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
     const planDepass = planned.uncatDepassRunning[dir];
     return (
       <>
-        <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
-          <NameCell indent={0} bg={MUTED40} expandable={hasTxns} expanded={uOpen} onToggle={hasTxns ? () => toggleIn(uKey, uMonth) : undefined}>
+        <TableRow className="font-medium">
+          <NameCell indent={0} expandable={hasTxns} expanded={uOpen} onToggle={hasTxns ? () => toggleIn(uKey, uMonth) : undefined}>
             <span className="min-w-0 truncate">Non catégorisés</span>
           </NameCell>
           <SectionTotalsCells
@@ -1737,8 +1686,8 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
     const rowId = sectionRow(`ignored-${block.direction}`);
     return (
       <Fragment key={key}>
-        <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
-          <NameCell indent={0} bg={MUTED40} expandable expanded={opened} onToggle={() => toggleIn(key, bMonth)}>
+        <TableRow className="font-medium">
+          <NameCell indent={0} expandable expanded={opened} onToggle={() => toggleIn(key, bMonth)}>
             <span className="min-w-0 truncate">{title}</span>
           </NameCell>
           {months.map((m, i) => {
@@ -1765,7 +1714,7 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
             if (isIn) slots.recu = cell;
             else slots.dep = cell;
             const cols = monthColumns(monthType(m, currentMonth));
-            return <Fragment key={i}>{renderCols(cols, slots, monthTint(months[i], i, months, currentMonth))}</Fragment>;
+            return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
           })}
         </TableRow>
         {opened &&
@@ -1810,16 +1759,12 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
         d'une même ligne restent sur la même ligne de base ; les lignes sans
         étiquette, qui tiennent sur une seule ligne, ne bougent pas. */}
     <Table className="w-max font-mono text-[13px] [&_td]:align-top">
-      {/* Teinte de fond des colonnes (posée sous le fond des lignes) : par nature du
-          mois (passé / courant / premier mois futur) sur tout le bloc du mois, sinon
-          repli sur la teinte neutre des colonnes de solde pour les mois futurs suivants. */}
+      {/* Le colgroup ne porte plus de teinte : il ne reste que la structure des
+          colonnes, qui sert au calage des largeurs. */}
       <colgroup>
         <col />
         {monthColumns(monthType(m, currentMonth)).map((col) => (
-          <col
-            key={`${m}-${col}`}
-            className={cn(SOLDE_TINTS[col] ?? monthTint(m, mi, months, currentMonth))}
-          />
+          <col key={`${m}-${col}`} />
         ))}
       </colgroup>
       <TableHeader>
@@ -1887,7 +1832,6 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
                   <TableHead
                     key={col}
                     className={cn(
-                      col === "reste" ? BALANCE_TINT : SOLDE_TINTS[col],
                       idx === 0 && MONTH_GAP,
                       "text-muted-foreground h-auto py-1.5 text-right align-bottom font-sans text-[10px] font-medium tracking-[0.09em] uppercase",
                     )}
@@ -1908,8 +1852,8 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
         </TableRow>
       </TableHeader>
       <TableBody>
-        <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
-          <TableCell className={cn("h-px p-0", MUTED40)}>
+        <TableRow className="font-medium">
+          <TableCell className="h-px p-0">
             <FirstColBox>Argent de départ</FirstColBox>
           </TableCell>
           {solde.openings.map((v, i) => {
@@ -2001,7 +1945,7 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
             slots.soldeReel = openingCell;
             slots.soldePrevu = (b) => plannedSoldeCell("soldePrevu", prevuOpen, b, prevuOpenDetail, onSelect, cellKey(openingRow, "soldePrevu", i), selCellKey);
             slots.soldeDepass = (b) => plannedSoldeCell("soldeDepass", depassOpen, b, depassOpenDetail, onSelect, cellKey(openingRow, "soldeDepass", i), selCellKey);
-            return <Fragment key={i}>{renderCols(cols, slots, monthTint(months[i], i, months, currentMonth))}</Fragment>;
+            return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
           })}
         </TableRow>
         {secs.map((sec, si) => {
@@ -2064,8 +2008,8 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
                 )}
                 {sec.rows.map((r) => renderGroup(r, mi, true))}
                 {uncatIn && renderUncatRows(uncatIn, secs, mi)}
-                <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
-                  <TableCell className={cn("h-px p-0", MUTED40)}>
+                <TableRow className="font-medium">
+                  <TableCell className="h-px p-0">
                     <FirstColBox>Total rémunérations</FirstColBox>
                   </TableCell>
                   <IncomeTotalCells sec={sec} months={months} currentMonth={currentMonth} onSelect={onSelect} selCellKey={selCellKey} only={mi} />
@@ -2125,8 +2069,8 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
                 </TableRow>
               )}
               {sec.rows.map((r) => renderGroup(r, mi))}
-              <TableRow className="bg-muted/40 hover:bg-muted/40 font-medium">
-                <TableCell className={cn("h-px p-0", MUTED40)}>
+              <TableRow className="font-medium">
+                <TableCell className="h-px p-0">
                   <FirstColBox>{sec.kind === "envelope" ? "Total Enveloppes" : "Total Récurrents"}</FirstColBox>
                 </TableCell>
                 <SectionTotalsCells sec={sec} months={months} currentMonth={currentMonth} onSelect={onSelect} selCellKey={selCellKey} only={mi} />
@@ -2135,8 +2079,8 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
             </Fragment>
           );
         })}
-        <TableRow className="bg-muted/60 hover:bg-muted/60 font-semibold">
-          <TableCell className="h-px bg-[color-mix(in_oklab,var(--muted)_60%,var(--background))] p-0">
+        <TableRow className="font-semibold">
+          <TableCell className="h-px p-0">
             <FirstColBox>Solde actuel</FirstColBox>
           </TableCell>
           <GrandTotalsCells sections={secs} grand={grand} solde={solde} planned={planned} months={months} currentMonth={currentMonth} currentEstimate={estimateValue} onSelect={onSelect} selCellKey={selCellKey} only={mi} />
@@ -2183,7 +2127,7 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
             // Sur les mois de projection, l'« Estimé fin de mois » répéterait le
             // « Solde réel » (Solde actuel) déjà affiché plus haut : on laisse vide.
             if (m <= currentMonth) slots.soldeReel = estCell;
-            return <Fragment key={i}>{renderCols(cols, slots, monthTint(months[i], i, months, currentMonth))}</Fragment>;
+            return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
           })}
         </TableRow>
         {/* Dépassement final du mois : somme des montants rouges de la colonne
@@ -2219,7 +2163,7 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
             );
             const slots = blankSlots();
             slots.reste = depCell;
-            return <Fragment key={i}>{renderCols(cols, slots, monthTint(months[i], i, months, currentMonth))}</Fragment>;
+            return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
           })}
         </TableRow>
         {/* Transactions mises hors calcul : affichées pour mémoire, en dehors de
