@@ -1,63 +1,20 @@
 "use client";
 import { useState } from "react";
-import { Calendar } from "lucide-react";
 import { createGroup } from "@/app/historique/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { MonthCalendar } from "@/components/ui/month-calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { MonthField } from "@/components/month-field";
 import { clampMonth } from "@/lib/history";
-import { type PeriodMode } from "@/lib/group-period";
-
-// Libellé « Juillet 2026 » à partir d'une clé 'YYYY-MM'.
-function monthLabel(m: string): string {
-  const [y, mo] = m.split("-").map(Number);
-  const d = new Date(Date.UTC(y, mo - 1, 1));
-  return d.toLocaleDateString("fr-FR", { month: "long", year: "numeric", timeZone: "UTC" });
-}
+import { minEndMonth, fitEndMonth, type PeriodMode } from "@/lib/group-period";
 
 // Les trois façons de dire jusqu'à quand un groupe vit. Les libellés parlent de
 // mois, pas de « portée » : c'est la question qu'on se pose en créant la ligne.
-const PERIODS: { value: PeriodMode; label: string }[] = [
+export const PERIODS: { value: PeriodMode; label: string }[] = [
   { value: "from", label: "À partir d'un mois, et les suivants" },
   { value: "single", label: "Un seul mois" },
   { value: "range", label: "D'un mois à un autre" },
 ];
-
-// Un champ de mois : le mois choisi s'affiche en clair, le calendrier s'ouvre au
-// clic et se referme dès qu'on a choisi — un mois est un choix unique, rester
-// ouvert n'apporterait rien.
-function MonthField({ label, value, onChange, min, max }: {
-  label: string;
-  value: string;
-  onChange: (m: string) => void;
-  min: string;
-  max: string;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="flex flex-col gap-1">
-      <Label className="font-normal">{label}</Label>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <Button type="button" variant="outline" className="w-44 justify-between font-normal capitalize">
-            {monthLabel(value)}
-            <Calendar className="opacity-60" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-auto p-2">
-          <MonthCalendar
-            value={value}
-            min={min}
-            max={max}
-            onChange={(m) => { onChange(m); setOpen(false); }}
-          />
-        </PopoverContent>
-      </Popover>
-    </div>
-  );
-}
 
 // Formulaire de création inline d'un groupe (enveloppe ou récurrent), monté
 // juste sous le titre de section quand l'utilisateur clique le bouton « + ».
@@ -83,14 +40,17 @@ export function NewGroupInline({
 
   const [period, setPeriod] = useState<PeriodMode>("from");
   const [start, setStart] = useState(defaut);
-  const [end, setEnd] = useState(defaut);
+  const [end, setEnd] = useState(minEndMonth(defaut));
   const [pending, setPending] = useState(false);
 
-  // Changer le début peut rendre la fin caduque ; on la ramène au début plutôt que
-  // de garder affiché un mois que le calendrier de fin refuse désormais.
+  // Changer le début peut rattraper la fin ; on la repousse au premier mois encore
+  // permis plutôt que de garder affiché un mois que le calendrier de fin refuse
+  // désormais. Une plage finit forcément APRÈS son début (cf. minEndMonth) : finir le
+  // mois où l'on commence, c'est « un seul mois », qui a son propre choix juste
+  // au-dessus.
   const changeStart = (m: string) => {
     setStart(m);
-    if (end < m) setEnd(m);
+    setEnd(fitEndMonth(m, end));
   };
 
   async function submit(formData: FormData) {
@@ -141,9 +101,11 @@ export function NewGroupInline({
         min={stripMin}
         max={stripMax}
       />
-      {/* Une fin ne peut pas précéder son début : le calendrier de fin part de là. */}
+      {/* Une fin tombe forcément après son début : le calendrier de fin part du mois
+          SUIVANT. Si le début est le dernier mois de la frise, ce calendrier n'a plus
+          rien à proposer — c'est le signe qu'il fallait choisir « un seul mois ». */}
       {period === "range" && (
-        <MonthField label="Jusqu'au mois" value={end} onChange={setEnd} min={start} max={stripMax} />
+        <MonthField label="Jusqu'au mois" value={end} onChange={setEnd} min={minEndMonth(start)} max={stripMax} />
       )}
       <Button type="submit" size="sm" variant="secondary" disabled={pending}>Ajouter</Button>
       <Button type="button" size="sm" variant="ghost" onClick={onDone}>Annuler</Button>
