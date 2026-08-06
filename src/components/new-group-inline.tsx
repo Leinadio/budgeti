@@ -4,17 +4,9 @@ import { createGroup } from "@/app/historique/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { MonthField } from "@/components/month-field";
+import { PeriodFields } from "@/components/period-fields";
 import { clampMonth } from "@/lib/history";
-import { minEndMonth, fitEndMonth, type PeriodMode } from "@/lib/group-period";
-
-// Les trois façons de dire jusqu'à quand un groupe vit. Les libellés parlent de
-// mois, pas de « portée » : c'est la question qu'on se pose en créant la ligne.
-export const PERIODS: { value: PeriodMode; label: string }[] = [
-  { value: "from", label: "À partir d'un mois, et les suivants" },
-  { value: "single", label: "Un seul mois" },
-  { value: "range", label: "D'un mois à un autre" },
-];
+import { draftMode, type PeriodDraft } from "@/lib/group-period";
 
 // Formulaire de création inline d'un groupe (enveloppe ou récurrent), monté
 // juste sous le titre de section quand l'utilisateur clique le bouton « + ».
@@ -38,20 +30,8 @@ export function NewGroupInline({
   // oublié se rattrape en arrière, pas seulement à partir d'aujourd'hui.
   const defaut = clampMonth(defaultMonth, stripMin, stripMax);
 
-  const [period, setPeriod] = useState<PeriodMode>("from");
-  const [start, setStart] = useState(defaut);
-  const [end, setEnd] = useState(minEndMonth(defaut));
+  const [draft, setDraft] = useState<PeriodDraft>({ choice: "permanent", start: defaut, end: null });
   const [pending, setPending] = useState(false);
-
-  // Changer le début peut rattraper la fin ; on la repousse au premier mois encore
-  // permis plutôt que de garder affiché un mois que le calendrier de fin refuse
-  // désormais. Une plage finit forcément APRÈS son début (cf. minEndMonth) : finir le
-  // mois où l'on commence, c'est « un seul mois », qui a son propre choix juste
-  // au-dessus.
-  const changeStart = (m: string) => {
-    setStart(m);
-    setEnd(fitEndMonth(m, end));
-  };
 
   async function submit(formData: FormData) {
     setPending(true);
@@ -60,9 +40,11 @@ export function NewGroupInline({
       kind,
       name: String(formData.get("name") ?? ""),
       amount: kind === "envelope" ? Number(formData.get("amount") ?? 0) : null,
-      startMonth: start,
-      endMonth: end,
-      period,
+      startMonth: draft.start,
+      // Sans mois de fin, la durée vaut pour le seul mois de départ : c'est le mode
+      // qui le dit (single), le mois de fin envoyé n'est là que pour une plage.
+      endMonth: draft.end ?? draft.start,
+      period: draftMode(draft),
     });
     setPending(false);
     onDone();
@@ -80,33 +62,7 @@ export function NewGroupInline({
           <Input type="number" name="amount" step="0.01" min="0" className="max-w-28" placeholder="0.00" />
         </div>
       )}
-      <div className="flex flex-col gap-1">
-        <Label className="font-normal">Durée</Label>
-        <select
-          value={period}
-          onChange={(e) => setPeriod(e.target.value as PeriodMode)}
-          className="h-9 rounded-md border bg-transparent px-2 text-sm"
-        >
-          {PERIODS.map((p) => (
-            <option key={p.value} value={p.value}>{p.label}</option>
-          ))}
-        </select>
-      </div>
-      {/* Les mois demandés suivent la durée choisie : un seul champ pour un mois
-          unique ou un début sans fin, deux pour une plage. */}
-      <MonthField
-        label={period === "range" ? "Du mois" : period === "single" ? "Mois" : "À partir de"}
-        value={start}
-        onChange={changeStart}
-        min={stripMin}
-        max={stripMax}
-      />
-      {/* Une fin tombe forcément après son début : le calendrier de fin part du mois
-          SUIVANT. Si le début est le dernier mois de la frise, ce calendrier n'a plus
-          rien à proposer — c'est le signe qu'il fallait choisir « un seul mois ». */}
-      {period === "range" && (
-        <MonthField label="Jusqu'au mois" value={end} onChange={setEnd} min={minEndMonth(start)} max={stripMax} />
-      )}
+      <PeriodFields draft={draft} onChange={setDraft} stripMin={stripMin} stripMax={stripMax} />
       <Button type="submit" size="sm" variant="secondary" disabled={pending}>Ajouter</Button>
       <Button type="button" size="sm" variant="ghost" onClick={onDone}>Annuler</Button>
     </form>

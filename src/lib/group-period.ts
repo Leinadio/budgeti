@@ -30,6 +30,33 @@ export function fitEndMonth(startMonth: string, endMonth: string): string {
   return endMonth < min ? min : endMonth;
 }
 
+// --- Ce que le formulaire demande, et ce que ça vaut -------------------------
+// À l'écran, la durée ne pose que DEUX questions : permanent, ou des mois précis ?
+// Et dans le second cas, un « + » ajoute un mois de fin. Parce que « un seul mois » et
+// « d'un mois à un autre » ne sont pas deux natures différentes : c'est la même chose
+// avec ou sans fin, et en faire deux entrées de menu obligeait à choisir avant de
+// savoir. Les trois modes ci-dessus restent le langage de la base ; la traduction
+// entre les deux se fait ici, une fois, plutôt que dans chaque formulaire.
+export type PeriodChoice = "permanent" | "dates";
+export type PeriodDraft = { choice: PeriodChoice; start: string; end: string | null };
+
+export function draftMode(d: PeriodDraft): PeriodMode {
+  if (d.choice === "permanent") return "from";
+  return d.end === null ? "single" : "range";
+}
+
+// L'inverse : ouvrir le formulaire d'un groupe qui existe déjà sur ce qu'il est.
+// `defaut` sert de mois de départ aux groupes hérités, qui n'en ont pas.
+export function draftOfPeriod(
+  startMonth: string | null | undefined,
+  endMonth: string | null | undefined,
+  defaut = "",
+): PeriodDraft {
+  const start = startMonth ?? defaut;
+  if (endMonth == null) return { choice: "permanent", start, end: null };
+  return { choice: "dates", start, end: endMonth === start ? null : endMonth };
+}
+
 // Rend les deux bornes à écrire, ou null si la période demandée ne décrit aucun
 // mois vécu — au formulaire de le dire, plutôt qu'à cette fonction de réparer en
 // silence une saisie que personne n'a voulue.
