@@ -22,9 +22,14 @@ import {
   spreadGroupAmount,
   spreadGroupLineAmount,
   spreadUncatProvision,
+  setGroupPeriod,
+  setLinePeriod,
+  groupPeriodImpact,
+  linePeriodImpact,
+  type PeriodImpact,
 } from "@/app/historique/actions";
 import { groupPeriodLabel } from "@/lib/group-period-label";
-import { draftMode, type PeriodDraft } from "@/lib/group-period";
+import { draftMode, draftOfPeriod, type PeriodDraft } from "@/lib/group-period";
 import { PeriodFields } from "@/components/period-fields";
 import { Sidebar, SidebarHeader, SidebarContent } from "@/components/ui/sidebar";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
@@ -114,6 +119,8 @@ function LineManageBlock({ info, onClose }: { info: LineManageInfo; onClose: () 
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState(info.name);
+  // Même raison que pour un groupe : l'instantané du panneau ne se rafraîchit pas.
+  const [periode, setPeriode] = useState({ startMonth: info.startMonth, endMonth: info.endMonth });
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
     await fn();
@@ -127,6 +134,11 @@ function LineManageBlock({ info, onClose }: { info: LineManageInfo; onClose: () 
           <div className="min-w-0">
             <p className="text-muted-foreground text-sm">Gérer la ligne</p>
             <h2 className="font-semibold">{info.name}</h2>
+            {/* Sa durée de vie, dite comme dans la colonne de gauche du tableau : on
+                doit lire la même chose des deux côtés. */}
+            <p className="text-muted-foreground/70 text-[10px] tracking-[0.12em] uppercase">
+              {groupPeriodLabel(periode.startMonth, periode.endMonth)}
+            </p>
           </div>
           <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground shrink-0 rounded p-1" aria-label="Fermer">
             <X className="size-4" />
@@ -149,6 +161,21 @@ function LineManageBlock({ info, onClose }: { info: LineManageInfo; onClose: () 
             </Button>
           </div>
         </div>
+        {/* Sa durée de vie, comme pour un groupe : c'est ici qu'on résilie un
+            abonnement sans emporter le récurrent qui le porte, ni son passé. */}
+        <PeriodEditBlock
+          current={periode}
+          month={info.month}
+          stripMin={info.stripMin}
+          stripMax={info.stripMax}
+          changes={info.changes}
+          askAmount
+          impactOf={(s, e) => linePeriodImpact(info.lineId, s, e)}
+          onSave={async (s, e, a) => {
+            await run(() => setLinePeriod(info.lineId, s, e, a));
+            setPeriode({ startMonth: s, endMonth: e });
+          }}
+        />
         <div className="border-t pt-4">
           <AlertDialog>
             <AlertDialogTrigger asChild>
@@ -296,6 +323,112 @@ function BudgetEditBlock({ info }: { info: BudgetEditInfo }) {
 // du groupe et contredisait ce que montrait le tableau. Les montants se fixent depuis
 // leur case « Budget dép. », au mois de la colonne (voir BudgetEditBlock).
 // Chaque action revalide côté serveur ; on rafraîchit ensuite la vue.
+// Modifier la durée de vie d'un groupe ou d'une ligne qui existe déjà. Le même bloc
+// pour les deux : la question est la même, seule l'action d'écriture change.
+//
+// Créer, c'est facile — rien n'existe encore. Modifier, c'est autre chose : des mois
+// sont déjà remplis. D'où la seule règle qui compte ici : rallonger passe sans rien
+// demander (rien n'est retiré, et le geste inverse ramène tout), raccourcir annonce
+// d'abord ce qui sort — les mois qui perdent leur budget et les transactions qui
+// repassent en non catégorisés. Rien n'est jamais détruit : les montants datés
+// survivent aux deux bouts, remettre la borne où elle était fait tout revenir.
+function PeriodEditBlock({ current, month, stripMin, stripMax, changes, askAmount, impactOf, onSave }: {
+  current: { startMonth?: string | null; endMonth?: string | null };
+  month: string;
+  stripMin: string;
+  stripMax: string;
+  changes: BudgetChange[];
+  // Un récurrent n'a pas de montant à lui (il le tire de ses lignes) : il n'y a rien
+  // à demander quand on lui rallonge la durée vers le passé.
+  askAmount: boolean;
+  impactOf: (startMonth: string, endMonth: string | null) => Promise<PeriodImpact>;
+  onSave: (startMonth: string, endMonth: string | null, amount?: number) => Promise<void>;
+}) {
+  const debutActuel = current.startMonth ?? month;
+  const finActuelle = current.endMonth ?? null;
+  const [draft, setDraft] = useState<PeriodDraft>(() => draftOfPeriod(current.startMonth, current.endMonth, month));
+  const [amount, setAmount] = useState(() => String(amountAtMonth(changes, debutActuel) || ""));
+  const [pending, setPending] = useState(false);
+  // Non nul = l'avertissement est à l'écran, en attente d'un « oui ».
+  const [impact, setImpact] = useState<PeriodImpact | null>(null);
+
+  const start = draft.start;
+  const end = draft.choice === "permanent" ? null : draft.end ?? draft.start;
+  const change = start !== debutActuel || end !== finActuelle;
+  // Rallonger vers le passé ouvre des mois où le groupe n'a jamais eu de montant :
+  // sans en poser un, ils s'afficheraient à zéro.
+  const rallongeAvant = askAmount && start < debutActuel;
+
+  const ecrire = async () => {
+    setPending(true);
+    await onSave(start, end, rallongeAvant ? parseFloat(amount) || 0 : undefined);
+    setPending(false);
+    setImpact(null);
+  };
+
+  const enregistrer = async () => {
+    setPending(true);
+    const coute = await impactOf(start, end);
+    setPending(false);
+    if (coute.months.length > 0) setImpact(coute);
+    else await ecrire();
+  };
+
+  return (
+    <div className="flex flex-col gap-3 border-t pt-4">
+      <Label className="font-normal">Durée</Label>
+      <PeriodFields draft={draft} onChange={setDraft} stripMin={stripMin} stripMax={stripMax} compact />
+      {rallongeAvant && (
+        <div className="flex flex-col gap-1">
+          <Label className="text-muted-foreground text-xs font-normal">
+            Montant pour les mois gagnés
+          </Label>
+          <Input
+            type="number"
+            step="0.01"
+            min="0"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="h-8 w-40 text-right tabular-nums"
+            placeholder="0.00"
+          />
+          <p className="text-muted-foreground text-xs">
+            Ces mois n&apos;ont encore aucun montant. Celui-ci y prend effet, sans toucher aux suivants.
+          </p>
+        </div>
+      )}
+      <Button type="button" size="sm" variant="secondary" className="self-start" disabled={pending || !change} onClick={enregistrer}>
+        Enregistrer la durée
+      </Button>
+
+      <AlertDialog open={impact !== null} onOpenChange={(o) => !o && setImpact(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Raccourcir cette durée ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {impact && (
+                <>
+                  {impact.months.length === 1
+                    ? `${monthLabel(impact.months[0])} sort de la durée : son budget y disparaît`
+                    : `${impact.months.length} mois sortent de la durée, de ${monthLabel(impact.months[0]).toLowerCase()} à ${monthLabel(impact.months[impact.months.length - 1]).toLowerCase()} : leur budget y disparaît`}
+                  {impact.txns > 0
+                    ? `, et ${impact.txns} transaction${impact.txns > 1 ? "s" : ""} repasse${impact.txns > 1 ? "nt" : ""} en non catégorisés.`
+                    : "."}
+                  {" "}Rien n&apos;est supprimé : remettre la durée comme elle était fait tout revenir.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Annuler</AlertDialogCancel>
+            <AlertDialogAction onClick={ecrire}>Raccourcir</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
 function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: () => void }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -306,6 +439,10 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
   // la colonne cliquée — parce que c'est déjà de là qu'une ligne ajoutée compte ; on
   // peut la déplacer, la frise du compte entière est proposée.
   const [draft, setDraft] = useState<PeriodDraft>({ choice: "permanent", start: info.month, end: null });
+  // Durée du groupe, en état local : `info` est un instantané capturé à l'ouverture du
+  // panneau que router.refresh() ne remplace pas. Sans ça, l'étiquette du titre
+  // continuerait d'annoncer « permanent » juste après qu'on l'a arrêté.
+  const [periode, setPeriode] = useState({ startMonth: info.startMonth, endMonth: info.endMonth });
   // Liste des lignes affichée, en état local optimiste : `info.lines` est un
   // instantané capturé à l'ouverture du panneau, que router.refresh() ne met pas à
   // jour. On la maintient ici pour que l'ajout / la suppression se reflètent tout de
@@ -328,7 +465,7 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
             {/* Sa durée de vie, dite comme dans la colonne de gauche du tableau :
                 « ce mois uniquement », « permanent », ou la plage. */}
             <p className="text-muted-foreground/70 text-[10px] tracking-[0.12em] uppercase">
-              {groupPeriodLabel(info.startMonth, info.endMonth)}
+              {groupPeriodLabel(periode.startMonth, periode.endMonth)}
             </p>
           </div>
           <button type="button" onClick={onClose} className="text-muted-foreground hover:text-foreground shrink-0 rounded p-1" aria-label="Fermer">
@@ -353,6 +490,22 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
             </Button>
           </div>
         </div>
+
+        {/* Sa durée de vie. C'est ici qu'on arrête un groupe permanent — le seul autre
+            moyen était de le supprimer, ce qui emportait aussi tout son passé. */}
+        <PeriodEditBlock
+          current={periode}
+          month={info.month}
+          stripMin={info.stripMin}
+          stripMax={info.stripMax}
+          changes={info.changes}
+          askAmount={info.kind === "envelope"}
+          impactOf={(s, e) => groupPeriodImpact(info.groupId, s, e)}
+          onSave={async (s, e, a) => {
+            await run(() => setGroupPeriod(info.groupId, s, e, a));
+            setPeriode({ startMonth: s, endMonth: e });
+          }}
+        />
 
         {/* Ajout d'une ligne (récurrent). Les lignes existantes ne se modifient plus
             ici : chacune a son propre crayon dans le tableau, à côté de son nom, qui

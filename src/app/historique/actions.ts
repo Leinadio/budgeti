@@ -11,10 +11,17 @@ import {
   renameLine,
   deleteLine,
   hasIncomeGroup,
+  getGroupLifespan,
+  getLineLifespan,
+  setGroupLifespan,
+  setLineLifespan,
 } from "../../db/repositories/groups";
-import { toDatedBudgets, toDatedLineAmounts, isMonthKey, type BudgetScope } from "../../lib/history";
+import { listTransactions } from "../../db/repositories/transactions";
+import { toDatedBudgets, toDatedLineAmounts, isMonthKey, amountInForce, monthRange, type BudgetScope } from "../../lib/history";
 import { canRemoveBudgetChange, budgetChanges, type BudgetChange } from "../../lib/budget-history";
 import { groupPeriod, type PeriodMode } from "../../lib/group-period";
+import { droppedMonths, countTxnsIn } from "../../lib/period-change";
+import { currentMonthKey } from "../../lib/current-month";
 import { revalidatePath } from "next/cache";
 
 // --- Ce que ces actions vérifient avant d'écrire ---------------------------
@@ -62,6 +69,131 @@ export async function createGroup(input: {
   }
   revalidatePath("/historique");
   revalidatePath("/");
+}
+
+// --- Changer la durée de vie après coup -------------------------------------
+// Un groupe créé « permanent » finit un jour : un abonnement se résilie, un crédit
+// se solde. Sans ces actions, le seul moyen de l'arrêter était de le supprimer — ce
+// qui efface aussi tout son passé. Déplacer une borne n'efface rien : les montants
+// datés restent en base, et remettre la borne où elle était fait revenir les mois
+// avec le budget qu'ils avaient.
+//
+// La règle des bornes est la même qu'à la création, à une nuance près : ici les deux
+// bornes peuvent être égales (« un seul mois »), alors que le formulaire de création
+// réserve ce cas à son propre choix et exige une fin strictement postérieure quand on
+// demande une plage (cf. groupPeriod / minEndMonth).
+function bornesValides(startMonth: string, endMonth: string | null): boolean {
+  if (!isMonthKey(startMonth)) return false;
+  if (endMonth === null) return true;
+  return isMonthKey(endMonth) && endMonth >= startMonth;
+}
+
+// Les mois qu'on regarde pour juger un changement : du plus ancien mois connu du
+// groupe (sa borne actuelle, ses transactions) jusqu'au mois courant.
+//
+// Les mois à venir en sont exclus volontairement : rien ne s'y est encore passé, les
+// retirer n'enlève aucun chiffre déjà lu. Le passé, lui, s'arrête à `horizon`, le
+// premier mois que la frise atteint — les groupes hérités sont ancrés en 2000-01 par
+// la migration, et annoncer trois cents mois perdus que l'app n'affiche nulle part
+// serait faux au sens qui compte : celui de ce qu'on peut voir changer.
+function moisRegardes(
+  depuis: (string | null | undefined)[],
+  currentMonth: string,
+  horizon: string | undefined,
+): string[] {
+  const connus = depuis.filter((m): m is string => isMonthKey(m));
+  if (connus.length === 0) return [];
+  const plusAncien = connus.reduce((a, b) => (a < b ? a : b));
+  const debut = horizon && horizon > plusAncien ? horizon : plusAncien;
+  return debut > currentMonth ? [] : monthRange(debut, currentMonth);
+}
+
+// Ce qu'un changement de bornes coûterait, calculé sur ce qui est réellement en base
+// et rendu à l'écran AVANT d'écrire : les mois qui sortent de la vie du groupe en y
+// ayant quelque chose (un budget ou des transactions), et le nombre de transactions
+// qui repasseront en non catégorisés — elles restent rattachées, mais aucun calcul ne
+// les compte plus sous un groupe qui ne vit pas leur mois.
+export type PeriodImpact = { months: string[]; txns: number };
+
+function impact(
+  before: { startMonth: string | null; endMonth: string | null },
+  after: { startMonth: string; endMonth: string | null },
+  txnMonths: string[],
+  budgetAt: (month: string) => number,
+  horizon: string | undefined,
+): PeriodImpact {
+  const regardes = moisRegardes(
+    [before.startMonth, after.startMonth, ...txnMonths],
+    currentMonthKey(new Date()),
+    horizon,
+  );
+  const perdus = droppedMonths(before, after, regardes);
+  // Un mois perdu où il n'y avait ni budget ni dépense ne change rien à l'écran :
+  // l'annoncer ferait du bruit là où il n'y a pas de perte.
+  const avecQuelqueChose = perdus.filter((m) => budgetAt(m) > 0.005 || txnMonths.includes(m));
+  return { months: avecQuelqueChose, txns: countTxnsIn(avecQuelqueChose, txnMonths) };
+}
+
+// Les mois des transactions : celles rattachées à la cible (un élément par
+// transaction — c'est un décompte, pas un ensemble), et le premier mois de toutes,
+// qui borne le passé regardé.
+function moisDesTxns(cible: { groupId: number } | { lineId: number }): { mine: string[]; horizon: string | undefined } {
+  const toutes = listTransactions(db());
+  const mois = (t: (typeof toutes)[number]) => t.date.slice(0, 7);
+  return {
+    mine: toutes.filter((t) => ("lineId" in cible ? t.lineId === cible.lineId : t.groupId === cible.groupId)).map(mois),
+    horizon: toutes.map(mois).sort()[0],
+  };
+}
+
+export async function groupPeriodImpact(
+  groupId: number, startMonth: string, endMonth: string | null,
+): Promise<PeriodImpact> {
+  const database = db();
+  const before = getGroupLifespan(database, groupId);
+  if (!before || !bornesValides(startMonth, endMonth)) return { months: [], txns: 0 };
+  const entries = toDatedBudgets(listBudgetAmounts(database))[groupId] ?? [];
+  const { mine, horizon } = moisDesTxns({ groupId });
+  return impact(before, { startMonth, endMonth }, mine, (m) => amountInForce(entries, m), horizon);
+}
+
+export async function linePeriodImpact(
+  lineId: number, startMonth: string, endMonth: string | null,
+): Promise<PeriodImpact> {
+  const database = db();
+  const before = getLineLifespan(database, lineId);
+  if (!before || !bornesValides(startMonth, endMonth)) return { months: [], txns: 0 };
+  const entries = toDatedLineAmounts(listLineAmounts(database))[lineId] ?? [];
+  const { mine, horizon } = moisDesTxns({ lineId });
+  return impact(before, { startMonth, endMonth }, mine, (m) => amountInForce(entries, m), horizon);
+}
+
+// Écrit les nouvelles bornes. `amountForAdded` (optionnel) est le montant à poser au
+// nouveau mois de départ quand on rallonge vers le passé : ces mois-là n'ont jamais eu
+// de montant à eux et s'afficheraient à zéro. Posé en portée « ongoing » à ce mois, il
+// remplit le trou sans toucher aux montants postérieurs, qui gardent le leur.
+export async function setGroupPeriod(
+  groupId: number, startMonth: string, endMonth: string | null, amountForAdded?: number,
+): Promise<void> {
+  if (!bornesValides(startMonth, endMonth)) return;
+  const database = db();
+  setGroupLifespan(database, groupId, startMonth, endMonth);
+  if (amountForAdded != null && Number.isFinite(amountForAdded) && amountForAdded >= 0) {
+    setBudgetAmount(database, groupId, startMonth, amountForAdded);
+  }
+  await revalidate();
+}
+
+export async function setLinePeriod(
+  lineId: number, startMonth: string, endMonth: string | null, amountForAdded?: number,
+): Promise<void> {
+  if (!bornesValides(startMonth, endMonth)) return;
+  const database = db();
+  setLineLifespan(database, lineId, startMonth, endMonth);
+  if (amountForAdded != null && Number.isFinite(amountForAdded) && amountForAdded >= 0) {
+    setLineAmount(database, lineId, startMonth, amountForAdded);
+  }
+  await revalidate();
 }
 
 // Revalidation commune aux actions de gestion d'un groupe : le changement touche

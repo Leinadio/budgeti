@@ -46,6 +46,18 @@ export function getGroupLifespan(
   return row ?? null;
 }
 
+// Durée de vie d'une ligne de récurrent, ou null si la ligne n'existe pas. Sert à
+// juger un changement de bornes : ce qu'on retire se lit par rapport à ce qui est.
+export function getLineLifespan(
+  db: Database.Database,
+  id: number,
+): { startMonth: string | null; endMonth: string | null } | null {
+  const row = db
+    .prepare(`SELECT start_month AS startMonth, end_month AS endMonth FROM group_lines WHERE id = ?`)
+    .get(id) as { startMonth: string | null; endMonth: string | null } | undefined;
+  return row ?? null;
+}
+
 // Groupe auquel appartient une ligne, null si la ligne n'existe pas. Sert à vérifier
 // qu'un couple (groupe, ligne) est cohérent avant de l'écrire sur une transaction.
 export function getLineGroupId(db: Database.Database, lineId: number): number | null {
@@ -131,6 +143,29 @@ export function deleteGroup(db: Database.Database, id: number): void {
 
 export function renameGroup(db: Database.Database, id: number, name: string): void {
   db.prepare(`UPDATE groups SET name = ? WHERE id = ?`).run(name, id);
+}
+
+// Déplace les bornes d'un groupe déjà créé. Rien d'autre n'est touché : les montants
+// datés survivent tels quels, y compris ceux des mois qui sortent de la vie du groupe.
+// C'est ce qui rend le geste réversible — remettre la borne où elle était fait
+// réapparaître les mois avec le budget qu'ils avaient.
+export function setGroupLifespan(
+  db: Database.Database,
+  id: number,
+  startMonth: string,
+  endMonth: string | null,
+): void {
+  db.prepare(`UPDATE groups SET start_month = ?, end_month = ? WHERE id = ?`).run(startMonth, endMonth, id);
+}
+
+// Même chose pour une ligne de récurrent.
+export function setLineLifespan(
+  db: Database.Database,
+  id: number,
+  startMonth: string,
+  endMonth: string | null,
+): void {
+  db.prepare(`UPDATE group_lines SET start_month = ?, end_month = ? WHERE id = ?`).run(startMonth, endMonth, id);
 }
 
 // La colonne group_lines.keyword est NOT NULL (héritée de l'ancien matching par

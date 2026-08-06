@@ -1450,6 +1450,7 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
         stripMax,
         startMonth: sg?.startMonth,
         endMonth: sg?.endMonth,
+        changes: sg?.changes ?? [],
         lines: (sg?.lines ?? []).map((l) => ({ id: l.id, name: l.name, day: l.day })),
       },
     };
@@ -1565,7 +1566,17 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
                             result: 0,
                             // Le jour vient du SelectGroup : une HistorySubRow ne porte
                             // que des chiffres par mois, pas les propriétés de la ligne.
-                            lineManage: { lineId: sub.id, name: sub.name, day: sgLine?.day ?? 1 },
+                            lineManage: {
+                              lineId: sub.id,
+                              name: sub.name,
+                              day: sgLine?.day ?? 1,
+                              month: gMonth,
+                              stripMin,
+                              stripMax,
+                              startMonth: sgLine?.startMonth,
+                              endMonth: sgLine?.endMonth,
+                              changes: sgLine?.changes ?? [],
+                            },
                           });
                         }}
                         className="text-muted-foreground hover:text-foreground ml-1 shrink-0 opacity-0 group-hover:opacity-100"

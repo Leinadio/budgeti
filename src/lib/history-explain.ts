@@ -75,6 +75,11 @@ export type GroupManageInfo = {
   // (cf. group-period-label.ts) : on doit lire la même chose des deux côtés.
   startMonth?: string | null;
   endMonth?: string | null;
+  // La vie du budget du groupe. Le panneau n'en affiche toujours aucun montant : elle
+  // ne sert qu'à proposer une valeur quand on rallonge la durée vers le passé, sur des
+  // mois qui n'ont jamais eu de montant à eux (vide pour un récurrent, qui n'a pas de
+  // montant propre).
+  changes: BudgetChange[];
   lines: { id: number; name: string; day: number }[];
 };
 
@@ -93,6 +98,15 @@ export type LineManageInfo = {
   lineId: number;
   name: string;
   day: number;
+  // Sa durée de vie, et de quoi la modifier : le mois où le panneau se place (repli
+  // pour une ligne héritée, sans mois de départ), les bornes de la frise du compte, et
+  // la vie de son montant — même rôle que pour un groupe (voir GroupManageInfo).
+  month: string;
+  stripMin: string;
+  stripMax: string;
+  startMonth?: string | null;
+  endMonth?: string | null;
+  changes: BudgetChange[];
 };
 
 // Info nécessaire au bloc d'édition d'un budget ouvert depuis sa case « Budget dép. ».

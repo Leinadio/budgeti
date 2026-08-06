@@ -413,7 +413,7 @@ describe("L'identité d'un détail, qui décide quand le panneau repart de zéro
   it("devrait donner son identité propre à la gestion d'un groupe", () => {
     const k = detailKey({
       title: "Courses", nodes: [], result: 0,
-      groupManage: { groupId: 3, name: "Courses", kind: "envelope", month: "2026-07", stripMin: "2026-01", stripMax: "2027-01", lines: [] },
+      groupManage: { groupId: 3, name: "Courses", kind: "envelope", month: "2026-07", stripMin: "2026-01", stripMax: "2027-01", changes: [], lines: [] },
     });
     expect(k).toContain("3");
     expect(k).toContain("2026-07");
@@ -425,11 +425,11 @@ describe("L'identité d'un détail, qui décide quand le panneau repart de zéro
   it("devrait donner son identité propre à la gestion d'une ligne, distincte du groupe", () => {
     const ligne = detailKey({
       title: "Sosh Internet", nodes: [], result: 0,
-      lineManage: { lineId: 3, name: "Sosh Internet", day: 12 },
+      lineManage: { lineId: 3, name: "Sosh Internet", day: 12, month: "2026-07", stripMin: "2026-01", stripMax: "2027-01", changes: [] },
     });
     const groupe = detailKey({
       title: "Abonnements", nodes: [], result: 0,
-      groupManage: { groupId: 3, name: "Abonnements", kind: "recurring", month: "2026-07", stripMin: "2026-01", stripMax: "2027-01", lines: [] },
+      groupManage: { groupId: 3, name: "Abonnements", kind: "recurring", month: "2026-07", stripMin: "2026-01", stripMax: "2027-01", changes: [], lines: [] },
     });
     expect(ligne).toBe("line:3");
     expect(ligne).not.toBe(groupe);
