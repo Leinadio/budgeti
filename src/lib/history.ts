@@ -41,8 +41,8 @@ export type HistorySubRow = {
   // (au moins une entrée datée à ou avant), ET son groupe est-il vivant ce
   // mois-là. Distinct de l'aliveMonths du groupe : une ligne ajoutée après le
   // début d'un groupe encore vivant n'est « vivante » qu'à partir de sa propre
-  // première entrée (cf. lineStarted) — sinon son repère de changement (Task 2,
-  // budgetChangePoints) confondrait sa naissance avec une vraie hausse.
+  // première entrée (cf. lineStarted) : c'est ce qui permet de distinguer partout
+  // sa naissance d'une vraie hausse de son montant.
   aliveMonths: boolean[];
   txns: HistoryTxn[]; // transactions rattachées à cette ligne
 };

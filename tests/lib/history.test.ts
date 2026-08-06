@@ -1,7 +1,6 @@
 import { expect, describe, it } from "vitest";
 import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde, computePlannedSoldes, budgetInForce, lineAmountInForce, toDatedBudgets, toDatedLineAmounts, computeOverspends, groupsWithPending, overspentCells, budgetKey, budgetsByMonth, rowRevenus, rowOverspend, uncatOverspend, uncatOverspendOf, type HistoryRow, type DatedBudgets, type Overspend } from "../../src/lib/history";
 import { isGroupAlive, type Group, type Txn } from "../../src/lib/forecast";
-import { budgetChangePoints } from "../../src/lib/history-columns";
 import { seedDated, mergeDated } from "./dated-fixtures";
 
 // Fixtures partagées : une enveloppe « Courses » avec un budget mensuel, un groupe
@@ -931,17 +930,11 @@ describe("Durée de vie d'un groupe", () => {
     const row = sections.flatMap((s) => s.rows).find((r) => r.id === 2)!;
     const netflix = row.subRows.find((s) => s.id === 12)!;
     expect(netflix.cells.map((c) => c.budgeted)).toEqual([0, 0, 15]);
-    // Le groupe est vivant partout : sans vie propre à la ligne, son repère de
-    // changement retomberait sur celui du groupe et confondrait la naissance de
-    // la ligne avec une vraie hausse.
+    // Une ligne a sa vie propre, distincte de celle de son groupe : le groupe est
+    // vivant partout, la ligne ne naît qu'en août. Confondre les deux ferait lire
+    // le saut de 0 vers 15 comme une hausse alors que la ligne vient de naître.
     expect(row.aliveMonths).toEqual([true, true, true]);
     expect(netflix.aliveMonths).toEqual([false, false, true]);
-    // La preuve qui referme la boucle : nourri de la vie de la LIGNE, le repère
-    // ne marque pas sa naissance. Nourri (à tort) de la vie du GROUPE — le bug
-    // relevé en relecture, où history-grid passait r.aliveMonths à la sous-ligne
-    // — le même saut se lirait à tort comme un changement réel en août.
-    expect(budgetChangePoints(netflix.cells, netflix.aliveMonths)).toEqual([false, false, false]);
-    expect(budgetChangePoints(netflix.cells, row.aliveMonths)).toEqual([false, false, true]);
   });
 
   it("devrait ne signaler aucun dépassement pour un groupe qui n'est plus actif", () => {

@@ -77,23 +77,3 @@ export const COL_INFO: Record<ColKey, string[]> = {
     "Sur les mois à venir, cette colonne rejoint le Solde prévu : un dépassement n'est jamais reconduit tout seul. Si tu penses qu'il va revenir, c'est à toi de relever le budget des mois concernés — clique leur case et fixe le nouveau montant.",
   ],
 };
-
-// Mois où le budget diffère de celui du mois précédent, pour signaler dans le
-// tableau qu'une hausse ou une baisse a pris effet là. La première colonne n'a
-// pas de précédent : elle n'est jamais marquée.
-//
-// `alive`, optionnel et aligné sur `cells` : la ligne (groupe ou sous-ligne) est-elle
-// vivante ce mois-là ? Sur un mois mort, budgeted est forcé à 0 (cf. src/lib/history.ts,
-// rowFor/cellsFor) — sans cette info, le saut du 0 forcé vers le vrai budget au mois de
-// naissance, ou à une reprise après une pause, se lirait à tort comme un changement : le
-// groupe n'a fait que commencer ou reprendre à exister, personne n'a touché son montant.
-// Le repère ne se pose donc qu'entre deux mois tous les deux vivants ; un `alive` absent
-// équivaut à « toujours vivant » (comportement d'avant, pour ne pas casser les appelants
-// qui n'ont pas cette info).
-export function budgetChangePoints(cells: { budgeted: number }[], alive?: boolean[]): boolean[] {
-  return cells.map((c, i) => {
-    if (i === 0) return false;
-    const bothAlive = (alive?.[i] ?? true) && (alive?.[i - 1] ?? true);
-    return bothAlive && Math.abs(c.budgeted - cells[i - 1].budgeted) > 0.005;
-  });
-}

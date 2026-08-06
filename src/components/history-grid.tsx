@@ -17,7 +17,7 @@ import { GroupSelectField } from "@/components/group-select-field";
 import { IgnoreTxnToggle } from "@/components/ignore-txn-toggle";
 import { NewGroupInline } from "@/components/new-group-inline";
 import { NewRemunerationInline } from "@/components/new-remuneration-inline";
-import { type ColKey, monthType, monthColumns, COL_LABEL, COL_INFO, budgetChangePoints } from "@/lib/history-columns";
+import { type ColKey, monthType, monthColumns, COL_LABEL, COL_INFO } from "@/lib/history-columns";
 import { computeRevealKeys, computePrevDisplayed, rowOpenKey, lineOpenKey, uncatOpenKey, highlightedCells, rowKeyOf, withRevealed, openKeyIn, monthIndexOf } from "@/lib/history-nav";
 import {
   netCol,
@@ -366,14 +366,6 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
   // lignes — et à disposer du montant dépassé.
   noticeOf?: (month: string) => OverspendNoticeInfo | null;
 }) {
-  // Mois où le budget de cette ligne change par rapport au mois précédent, pour
-  // poser un repère discret sur la case correspondante (cf. budgetChangePoints).
-  // aliveMonths est transmis pour ne jamais marquer un mois de naissance ou de
-  // reprise (le budget y saute du 0 forcé des mois morts vers le vrai montant,
-  // sans qu'il ait vraiment changé). Les lignes de groupe comme les sous-lignes en
-  // reçoivent un, chacune avec SA vie propre ; sans detailRow (totaux de section),
-  // budgetChangePoints retombe sur « toujours vivant » et le repère reste possible.
-  const changes = budgetChangePoints(cells, detailRow?.aliveMonths);
   return (
     <>
       {cells.map((c, i) => {
@@ -538,28 +530,19 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
               )
             : null;
 
-        // Repère de changement de budget : seulement sur la case qui affiche
-        // vraiment un budget ce mois-ci (pas sur une case laissée vide, ni sur un
-        // mois mort). Discret — bordure, pas de couleur d'alerte — et doublé d'un
-        // texte pour lecteur d'écran (la bordure seule ne dit rien sans la vue).
-        const budgetRemChanged = !dead && changes[i] && budgetRemVal != null;
-        const budgetDepChanged = !dead && changes[i] && budgetDepVal != null;
-
         // Colonnes réelles : cliquables (détail + surbrillance) comme avant.
         // Colonnes de projection : désormais cliquables aussi (détail + clé de case).
         const slots: ColSlots = {
           budgetRem: (b) =>
             dead ? blankCol("budgetRem", b) : (
-              <CellAmount key="budgetRem" className={cn(b && MONTH_GAP, "text-right tabular-nums", budgetRemChanged && "border-l-muted-foreground/40 border-l-2")} detail={budgetRemDetail} onSelect={onSelect} cellKey={ck("revenus")} selCellKey={selCellKey}>
+              <CellAmount key="budgetRem" className={cn(b && MONTH_GAP, "text-right tabular-nums")} detail={budgetRemDetail} onSelect={onSelect} cellKey={ck("revenus")} selCellKey={selCellKey}>
                 {budgetRemVal != null ? fmt(budgetRemVal) : ""}
-                {budgetRemChanged && <span className="sr-only"> (budget modifié ce mois-ci)</span>}
               </CellAmount>
             ),
           budgetDep: (b) =>
             dead ? blankCol("budgetDep", b) : (
-              <CellAmount key="budgetDep" className={cn(b && MONTH_GAP, "text-right tabular-nums text-muted-foreground", budgetDepChanged && "border-l-muted-foreground/40 border-l-2")} detail={budgetDepDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
+              <CellAmount key="budgetDep" className={cn(b && MONTH_GAP, "text-right tabular-nums text-muted-foreground")} detail={budgetDepDetail} onSelect={onSelect} cellKey={ck("budget")} selCellKey={selCellKey}>
                 {budgetDepVal != null ? fmt(budgetDepVal) : ""}
-                {budgetDepChanged && <span className="sr-only"> (budget modifié ce mois-ci)</span>}
               </CellAmount>
             ),
           dep: (b) =>
