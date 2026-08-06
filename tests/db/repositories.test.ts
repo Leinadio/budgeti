@@ -65,6 +65,23 @@ test("deleteGroup purge aussi les budgets datés (budget_amounts) du groupe", ()
   expect(listBudgetAmounts(db).filter((b) => b.groupId === gid)).toHaveLength(0);
 });
 
+// La durée de vie d'une ligne se pose à sa création et se relit telle quelle : c'est
+// elle qui dira, dans la colonne de gauche du tableau, « ce mois uniquement » ou
+// « de mars à mai ». Sans bornes, la ligne est permanente.
+test("insertLine pose les bornes de mois de la ligne, listGroups les rend", () => {
+  const db = getDb(":memory:");
+  upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
+  const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2000-01", null);
+
+  const borne = insertLine(db, gid, "Stage", 200, 1, "2026-03", "2026-05");
+  const permanente = insertLine(db, gid, "Spotify", 10, 3);
+
+  expect(listGroups(db)[0].lines).toEqual([
+    { id: borne, name: "Stage", amount: 200, day: 1, startMonth: "2026-03", endMonth: "2026-05" },
+    { id: permanente, name: "Spotify", amount: 10, day: 3, startMonth: null, endMonth: null },
+  ]);
+});
+
 // Garde-fou contre la régression « ligne fantôme » : insertLine doit renvoyer le
 // vrai id auto-incrémenté de la ligne créée, pour que deleteLine/updateLine
 // appelés juste après (sans recharger la page) visent la bonne ligne en base.

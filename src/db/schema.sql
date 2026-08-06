@@ -77,7 +77,9 @@ CREATE TABLE IF NOT EXISTS group_lines (
   -- line_amounts. Encore lu par listGroups (affichage) et par la reprise de données.
   amount REAL NOT NULL,
   day INTEGER,
-  keyword TEXT NOT NULL
+  keyword TEXT NOT NULL,
+  start_month TEXT,                -- 'YYYY-MM' ou NULL : premier mois (NULL = pas de borne)
+  end_month TEXT                   -- 'YYYY-MM' ou NULL : dernier mois (NULL = permanente)
 );
 
 CREATE TABLE IF NOT EXISTS group_keywords (

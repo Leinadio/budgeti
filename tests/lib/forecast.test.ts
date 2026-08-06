@@ -102,6 +102,23 @@ test("recurring line unseen subtracted; seen ignored; timeline sorted", () => {
   expect(f.timeline.map((i) => [i.day, i.name, i.seen])).toEqual([[3, "Spotify", true], [8, "Netflix", false]]);
 });
 
+// Une ligne finie ne pèse plus sur l'estimation : ni sur le mois courant (elle n'est
+// plus attendue), ni sur la projection du mois suivant. Sans ça, un abonnement résilié
+// continuerait de creuser le solde estimé, mois après mois.
+test("ligne de récurrent finie : ni retirée du mois courant, ni projetée au suivant", () => {
+  const aboFini: Group = {
+    ...abo,
+    lines: [
+      { id: 11, name: "Spotify", amount: 10, day: 3 },
+      { id: 12, name: "Netflix", amount: 15, day: 8, startMonth: null, endMonth: "2026-06" },
+    ],
+  };
+  const f = fc("a1", 1000, [aboFini], [], "2026-07");
+  expect(f.currentEstimate).toBe(990); // Spotify seule
+  expect(f.nextEstimate).toBe(980); // et rien d'autre projeté en août
+  expect(f.timeline.map((i) => i.name)).toEqual(["Spotify"]);
+});
+
 test("recurring in-line added when unseen", () => {
   const f = fc("a1", 500, [salaire], [], "2026-07");
   expect(f.currentEstimate).toBe(2500);

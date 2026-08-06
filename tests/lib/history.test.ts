@@ -1,6 +1,6 @@
 import { expect, describe, it } from "vitest";
 import { computeHistory, monthsWithData, nextMonthKey, grandTotals, monthlyOverspend, addMonthsKey, monthRange, isMonthKey, clampMonth, monthsDiff, computeSolde, computePlannedSoldes, budgetInForce, lineAmountInForce, toDatedBudgets, toDatedLineAmounts, computeOverspends, groupsWithPending, overspentCells, budgetKey, budgetsByMonth, rowRevenus, rowOverspend, uncatOverspend, uncatOverspendOf, type HistoryRow, type DatedBudgets, type Overspend } from "../../src/lib/history";
-import { isGroupAlive, type Group, type Txn } from "../../src/lib/forecast";
+import { isGroupAlive, isLineAlive, type Group, type Txn } from "../../src/lib/forecast";
 import { seedDated, mergeDated } from "./dated-fixtures";
 
 // Fixtures partagées : une enveloppe « Courses » avec un budget mensuel, un groupe
@@ -854,6 +854,54 @@ describe("Ce qu'un groupe signale à trancher chez ses lignes", () => {
 
   it("ne marque rien quand rien n'attend", () => {
     expect([...groupsWithPending({})]).toEqual([]);
+  });
+});
+
+// Une ligne de récurrent a sa propre durée de vie, indépendante de celle du groupe :
+// un abonnement se résilie sans emporter le récurrent qui le porte, et un poste posé
+// pour un seul mois ne doit pas traîner sur les suivants.
+describe("Durée de vie d'une ligne de récurrent", () => {
+  it("devrait considérer une ligne vivante seulement entre ses deux bornes", () => {
+    const l = { startMonth: "2026-07", endMonth: "2026-08" };
+    expect(isLineAlive(l, "2026-06")).toBe(false);
+    expect(isLineAlive(l, "2026-07")).toBe(true);
+    expect(isLineAlive(l, "2026-08")).toBe(true);
+    expect(isLineAlive(l, "2026-09")).toBe(false);
+    // Sans bornes, la ligne est permanente : c'est le cas de toutes celles créées
+    // avant qu'une durée puisse se choisir.
+    expect(isLineAlive({ startMonth: null, endMonth: null }, "2026-07")).toBe(true);
+    expect(isLineAlive({ startMonth: "2026-07", endMonth: null }, "2030-01")).toBe(true);
+  });
+
+  it("devrait ne budgéter une ligne ponctuelle que le mois où elle vit", () => {
+    const aboPonctuel: Group = {
+      ...abo,
+      lines: [
+        { id: 11, name: "Spotify", amount: 10, day: 3 },
+        { id: 12, name: "Assurance vacances", amount: 15, day: 8, startMonth: "2026-07", endMonth: "2026-07" },
+      ],
+    };
+    const sections = hist([aboPonctuel], [], ["2026-06", "2026-07", "2026-08"], "2026-07");
+    const row = sections.find((s) => s.kind === "recurring")!.rows[0];
+    const ponctuelle = row.subRows.find((s) => s.id === 12)!;
+    expect(ponctuelle.cells.map((c) => c.budgeted)).toEqual([0, 15, 0]);
+    expect(ponctuelle.aliveMonths).toEqual([false, true, false]);
+  });
+
+  // Le budget d'un récurrent est la somme de ses lignes TELLES QU'ELLES VIVENT ce
+  // mois-là : une ligne morte n'y compte plus, sinon le groupe garderait un budget
+  // pour un poste qui n'existe plus.
+  it("devrait retirer une ligne finie du budget de son récurrent", () => {
+    const aboFini: Group = {
+      ...abo,
+      lines: [
+        { id: 11, name: "Spotify", amount: 10, day: 3 },
+        { id: 12, name: "Netflix", amount: 15, day: 8, startMonth: null, endMonth: "2026-07" },
+      ],
+    };
+    const sections = hist([aboFini], [], ["2026-06", "2026-07", "2026-08"], "2026-07");
+    const row = sections.find((s) => s.kind === "recurring")!.rows[0];
+    expect(row.cells.map((c) => c.budgeted)).toEqual([25, 25, 10]);
   });
 });
 

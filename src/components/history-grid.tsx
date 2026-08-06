@@ -69,7 +69,9 @@ export type SelectGroup = {
   startMonth?: string | null;
   endMonth?: string | null;
   changes: BudgetChange[];
-  lines: { id: number; name: string; amount: number; day: number; changes: BudgetChange[] }[];
+  // Les lignes portent leur propre durée de vie, comme le groupe la sienne : c'est
+  // elle qu'affiche la colonne de gauche à côté du nom du poste.
+  lines: { id: number; name: string; amount: number; day: number; startMonth?: string | null; endMonth?: string | null; changes: BudgetChange[] }[];
 };
 // Surbrillance de la case sélectionnée depuis le side panel : un anneau seul. Le fond
 // teinté qui l'accompagnait est parti avec les autres couleurs de fond — l'anneau
@@ -1444,6 +1446,8 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
         name: r.name,
         kind: sg?.kind ?? "envelope",
         month: manageMonth,
+        stripMin,
+        stripMax,
         startMonth: sg?.startMonth,
         endMonth: sg?.endMonth,
         lines: (sg?.lines ?? []).map((l) => ({ id: l.id, name: l.name, day: l.day })),
@@ -1535,6 +1539,16 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
                   <TableRow className={cn("group text-sm", subHasTxns && "hover:bg-muted/50")}>
                     <NameCell indent={1} expandable={subHasTxns} expanded={lOpen} onToggle={subHasTxns ? () => toggleIn(lKey, gMonth) : undefined}>
                       <span className="min-w-0 truncate">{sub.name}</span>
+                      {/* Durée de vie du poste, dite comme celle du groupe juste
+                          au-dessus : un abonnement résilié en mai et un abonnement
+                          permanent se ressemblent sinon trait pour trait, et rien
+                          n'explique pourquoi l'un disparaît le mois suivant. */}
+                      <span
+                        title={groupPeriodLabel(sgLine?.startMonth, sgLine?.endMonth)}
+                        className="text-muted-foreground/60 min-w-0 truncate text-[9px] font-normal tracking-[0.12em] uppercase"
+                      >
+                        {groupPeriodLabel(sgLine?.startMonth, sgLine?.endMonth)}
+                      </span>
                       {/* Gérer la ligne : même crayon discret que sur la ligne de
                           groupe, révélé au survol. Une ligne est un poste à part
                           entière (Sosh Internet n'est pas Sosh Mobile) : on la renomme

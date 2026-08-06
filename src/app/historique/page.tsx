@@ -147,6 +147,7 @@ export default async function HistoriquePage({
             changes: budgetChanges(datedBudgets[g.id] ?? []),
             lines: g.lines.map((l) => ({
               id: l.id, name: l.name, amount: l.amount, day: l.day,
+              startMonth: l.startMonth, endMonth: l.endMonth,
               changes: budgetChanges(datedLines[l.id] ?? []),
             })),
           }));

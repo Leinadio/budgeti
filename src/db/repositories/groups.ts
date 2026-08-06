@@ -5,6 +5,11 @@ export type GroupLineRow = {
   name: string;
   amount: number;
   day: number;
+  // Durée de vie de la ligne, comme celle d'un groupe : un abonnement résilié
+  // s'arrête sans emporter le récurrent qui le porte. NULL des deux côtés = pas de
+  // borne (les lignes d'avant cette colonne, et celles créées « permanentes »).
+  startMonth: string | null;
+  endMonth: string | null;
 };
 
 export type GroupRow = {
@@ -57,7 +62,8 @@ export function listGroups(db: Database.Database): GroupRow[] {
     )
     .all() as (Omit<GroupRow, "lines" | "incomeKind"> & { incomeKind: string | null })[];
   const lineStmt = db.prepare(
-    `SELECT id, name, amount, day FROM group_lines WHERE group_id = ? ORDER BY id`,
+    `SELECT id, name, amount, day, start_month AS startMonth, end_month AS endMonth
+     FROM group_lines WHERE group_id = ? ORDER BY id`,
   );
   return groups.map((g) => ({
     ...g,
@@ -130,18 +136,23 @@ export function renameGroup(db: Database.Database, id: number, name: string): vo
 // La colonne group_lines.keyword est NOT NULL (héritée de l'ancien matching par
 // mot-clé, désormais mort) : on y écrit '' en dur pour ne pas violer la contrainte,
 // sans l'exposer dans la signature publique.
+// Les bornes de mois sont optionnelles : sans elles, la ligne est permanente — ce
+// que sont toutes les lignes créées avant qu'une durée puisse se choisir.
 export function insertLine(
   db: Database.Database,
   groupId: number,
   name: string,
   amount: number,
   day: number,
+  startMonth: string | null = null,
+  endMonth: string | null = null,
 ): number {
   const info = db
     .prepare(
-      `INSERT INTO group_lines (group_id, name, amount, day, keyword) VALUES (?, ?, ?, ?, '')`,
+      `INSERT INTO group_lines (group_id, name, amount, day, keyword, start_month, end_month)
+       VALUES (?, ?, ?, ?, '', ?, ?)`,
     )
-    .run(groupId, name, amount, day);
+    .run(groupId, name, amount, day, startMonth, endMonth);
   return Number(info.lastInsertRowid);
 }
 

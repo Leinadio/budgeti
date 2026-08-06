@@ -1,4 +1,5 @@
 import type { Group } from "./forecast";
+import { aliveInMonth } from "./lifespan";
 
 // --- Budgets datés ----------------------------------------------------------
 // Un budget n'est pas un nombre : c'est une suite de montants, chacun daté du mois
@@ -55,6 +56,11 @@ export function lineStarted(lineId: number, month: string, datedLines?: DatedLin
 // Budget en vigueur d'un groupe à `month`. Un récurrent n'a pas de montant à lui :
 // son budget est la somme de ses lignes telles qu'elles sont ce mois-là. Les
 // entrées éventuellement posées sur un groupe récurrent sont donc ignorées.
+//
+// « Telles qu'elles sont » comprend leur durée de vie : une ligne finie ne compte
+// plus, sinon le groupe garderait un budget pour un poste qui n'existe plus. La règle
+// passe par aliveInMonth (et non isLineAlive, son homonyme de forecast.ts) pour ne pas
+// refermer le cycle d'import entre ces deux modules.
 export function budgetInForce(
   g: Group,
   month: string,
@@ -62,7 +68,7 @@ export function budgetInForce(
   datedLines?: DatedLineAmounts,
 ): number {
   if (g.kind === "recurring") {
-    return g.lines.reduce((s, l) => s + lineAmountInForce(l.id, month, datedLines), 0);
+    return g.lines.reduce((s, l) => s + (aliveInMonth(l, month) ? lineAmountInForce(l.id, month, datedLines) : 0), 0);
   }
   return amountInForce(dated?.[g.id] ?? [], month);
 }

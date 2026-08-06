@@ -26,6 +26,40 @@ test("une ligne ajoutée compte à partir du mois donné, pas rétroactivement",
   expect(lineAmountInForce(lid, "2026-12", datedLines)).toBe(15);
 });
 
+// La durée d'une ligne se choisit à l'ajout, comme celle d'un groupe. Le mois de
+// départ reste celui du tableau où le panneau a été ouvert : c'est déjà de là que la
+// ligne compte, et c'est le mois qu'on avait sous les yeux.
+const bornes = (db: Database.Database, lid: number) =>
+  db.prepare(`SELECT start_month AS start, end_month AS fin FROM group_lines WHERE id = ?`).get(lid);
+
+test("une ligne est permanente par défaut : elle commence au mois donné et ne finit pas", async () => {
+  const lid = await addGroupLine(gid, "Spotify", 10, 1, "2026-06");
+
+  expect(bornes(db, lid)).toEqual({ start: "2026-06", fin: null });
+});
+
+test("une ligne « ce mois seulement » commence et finit au mois donné", async () => {
+  const lid = await addGroupLine(gid, "Assurance vacances", 40, 1, "2026-06", "single");
+
+  expect(bornes(db, lid)).toEqual({ start: "2026-06", fin: "2026-06" });
+});
+
+test("une ligne « d'un mois à un autre » garde ses deux bornes", async () => {
+  const lid = await addGroupLine(gid, "Stage", 200, 1, "2026-06", "range", "2026-09");
+
+  expect(bornes(db, lid)).toEqual({ start: "2026-06", fin: "2026-09" });
+});
+
+// Même refus que pour un groupe (cf. groupPeriod) : une plage qui ne dépasse pas son
+// mois de départ n'entre pas en base, quel que soit l'appelant. Masquer le mois dans
+// le formulaire n'empêche pas d'appeler l'action directement.
+test("refuse une plage qui finit avant d'avoir commencé, sans rien créer", async () => {
+  expect(await addGroupLine(gid, "Stage", 200, 1, "2026-06", "range", "2026-06")).toBe(-1);
+  expect(await addGroupLine(gid, "Stage", 200, 1, "2026-06", "range", "2026-03")).toBe(-1);
+
+  expect(db.prepare(`SELECT COUNT(*) AS n FROM group_lines`).get()).toEqual({ n: 0 });
+});
+
 // editGroupLine ne porte plus que le nom et le jour, qui valent pour tous les mois.
 // Le montant a quitté ce chemin : il se modifie depuis la case « Budget dép. » de la
 // ligne, au mois de sa colonne (setGroupLineAmount, plus bas).

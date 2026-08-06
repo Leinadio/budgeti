@@ -1,6 +1,7 @@
 import { monthKey } from "./money";
 import { resolveOwnership, type OwnableGroup, type OwnedTxn } from "./ownership";
 import { budgetInForce, lineAmountInForce, type DatedBudgets, type DatedLineAmounts } from "./budget-in-force";
+import { aliveInMonth } from "./lifespan";
 
 export type Direction = "in" | "out";
 
@@ -9,6 +10,12 @@ export type GroupLine = {
   name: string;
   amount: number;
   day: number;
+  // Durée de vie propre de la ligne, indépendante de celle de son groupe : un
+  // abonnement se résilie sans emporter le récurrent qui le porte. Sans bornes, la
+  // ligne vit tant que son groupe vit — le cas de toutes celles créées avant qu'une
+  // durée puisse se choisir.
+  startMonth?: string | null;
+  endMonth?: string | null;
 };
 
 export type Group = {
@@ -42,9 +49,14 @@ export type Txn = {
 // fin (si définie) n'est pas dépassée. Sans bornes (fixtures / groupes hérités),
 // il est vivant partout.
 export function isGroupAlive(g: Pick<Group, "startMonth" | "endMonth">, month: string): boolean {
-  if (g.startMonth != null && month < g.startMonth) return false;
-  if (g.endMonth != null && month > g.endMonth) return false;
-  return true;
+  return aliveInMonth(g, month);
+}
+
+// Même règle pour une ligne de récurrent, lue sur ses bornes à elle. Une ligne n'est
+// réellement présente au mois m que si SON groupe l'est aussi : c'est aux appelants
+// de croiser les deux, comme ils le font déjà pour tout le reste.
+export function isLineAlive(l: Pick<GroupLine, "startMonth" | "endMonth">, month: string): boolean {
+  return aliveInMonth(l, month);
 }
 
 export type TimelineItem = { day: number; name: string; amount: number; seen: boolean };
@@ -184,22 +196,28 @@ export function computeForecast(
       let total = 0;
       let seenSum = 0;
       for (const line of g.lines) {
+        // Une ligne a sa propre durée de vie en plus de celle de son groupe : un
+        // abonnement résilié ne se retire plus du solde estimé, et ne se projette
+        // plus au mois suivant. Les deux mois se jugent séparément — une ligne peut
+        // s'arrêter entre les deux.
+        const ligneNow = aliveNow && isLineAlive(line, month);
+        const ligneNext = aliveNext && isLineAlive(line, nextMonthKey(month));
         // Même remarque que pour une enveloppe : le montant du mois courant et
         // celui projeté au mois prochain se lisent chacun à leur propre mois.
         const montant = lineAmountInForce(line.id, month, datedLines);
         const nextMontant = lineAmountInForce(line.id, nextMonthKey(month), datedLines);
-        total += montant;
-        if (aliveNext) nextDelta += sign * nextMontant;
+        if (ligneNow) total += montant;
+        if (ligneNext) nextDelta += sign * nextMontant;
         // « Vue » uniquement si une transaction a été rattachée manuellement à
         // cette ligne précise (plus de détection automatique par mot-clé).
         const seen = mine.some((t) => t.lineId === line.id);
-        if (aliveNow && !seen) {
+        if (ligneNow && !seen) {
           current += sign * montant;
           currentSteps.push({ label: `${g.name} · ${line.name} — pas encore passé (le ${line.day})`, amount: sign * montant, groupId: g.id, lineId: line.id });
         }
-        if (seen) seenSum += montant;
-        if (aliveNext) nextSteps.push({ label: `${g.name} · ${line.name}`, amount: sign * nextMontant, groupId: g.id, lineId: line.id });
-        if (aliveNow) timeline.push({ day: line.day, name: line.name, amount: sign * montant, seen });
+        if (ligneNow && seen) seenSum += montant;
+        if (ligneNext) nextSteps.push({ label: `${g.name} · ${line.name}`, amount: sign * nextMontant, groupId: g.id, lineId: line.id });
+        if (ligneNow) timeline.push({ day: line.day, name: line.name, amount: sign * montant, seen });
       }
       if (aliveNow)
         groupViews.push({ id: g.id, name: g.name, direction: g.direction, kind: g.kind, total, spent: seenSum, overspend: 0, prevSpent: 0, prevOverspend: 0 });

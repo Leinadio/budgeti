@@ -24,6 +24,9 @@ import {
   spreadUncatProvision,
 } from "@/app/historique/actions";
 import { groupPeriodLabel } from "@/lib/group-period-label";
+import { minEndMonth, fitEndMonth, type PeriodMode } from "@/lib/group-period";
+import { MonthField } from "@/components/month-field";
+import { PERIODS } from "@/components/new-group-inline";
 import { Sidebar, SidebarHeader, SidebarContent } from "@/components/ui/sidebar";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -300,6 +303,16 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
   const [name, setName] = useState(info.name);
   const [newName, setNewName] = useState("");
   const [newAmount, setNewAmount] = useState("");
+  // Durée de la ligne à ajouter. Elle part du mois où le panneau se place — celui de
+  // la colonne cliquée — parce que c'est déjà de là qu'une ligne ajoutée compte ; on
+  // peut la déplacer, la frise du compte entière est proposée.
+  const [period, setPeriod] = useState<PeriodMode>("from");
+  const [start, setStart] = useState(info.month);
+  const [end, setEnd] = useState(minEndMonth(info.month));
+  const changeStart = (m: string) => {
+    setStart(m);
+    setEnd(fitEndMonth(m, end));
+  };
   // Liste des lignes affichée, en état local optimiste : `info.lines` est un
   // instantané capturé à l'ouverture du panneau, que router.refresh() ne met pas à
   // jour. On la maintient ici pour que l'ajout / la suppression se reflètent tout de
@@ -356,23 +369,63 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
           <div className="flex flex-col gap-3">
             <Label className="font-normal">Ajouter une ligne</Label>
             {lines.length === 0 && <p className="text-muted-foreground text-sm">Aucune ligne pour l&apos;instant.</p>}
-            <div className="mt-1 flex items-end gap-2 border-t pt-3">
-              <div className="flex min-w-0 flex-1 flex-col gap-1">
-                <Label className="text-muted-foreground text-xs font-normal">Nom</Label>
-                <Input value={newName} onChange={(e) => setNewName(e.target.value)} className="h-8" placeholder="Ex: Spotify" />
+            <div className="mt-1 flex flex-col gap-3 border-t pt-3">
+              <div className="flex items-end gap-2">
+                <div className="flex min-w-0 flex-1 flex-col gap-1">
+                  <Label className="text-muted-foreground text-xs font-normal">Nom</Label>
+                  <Input value={newName} onChange={(e) => setNewName(e.target.value)} className="h-8" placeholder="Ex: Spotify" />
+                </div>
+                {/* Montant de départ de la ligne, seul montant qui subsiste dans ce
+                    panneau : il ne montre rien d'existant, il en pose un. Il prend effet
+                    au mois de départ choisi juste en dessous, et se modifie ensuite
+                    depuis la case de la ligne, mois par mois. */}
+                <div className="flex w-20 flex-col gap-1">
+                  <Label className="text-muted-foreground text-xs font-normal">Montant de départ</Label>
+                  <Input type="number" step="0.01" min="0" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} className="h-8 text-right tabular-nums" placeholder="0.00" />
+                </div>
               </div>
-              {/* Montant de départ de la ligne, seul montant qui subsiste dans ce
-                  panneau : il ne montre rien d'existant, il en pose un. Il prend effet
-                  au mois où le panneau se place, et se modifie ensuite depuis la case
-                  de la ligne, mois par mois. */}
-              <div className="flex w-20 flex-col gap-1">
-                <Label className="text-muted-foreground text-xs font-normal">Montant de départ</Label>
-                <Input type="number" step="0.01" min="0" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} className="h-8 text-right tabular-nums" placeholder="0.00" />
+              {/* Durée de la ligne : les mêmes trois choix que pour un groupe, et dans
+                  les mêmes mots. Une ligne a sa vie propre — un abonnement se résilie
+                  sans emporter le récurrent qui le porte. */}
+              <div className="flex flex-col gap-1">
+                <Label className="text-muted-foreground text-xs font-normal">Durée</Label>
+                <select
+                  value={period}
+                  onChange={(e) => setPeriod(e.target.value as PeriodMode)}
+                  className="h-8 rounded-md border bg-transparent px-2 text-sm"
+                >
+                  {PERIODS.map((p) => (
+                    <option key={p.value} value={p.value}>{p.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-wrap items-end gap-2">
+                <MonthField
+                  label={period === "range" ? "Du mois" : period === "single" ? "Mois" : "À partir de"}
+                  value={start}
+                  onChange={changeStart}
+                  min={info.stripMin}
+                  max={info.stripMax}
+                  className="h-8 w-40"
+                />
+                {/* Une fin tombe forcément après son début (cf. minEndMonth) : finir le
+                    mois où l'on commence, c'est « un seul mois », qui a son propre choix. */}
+                {period === "range" && (
+                  <MonthField
+                    label="Jusqu'au mois"
+                    value={end}
+                    onChange={setEnd}
+                    min={minEndMonth(start)}
+                    max={info.stripMax}
+                    className="h-8 w-40"
+                  />
+                )}
               </div>
               <Button
                 type="button"
                 size="sm"
                 variant="secondary"
+                className="self-start"
                 disabled={busy || !newName.trim()}
                 onClick={() =>
                   run(async () => {
@@ -381,7 +434,7 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
                     // Le jour ne se demande plus (il ne pilotait rien d'affiché) : la
                     // colonne existe toujours en base, on y pose 1 sans le dire.
                     const d = 1;
-                    const id = await addGroupLine(info.groupId, n, a, d, info.month);
+                    const id = await addGroupLine(info.groupId, n, a, d, start, period, end);
                     // On n'ajoute la ligne optimiste qu'avec le vrai id en base : sinon
                     // une suppression/édition immédiate (sans refermer le panneau)
                     // viserait un id fictif et laisserait une ligne fantôme en base.

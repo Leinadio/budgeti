@@ -64,7 +64,13 @@ export type GroupManageInfo = {
   groupId: number;
   name: string;
   kind: "envelope" | "recurring";
-  month: string; // mois où le panneau se place (montant de départ d'une ligne ajoutée)
+  month: string; // mois où le panneau se place (mois de départ proposé pour une ligne ajoutée)
+  // Bornes de la frise du compte : les mois qu'un calendrier du panneau peut proposer
+  // pour la durée d'une ligne ajoutée. Les mêmes que dans le formulaire de création
+  // d'un groupe — un budget oublié se rattrape en arrière, pas seulement à partir
+  // d'aujourd'hui.
+  stripMin: string;
+  stripMax: string;
   // Durée de vie du groupe, dite dans le panneau comme elle l'est dans le tableau
   // (cf. group-period-label.ts) : on doit lire la même chose des deux côtés.
   startMonth?: string | null;

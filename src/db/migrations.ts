@@ -161,6 +161,22 @@ export function migrateGroupLifespan(db: Database.Database) {
   db.exec(`UPDATE groups SET start_month = '2000-01' WHERE start_month IS NULL`);
 }
 
+// Durée de vie d'une ligne de récurrent : mêmes bornes que pour un groupe. Un
+// abonnement résilié s'arrête sans emporter le récurrent qui le porte, et une ligne
+// posée pour un seul mois ne traîne pas sur les suivants.
+//
+// Aucune reprise pour les lignes existantes : sans bornes, elles restent permanentes,
+// ce qu'elles étaient. Leur début, lui, se lit déjà dans leur suite de montants datés
+// (lineStarted) — leur inventer ici un mois de départ les ferait naître ailleurs que
+// là où le tableau les montre naître. Idempotent.
+export function migrateLineLifespan(db: Database.Database) {
+  const cols = db.prepare("PRAGMA table_info(group_lines)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "start_month"))
+    db.exec(`ALTER TABLE group_lines ADD COLUMN start_month TEXT`);
+  if (!cols.some((c) => c.name === "end_month"))
+    db.exec(`ALTER TABLE group_lines ADD COLUMN end_month TEXT`);
+}
+
 // Retire la FK sur budget_amounts.group_id : la provision « non catégorisés »
 // (group_id = 0) n'a pas de ligne dans groups, la FK faisait échouer l'insertion.
 // Même traitement que overspend_decisions (pas de FK volontairement). Idempotent :

@@ -1,5 +1,5 @@
 import { resolveOwnership, type OwnableGroup, type OwnedTxn } from "./ownership";
-import { type Group, type Txn, isGroupAlive } from "./forecast";
+import { type Group, type Txn, isGroupAlive, isLineAlive } from "./forecast";
 
 // Montants en vigueur (budgets et lignes datés) : déplacés dans budget-in-force.ts
 // pour éviter un cycle d'import avec forecast.ts (qui a aussi besoin de ces
@@ -202,8 +202,10 @@ export function computeHistory(
       return {
         id: l.id,
         name: l.name,
-        cells: cellsFor((m) => (isGroupAlive(g, m) ? lineAmountInForce(l.id, m, datedLines) : 0), isOut, realizedOf),
-        aliveMonths: months.map((m) => isGroupAlive(g, m) && lineStarted(l.id, m, datedLines)),
+        // La ligne doit vivre ce mois-là ET son groupe avec elle : une ligne bornée à
+        // juillet ne budgète rien en août, même si le récurrent qui la porte continue.
+        cells: cellsFor((m) => (isGroupAlive(g, m) && isLineAlive(l, m) ? lineAmountInForce(l.id, m, datedLines) : 0), isOut, realizedOf),
+        aliveMonths: months.map((m) => isGroupAlive(g, m) && isLineAlive(l, m) && lineStarted(l.id, m, datedLines)),
         txns: lineTxns.filter(inRange).map(toHistoryTxn),
       };
     });

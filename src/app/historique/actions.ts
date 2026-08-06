@@ -212,14 +212,24 @@ export async function setUncatProvision(
 }
 
 // `month` est le mois affiché au moment de l'ajout : la ligne compte à partir de
-// là, pas depuis la création du groupe.
+// là, pas depuis la création du groupe. C'est donc lui le mois de DÉPART de sa durée
+// de vie, et le mois où son montant prend effet.
+//
+// La durée arrive telle que le formulaire l'a demandée — permanente, ce mois
+// seulement, ou jusqu'à un mois donné — et c'est groupPeriod qui la traduit en bornes,
+// comme pour un groupe : une plage qui ne dépasse pas son mois de départ ne doit pas
+// entrer en base, quel que soit l'appelant. Rend -1 dans ce cas, comme pour un nom
+// vide : rien n'a été créé, l'écran ne doit pas ajouter de ligne optimiste.
 export async function addGroupLine(
   groupId: number, name: string, amount: number, day: number, month: string,
+  period: PeriodMode = "from", endMonth?: string,
 ): Promise<number> {
   const trimmed = name.trim();
   if (!trimmed || !isMonthKey(month)) return -1;
+  const bornes = groupPeriod(period, month, endMonth);
+  if (!bornes) return -1;
   const database = db();
-  const id = insertLine(database, groupId, trimmed, amount, day);
+  const id = insertLine(database, groupId, trimmed, amount, day, bornes.startMonth, bornes.endMonth);
   setLineAmount(database, id, month, amount);
   await revalidate();
   return id;

@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { migrateBudgets, migrateAccountCustomName, migrateGroupsV2, migrateTransactionExcluded, migrateTransactionIgnored, migrateTransactionLineId, migrateTransactionManualFields, migrateTransactionComment, migrateReconcileIgnored, migrateGroupIncomeKind, migrateRemunerationPrincipalToEnvelope, migrateGroupLifespan, migrateBudgetAmountsDropGroupFk, migrateOverspendWrites, migrateOverspendDecisionLine, migrateBudgetAmountScope, migrateDismissedNotifications, migrateSeedDatedAmounts } from "./migrations";
+import { migrateBudgets, migrateAccountCustomName, migrateGroupsV2, migrateTransactionExcluded, migrateTransactionIgnored, migrateTransactionLineId, migrateTransactionManualFields, migrateTransactionComment, migrateReconcileIgnored, migrateGroupIncomeKind, migrateRemunerationPrincipalToEnvelope, migrateGroupLifespan, migrateLineLifespan, migrateBudgetAmountsDropGroupFk, migrateOverspendWrites, migrateOverspendDecisionLine, migrateBudgetAmountScope, migrateDismissedNotifications, migrateSeedDatedAmounts } from "./migrations";
 
 const SCHEMA = readFileSync(join(process.cwd(), "src/db/schema.sql"), "utf8");
 
@@ -25,6 +25,7 @@ export function getDb(path = join(process.cwd(), "data/budget.db")): Database.Da
   migrateGroupIncomeKind(db);
   migrateRemunerationPrincipalToEnvelope(db);
   migrateGroupLifespan(db);
+  migrateLineLifespan(db);
   migrateBudgetAmountsDropGroupFk(db);
   migrateOverspendWrites(db);
   migrateOverspendDecisionLine(db);
