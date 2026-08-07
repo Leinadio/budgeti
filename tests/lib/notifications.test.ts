@@ -2,7 +2,7 @@
 // l'en-tête et non plus au-dessus du tableau, donc elles couvrent TOUS les comptes —
 // d'où le besoin de les rassembler et de les ordonner en un seul endroit.
 import { describe, expect, it } from "vitest";
-import { overspendNotifications, withoutDismissed, notificationId } from "../../src/lib/notifications";
+import { overspendNotifications, withoutDismissed, notificationId, unseenIds, notificationsByMonth } from "../../src/lib/notifications";
 import type { Overspend } from "../../src/lib/history";
 
 const dep = (name: string, month: string, amount: number, groupId = 1, lineId: number | null = null): Overspend => ({
@@ -83,26 +83,84 @@ describe("notifications de dépassement", () => {
   });
 });
 
-// Une notification se ferme d'une croix, et ne revient pas. Elle est écartée par son
-// identité (compte, cible, mois) : le montant, lui, peut encore bouger si la dépense
-// continue, sans que la notification écartée reparaisse pour autant.
-describe("notifications écartées", () => {
-  it("n'affiche plus une notification écartée", () => {
+// Un dépassement acquitté (« Vu ») ne quitte plus le panneau : il y reste, en gris.
+// Le faire disparaître effaçait la seule trace de ce qui s'est passé ce mois-ci —
+// « vu » veut dire « je sais », pas « ça n'a pas eu lieu ». C'est le panneau qui
+// distingue les deux à l'œil ; ailleurs (le tableau), l'acquitté reste filtré à la
+// source par withoutDismissed.
+describe("notifications acquittées", () => {
+  it("garde une notification acquittée, marquée vue", () => {
     const parCompte = [{ accountId: "a1", accountName: "CIC", byMonth: { "2026-07": [dep("Courses", "2026-07", 50), dep("Essence", "2026-07", 12, 2)] } }];
-    const ecartee = overspendNotifications(parCompte)[0].id;
-    expect(overspendNotifications(parCompte, [ecartee]).map((x) => x.name)).toEqual(["Essence"]);
+    const acquittee = overspendNotifications(parCompte)[0].id;
+
+    const apres = overspendNotifications(parCompte, [acquittee]);
+
+    expect(apres.map((x) => [x.name, x.seen])).toEqual([
+      ["Courses", true],
+      ["Essence", false],
+    ]);
   });
 
-  it("ne fait pas revenir une notification écartée quand son montant change", () => {
+  it("laisse une notification acquittée vue quand son montant change", () => {
     const id = overspendNotifications([{ accountId: "a1", accountName: "CIC", byMonth: { "2026-07": [dep("Courses", "2026-07", 50)] } }])[0].id;
+
     const plusTard = overspendNotifications([{ accountId: "a1", accountName: "CIC", byMonth: { "2026-07": [dep("Courses", "2026-07", 90)] } }], [id]);
-    expect(plusTard).toEqual([]);
+
+    expect(plusTard.map((x) => [x.amount, x.seen])).toEqual([[90, true]]);
   });
 
-  it("n'écarte que ce qui est demandé", () => {
+  it("n'acquitte que ce qui est demandé", () => {
     const parCompte = [{ accountId: "a1", accountName: "CIC", byMonth: { "2026-07": [dep("Courses", "2026-07", 50)] } }];
-    expect(overspendNotifications(parCompte, ["une::autre::clé"])).toHaveLength(1);
-    expect(overspendNotifications(parCompte, [])).toHaveLength(1);
+    expect(overspendNotifications(parCompte, ["une::autre::clé"])[0].seen).toBe(false);
+    expect(overspendNotifications(parCompte, [])[0].seen).toBe(false);
+  });
+});
+
+// Ce qui reste à voir : le compte du bouton, et ce que « tout marquer comme vu »
+// enverra. Une seule fonction pour les deux, sinon le bouton pourrait annoncer un
+// nombre et en acquitter un autre.
+describe("notifications encore à voir", () => {
+  const parCompte = [{ accountId: "a1", accountName: "CIC", byMonth: { "2026-07": [dep("Courses", "2026-07", 50), dep("Essence", "2026-07", 12, 2)] } }];
+
+  it("rend les identités de celles qui ne sont pas encore vues", () => {
+    const tous = overspendNotifications(parCompte);
+    expect(unseenIds(tous)).toEqual(tous.map((x) => x.id));
+  });
+
+  it("ne rend rien quand tout est vu", () => {
+    const ids = overspendNotifications(parCompte).map((x) => x.id);
+    expect(unseenIds(overspendNotifications(parCompte, ids))).toEqual([]);
+  });
+});
+
+// Le panneau les range par mois, le mois courant en tête : un dépassement se lit
+// d'abord par « quand », parce que c'est ce qui dit s'il appelle encore une réaction.
+describe("notifications rangées par mois", () => {
+  const parCompte = [{ accountId: "a1", accountName: "CIC", byMonth: {
+    "2026-06": [dep("Essence", "2026-06", 12, 2)],
+    "2026-07": [dep("Courses", "2026-07", 50), dep("Loyer", "2026-07", 30, 3)],
+  } }];
+
+  it("groupe par mois, du plus récent au plus ancien", () => {
+    const parMois = notificationsByMonth(overspendNotifications(parCompte));
+    expect(parMois.map((g) => [g.month, g.items.map((x) => x.name)])).toEqual([
+      ["2026-07", ["Courses", "Loyer"]],
+      ["2026-06", ["Essence"]],
+    ]);
+  });
+
+  // Vu ou pas, la place ne change pas : l'acquittement grise, il ne déplace pas.
+  it("garde les acquittées à leur place dans leur mois", () => {
+    const tous = overspendNotifications(parCompte, ["a1::g1::2026-07"]);
+    const juillet = notificationsByMonth(tous)[0];
+    expect(juillet.items.map((x) => [x.name, x.seen])).toEqual([
+      ["Courses", true],
+      ["Loyer", false],
+    ]);
+  });
+
+  it("ne rend aucun groupe sans notification", () => {
+    expect(notificationsByMonth([])).toEqual([]);
   });
 });
 

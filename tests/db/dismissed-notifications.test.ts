@@ -4,9 +4,53 @@
 // changement de navigateur ou à un vidage de cache.
 import { expect, test } from "vitest";
 import { getDb } from "../../src/db/index";
-import { listDismissedNotifications, dismissNotification } from "../../src/db/repositories/dismissed-notifications";
+import {
+  listDismissedNotifications, dismissNotification, dismissNotifications, restoreNotifications,
+} from "../../src/db/repositories/dismissed-notifications";
 
 const freshDb = () => getDb(":memory:");
+
+// « Tout marquer comme vu » ferme la liste entière d'un geste. En une seule écriture :
+// à moitié fait, le panneau garderait des bandeaux en couleur alors que l'utilisateur
+// a dit qu'il avait tout vu.
+test("ferme d'un coup toutes les notifications données", () => {
+  const db = freshDb();
+
+  dismissNotifications(db, ["CIC::g1::2026-07", "CIC::g2::2026-07"]);
+
+  expect(listDismissedNotifications(db).sort()).toEqual(["CIC::g1::2026-07", "CIC::g2::2026-07"]);
+});
+
+// Un acquittement se reprend : cliquer « Vu » n'est pas une porte qui claque. Rien
+// n'était détruit — la marque partie, le dépassement redevient à voir.
+test("rétablit une notification acquittée, et elle seule", () => {
+  const db = freshDb();
+  dismissNotifications(db, ["CIC::g1::2026-07", "CIC::g2::2026-07"]);
+
+  restoreNotifications(db, ["CIC::g1::2026-07"]);
+
+  expect(listDismissedNotifications(db)).toEqual(["CIC::g2::2026-07"]);
+});
+
+test("rétablir supporte une liste vide et une identité jamais acquittée", () => {
+  const db = freshDb();
+  dismissNotification(db, "CIC::g1::2026-07");
+
+  restoreNotifications(db, []);
+  restoreNotifications(db, ["CIC::jamais-vue::2026-07"]);
+
+  expect(listDismissedNotifications(db)).toEqual(["CIC::g1::2026-07"]);
+});
+
+test("tout fermer supporte une liste vide et des identités déjà fermées", () => {
+  const db = freshDb();
+  dismissNotification(db, "CIC::g1::2026-07");
+
+  dismissNotifications(db, []);
+  dismissNotifications(db, ["CIC::g1::2026-07"]);
+
+  expect(listDismissedNotifications(db)).toEqual(["CIC::g1::2026-07"]);
+});
 
 test("la table existe sur une base neuve", () => {
   expect(listDismissedNotifications(freshDb())).toEqual([]);

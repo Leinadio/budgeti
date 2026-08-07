@@ -29,17 +29,25 @@ export type Notification = {
   name: string;   // ce qui a dépassé : une enveloppe, une ligne de récurrent, les non catégorisés
   month: string;  // YYYY-MM
   amount: number; // dépassement, positif
+  // Acquittée (« Vu ») : elle reste dans le panneau, en gris. Voir plus bas.
+  seen: boolean;
 };
 
 // Rassemble les dépassements de tous les comptes en une liste de bandeaux, du mois le
 // plus récent au plus ancien : c'est le récent qui appelle une réaction, l'ancien est
 // de l'histoire qu'on garde sous les yeux sans qu'elle passe devant. À mois égal, on
 // suit l'ordre déjà établi par computeOverspends (par nom), compte par compte.
-// `ecartees` : identités des notifications que l'utilisateur a fermées d'une croix.
-// L'écart se fait sur l'IDENTITÉ (compte, cible, mois) et non sur le montant : une
-// dépense qui continue fait grossir le dépassement, mais l'utilisateur a déjà dit qu'il
-// ne voulait plus en entendre parler — le lui remettre sous le nez pour un centime de
-// plus, c'est ne pas l'avoir écouté.
+// `acquittees` : identités des notifications que l'utilisateur a marquées « Vu ». Elles
+// ne quittent PAS la liste — elles en reviennent marquées `seen`, et le panneau les
+// grise. Les faire disparaître effaçait la seule trace de ce qui s'est passé ce mois-ci,
+// alors que « vu » veut dire « je sais », pas « ça n'a pas eu lieu ». Ailleurs (le
+// tableau et ce qui en découle), l'acquitté reste filtré à la source, par
+// withoutDismissed : là-bas, l'étiquette doit bien disparaître.
+//
+// L'acquittement se fait sur l'IDENTITÉ (compte, cible, mois) et non sur le montant :
+// une dépense qui continue fait grossir le dépassement, mais l'utilisateur a déjà dit
+// qu'il ne voulait plus en entendre parler — le lui remettre en avant pour un centime
+// de plus, c'est ne pas l'avoir écouté.
 //
 // `currentMonth` borne la fenêtre : on ne remonte que ce mois-là et celui d'avant. Un
 // dépassement plus ancien est de l'histoire, et le rappeler indéfiniment ferait du
@@ -47,10 +55,10 @@ export type Notification = {
 // plus. Absent, aucun filtre : la fonction reste éprouvable sans parler de calendrier.
 export function overspendNotifications(
   parCompte: { accountId: string; accountName: string; byMonth: Record<string, Overspend[]> }[],
-  ecartees: string[] = [],
+  acquittees: string[] = [],
   currentMonth?: string,
 ): Notification[] {
-  const closes = new Set(ecartees);
+  const vues = new Set(acquittees);
   const depuis = currentMonth ? previousMonthKey(currentMonth) : null;
   const out: Notification[] = [];
   for (const { accountId, accountName, byMonth } of parCompte) {
@@ -65,12 +73,36 @@ export function overspendNotifications(
         // marque d'acquittement, elle doit survivre à un renommage — et c'est le seul
         // que la grille connaît quand elle demande si une case est déjà acquittée.
         const id = notificationId(accountId, it.groupId, it.lineId, month);
-        if (closes.has(id)) continue;
-        out.push({ id, accountName, name: it.name, month, amount: it.amount });
+        out.push({ id, accountName, name: it.name, month, amount: it.amount, seen: vues.has(id) });
       }
     }
   }
   return out.sort((a, b) => (a.month === b.month ? 0 : a.month < b.month ? 1 : -1));
+}
+
+// Ce qu'il reste à voir. Sert deux fois : au compteur du bouton (sa longueur) et au
+// « Tout marquer comme vu » (ce qu'il envoie). Une seule fonction pour les deux, sinon
+// le bouton pourrait annoncer un nombre et en acquitter un autre.
+export function unseenIds(items: Notification[]): string[] {
+  return items.filter((n) => !n.seen).map((n) => n.id);
+}
+
+// Rangées par mois, le plus récent en tête. Un dépassement se lit d'abord par « quand » :
+// c'est ce qui dit s'il appelle encore une réaction ou s'il est déjà de l'histoire.
+// L'ordre à l'intérieur d'un mois est celui reçu — vu ou pas, la place ne change pas :
+// l'acquittement grise, il ne déplace pas.
+export type NotificationMonth = { month: string; items: Notification[] };
+
+export function notificationsByMonth(items: Notification[]): NotificationMonth[] {
+  const parMois = new Map<string, Notification[]>();
+  for (const n of items) {
+    const dedans = parMois.get(n.month);
+    if (dedans) dedans.push(n);
+    else parMois.set(n.month, [n]);
+  }
+  return [...parMois.entries()]
+    .map(([month, dedans]) => ({ month, items: dedans }))
+    .sort((a, b) => (a.month < b.month ? 1 : a.month > b.month ? -1 : 0));
 }
 
 // Retire d'une liste de dépassements ceux que l'utilisateur a acquittés (« Vu »). Sert
