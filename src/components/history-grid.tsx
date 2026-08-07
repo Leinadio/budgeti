@@ -95,17 +95,12 @@ function resteColor(v: number): string {
   return v < -0.005 ? "text-red-600" : "text-green-600";
 }
 
-// Couleur d'une case des trois colonnes de solde, dictée par ce qui est écrit
-// DEVANT le montant. Une ligne d'opération porte un opérateur (cf. SoldeAmount) :
-// « − » en rouge, « + » en vert. Une ligne de départ ou de résultat n'a pas
-// d'opérateur : seul le signe du montant compte, donc rouge s'il est négatif et
-// noir sinon. Un montant sans rien devant reste toujours noir.
-function soldeColor(v: number | null | undefined, delta?: number | null): string | undefined {
+// Couleur de fond d'une case des trois colonnes de solde : rouge si le solde est
+// négatif, noir sinon. Rien d'autre — le sens du mouvement se dit sur l'opérateur, et
+// c'est SoldeAmount qui le pose, morceau par morceau. Une couleur unique pour toute la
+// case ne pouvait porter qu'une des deux informations à la fois.
+function soldeColor(v: number | null | undefined): string | undefined {
   if (v == null) return undefined;
-  if (delta != null) {
-    if (Math.abs(delta) < 0.005) return undefined; // mouvement nul : cellule vide
-    return delta > 0 ? "text-green-600" : "text-red-600";
-  }
   return v < -0.005 ? "text-red-600" : undefined;
 }
 
@@ -294,10 +289,14 @@ function SoldeAmount({ v, delta }: { v: number; delta?: number | null }) {
   if (cell.kind === "empty") return null;
   if (cell.kind === "plain") return <>{fmt(cell.value)}</>;
   if (cell.kind === "operation") {
+    // Les mêmes deux couleurs qu'en mode détaillé, sur une seule ligne : l'opérateur
+    // dit le sens du mouvement, le montant dit le signe du solde. Ce sont deux
+    // informations distinctes, et les fondre dans une couleur unique revenait à ne
+    // plus pouvoir lire ni l'une ni l'autre quand toutes deux étaient rouges.
     return (
       <>
-        <span className="text-muted-foreground">{cell.sign} </span>
-        {fmt(cell.value)}
+        <span className={cell.sign === "+" ? "text-green-600" : "text-red-600"}>{cell.sign} </span>
+        <span className={cell.negative ? "text-red-600" : "text-foreground"}>{fmt(cell.value)}</span>
       </>
     );
   }
@@ -338,7 +337,7 @@ function plannedSoldeCell(
   return (
     <CellAmount
       key={key}
-      className={cn(border && MONTH_GAP, "text-right tabular-nums", soldeColor(val, delta))}
+      className={cn(border && MONTH_GAP, "text-right tabular-nums", soldeColor(val))}
       detail={val != null ? detail : null}
       onSelect={onSelect}
       cellKey={ck}
@@ -611,7 +610,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
               </CellAmount>
             ),
           soldeReel: (b) => (
-            <CellAmount key="soldeReel" className={cn(b && MONTH_GAP, "text-right tabular-nums", soldeColor(s, net))} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
+            <CellAmount key="soldeReel" className={cn(b && MONTH_GAP, "text-right tabular-nums", soldeColor(s))} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
               {s != null ? <SoldeAmount v={s} delta={net} /> : ""}
             </CellAmount>
           ),
@@ -854,7 +853,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
               blankCol("reste", b)
             ),
           soldeReel: (b) => (
-            <CellAmount key="soldeReel" className={cn(b && MONTH_GAP, "text-right tabular-nums", soldeColor(s, net))} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
+            <CellAmount key="soldeReel" className={cn(b && MONTH_GAP, "text-right tabular-nums", soldeColor(s))} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
               {s != null ? <SoldeAmount v={s} delta={net} /> : ""}
             </CellAmount>
           ),

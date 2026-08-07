@@ -9,7 +9,9 @@
 //   empty      la ligne n'a rien bougé : rien à montrer, la colonne ne garde que les
 //              lignes qui opèrent.
 //   operation  l'affichage habituel : l'opérateur du mouvement, puis le solde en
-//              VALEUR ABSOLUE — jamais de double signe « − -39,73 ».
+//              VALEUR ABSOLUE — jamais de double signe « − -39,73 ». Le montant ne
+//              porte donc pas son signe, mais la case le sait (`negative`), et c'est
+//              la couleur qui le dit.
 //   detailed   le mode détaillé (case à cocher au-dessus du tableau) : le mouvement se
 //              dit à part, entre parenthèses, et le solde reprend son signe.
 //
@@ -21,7 +23,7 @@
 export type SoldeCell =
   | { kind: "empty" }
   | { kind: "plain"; value: number }
-  | { kind: "operation"; sign: "+" | "−"; value: number }
+  | { kind: "operation"; sign: "+" | "−"; value: number; negative: boolean }
   | { kind: "detailed"; delta: number; value: number };
 
 // Seuil du « mouvement nul », le même que partout ailleurs dans l'app : en dessous d'un
@@ -32,5 +34,10 @@ export function soldeCell(value: number, delta: number | null | undefined, detai
   if (delta == null) return { kind: "plain", value };
   if (Math.abs(delta) < NUL) return { kind: "empty" };
   if (detailed) return { kind: "detailed", delta, value };
-  return { kind: "operation", sign: delta > 0 ? "+" : "−", value: Math.abs(value) };
+  return {
+    kind: "operation",
+    sign: delta > 0 ? "+" : "−",
+    value: Math.abs(value),
+    negative: value < -NUL,
+  };
 }

@@ -19,10 +19,19 @@ describe("soldeCell", () => {
   });
 
   // L'affichage habituel : l'opérateur du mouvement, puis le solde en VALEUR ABSOLUE.
-  // Le signe du solde n'y paraît pas — c'est justement ce que le mode détaillé répare.
+  // Le montant ne porte pas son signe, mais la case sait qu'il est négatif : c'est ce
+  // qui permet de le dire par la couleur, sans quoi le rouge de l'opérateur et celui du
+  // solde négatif se confondraient.
   it("affiche l'opérateur du mouvement et le solde en valeur absolue", () => {
-    expect(soldeCell(-121.88, -45, false)).toEqual({ kind: "operation", sign: "−", value: 121.88 });
-    expect(soldeCell(1200, 300, false)).toEqual({ kind: "operation", sign: "+", value: 1200 });
+    expect(soldeCell(-121.88, -45, false)).toEqual({ kind: "operation", sign: "−", value: 121.88, negative: true });
+    expect(soldeCell(1200, 300, false)).toEqual({ kind: "operation", sign: "+", value: 1200, negative: false });
+  });
+
+  // Les quatre croisements possibles : le sens du mouvement ne dit rien du signe du
+  // solde, et c'est exactement le malentendu qu'on cherche à lever.
+  it("distingue le sens du mouvement du signe du solde", () => {
+    expect(soldeCell(-50, 30, false)).toMatchObject({ sign: "+", negative: true });
+    expect(soldeCell(50, -30, false)).toMatchObject({ sign: "−", negative: false });
   });
 
   // Mode détaillé : le mouvement se dit à part, et le solde reprend son signe. Les
