@@ -3,7 +3,7 @@
 // des mois de la vie du groupe, et ces mois-là perdent leur budget pendant que leurs
 // transactions repassent en non catégorisés. C'est ce qu'on doit pouvoir annoncer.
 import { describe, expect, it } from "vitest";
-import { droppedMonths, addedMonths, isShrink, countTxnsIn } from "../../src/lib/period-change";
+import { droppedMonths, addedMonths, isShrink, countTxnsIn, txnsPerMonth } from "../../src/lib/period-change";
 
 const permanent = { startMonth: "2026-01", endMonth: null };
 const mois = ["2026-01", "2026-02", "2026-03", "2026-04", "2026-05"];
@@ -81,5 +81,28 @@ describe("countTxnsIn", () => {
 
   it("rend zéro quand aucun mois n'est perdu", () => {
     expect(countTxnsIn([], ["2026-01"])).toBe(0);
+  });
+});
+
+// Le détail que l'avertissement affiche : mois par mois, combien de transactions
+// vont retourner en non catégorisés. Un total seul ne dit pas où regarder ensuite
+// pour les recatégoriser.
+describe("txnsPerMonth", () => {
+  it("compte par mois, dans l'ordre des mois perdus", () => {
+    const txns = ["2026-01", "2026-01", "2026-01", "2026-03"];
+    expect(txnsPerMonth(["2026-01", "2026-03"], txns)).toEqual([
+      { month: "2026-01", txns: 3 },
+      { month: "2026-03", txns: 1 },
+    ]);
+  });
+
+  // Un mois perdu sans transaction n'a rien à annoncer : la question posée à
+  // l'utilisateur ne porte que sur ce qui va bouger de place.
+  it("écarte les mois perdus qui n'ont aucune transaction", () => {
+    expect(txnsPerMonth(["2026-01", "2026-02"], ["2026-02"])).toEqual([{ month: "2026-02", txns: 1 }]);
+  });
+
+  it("ne rend rien quand aucun mois n'est perdu", () => {
+    expect(txnsPerMonth([], ["2026-01"])).toEqual([]);
   });
 });

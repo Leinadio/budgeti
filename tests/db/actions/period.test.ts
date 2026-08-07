@@ -23,6 +23,9 @@ beforeEach(() => {
 const bornes = (table: "groups" | "group_lines", id: number) =>
   db.prepare(`SELECT start_month AS start, end_month AS fin FROM ${table} WHERE id = ?`).get(id);
 
+const rattachement = (id: string) =>
+  db.prepare(`SELECT group_id AS groupId, line_id AS lineId FROM transactions WHERE id = ?`).get(id);
+
 const depenseEn = (mois: string, groupId: number, lineId: number | null = null) =>
   insertManualTransaction(db, {
     accountId: "a1", date: `${mois}-12`, amount: -30, label: "PRLV", groupId, lineId, incomeKind: null,
@@ -85,18 +88,33 @@ test("rallonger par le début pose le montant donné sur les mois gagnés, sans 
 });
 
 // --- Ce que le changement coûte, avant de l'écrire --------------------------
+// L'avertissement ne parle plus que des transactions : c'est la seule chose que le
+// raccourcissement défait pour de bon. Le budget des mois retirés, lui, revient si on
+// rallonge — il n'y a rien à demander là-dessus.
 
-test("annonce les mois perdus et les transactions qui repassent en non catégorisés", async () => {
+test("annonce, mois par mois, les transactions qui retourneront en non catégorisés", async () => {
   const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
   await setGroupPeriod(gid, "2026-01", null, 300);
   depenseEn("2026-02", gid);
   depenseEn("2026-05", gid);
   depenseEn("2026-05", gid);
+  depenseEn("2026-06", gid);
 
   const impact = await groupPeriodImpact(gid, "2026-01", "2026-04");
 
-  expect(impact.months).toEqual(["2026-05", "2026-06"]);
-  expect(impact.txns).toBe(2);
+  expect(impact.months).toEqual([
+    { month: "2026-05", txns: 2 },
+    { month: "2026-06", txns: 1 },
+  ]);
+});
+
+// Un mois retiré qui ne portait aucune dépense n'a rien à annoncer : son budget
+// reviendra si on rallonge, et rien ne change de place.
+test("n'annonce pas un mois retiré sans transaction", async () => {
+  const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  await setGroupPeriod(gid, "2026-01", null, 300);
+
+  expect((await groupPeriodImpact(gid, "2026-01", "2026-04")).months).toEqual([]);
 });
 
 test("n'annonce rien quand on rallonge", async () => {
@@ -104,7 +122,7 @@ test("n'annonce rien quand on rallonge", async () => {
   await setGroupPeriod(gid, "2026-03", "2026-04", 300);
   depenseEn("2026-03", gid);
 
-  expect(await groupPeriodImpact(gid, "2026-01", null)).toEqual({ months: [], txns: 0 });
+  expect(await groupPeriodImpact(gid, "2026-01", null)).toEqual({ months: [] });
 });
 
 // Les mois à venir ne comptent pas : rien ne s'y est encore passé, les retirer
@@ -113,24 +131,51 @@ test("ne compte pas les mois futurs parmi les mois perdus", async () => {
   const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
   await setGroupPeriod(gid, "2026-01", null, 300);
 
-  const impact = await groupPeriodImpact(gid, "2026-01", "2026-06");
-
-  expect(impact.months).toEqual([]);
+  expect((await groupPeriodImpact(gid, "2026-01", "2026-06")).months).toEqual([]);
 });
 
-// Les groupes hérités sont ancrés très loin en arrière (start_month = '2000-01', posé
-// par la migration). Compter comme « perdus » les mois d'avant la première transaction
-// du compte annoncerait des centaines de mois que l'app n'affiche nulle part : le
-// décompte s'arrête donc au premier mois que la frise atteint.
-test("ne remonte pas avant le premier mois de données du compte", async () => {
-  const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2000-01", null);
-  await setGroupPeriod(gid, "2000-01", null, 300);
-  depenseEn("2026-02", gid);
+// --- Ce que le raccourcissement défait pour de bon --------------------------
 
-  const impact = await groupPeriodImpact(gid, "2026-03", null);
+test("raccourcir détache les transactions des mois retirés, et elles seules", async () => {
+  const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const gardee = depenseEn("2026-02", gid);
+  const detachee = depenseEn("2026-05", gid);
 
-  expect(impact.months).toEqual(["2026-02"]);
-  expect(impact.txns).toBe(1);
+  await setGroupPeriod(gid, "2026-01", "2026-04");
+
+  expect(rattachement(gardee)).toEqual({ groupId: gid, lineId: null });
+  expect(rattachement(detachee)).toEqual({ groupId: null, lineId: null });
+});
+
+// Le cœur de la règle : rallonger ne ramène rien. Le rattachement a été défait, il se
+// refait à la main depuis Transactions.
+test("rallonger ensuite ne ramène pas les transactions détachées", async () => {
+  const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const t = depenseEn("2026-05", gid);
+  await setGroupPeriod(gid, "2026-01", "2026-04");
+
+  await setGroupPeriod(gid, "2026-01", null);
+
+  expect(rattachement(t)).toEqual({ groupId: null, lineId: null });
+});
+
+test("raccourcir une ligne détache ses transactions, groupe parent compris", async () => {
+  const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-01", null);
+  const lid = await addGroupLine(gid, "Spotify", 10, 1, "2026-01");
+  const t = depenseEn("2026-05", gid, lid);
+
+  await setLinePeriod(lid, "2026-01", "2026-03");
+
+  expect(rattachement(t)).toEqual({ groupId: null, lineId: null });
+});
+
+test("rallonger ne détache rien", async () => {
+  const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-03", "2026-04");
+  const t = depenseEn("2026-03", gid);
+
+  await setGroupPeriod(gid, "2026-01", null);
+
+  expect(rattachement(t)).toEqual({ groupId: gid, lineId: null });
 });
 
 // --- Les lignes d'un récurrent, même règle ----------------------------------
@@ -152,8 +197,7 @@ test("annonce l'impact du raccourcissement d'une ligne", async () => {
 
   const impact = await linePeriodImpact(lid, "2026-01", "2026-03");
 
-  // Avril est hors compte : la frise du compte commence à sa première transaction
-  // (mai), et un mois que l'app n'affiche pas ne perd rien de visible.
-  expect(impact.months).toEqual(["2026-05", "2026-06"]);
-  expect(impact.txns).toBe(1);
+  // Juin n'est pas annoncé : la ligne y perd son budget, mais aucune transaction n'y
+  // change de place — et c'est de cela seul que parle l'avertissement.
+  expect(impact.months).toEqual([{ month: "2026-05", txns: 1 }]);
 });

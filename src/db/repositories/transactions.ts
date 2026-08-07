@@ -109,6 +109,36 @@ export function setTransactionGroup(
   );
 }
 
+// Rend aux « non catégorisés » les transactions d'un groupe (ou d'une de ses lignes)
+// tombant dans les mois donnés, et rend leur nombre. Appelée quand on raccourcit une
+// durée de vie : les mois retirés ne peuvent plus rien porter.
+//
+// Le rattachement est défait POUR DE BON, en base — c'est tout le sens du geste. Une
+// durée rallongée ensuite ne les ramène pas : rien ne saurait dire lesquelles avaient
+// été détachées par ce raccourcissement-là plutôt que décatégorisées à la main, et
+// deviner ferait rentrer dans un groupe des dépenses que personne n'y a remises. Elles
+// se recatégorisent à la main, une par une, depuis Transactions.
+//
+// Le groupe parent part aussi quand on vise une ligne : sans ça, la transaction
+// retomberait sous le récurrent au lieu des non catégorisés.
+export function detachTransactionsInMonths(
+  db: Database.Database,
+  cible: { groupId: number } | { lineId: number },
+  months: string[],
+): number {
+  if (months.length === 0) return 0;
+  const trous = months.map(() => "?").join(",");
+  const colonne = "lineId" in cible ? "line_id" : "group_id";
+  const id = "lineId" in cible ? cible.lineId : cible.groupId;
+  const info = db
+    .prepare(
+      `UPDATE transactions SET group_id = NULL, line_id = NULL
+       WHERE ${colonne} = ? AND substr(date, 1, 7) IN (${trous})`,
+    )
+    .run(id, ...months);
+  return info.changes;
+}
+
 // Date d'une transaction (YYYY-MM-DD), null si elle n'existe pas. Sert à savoir de
 // quel mois elle relève avant de la rattacher à un groupe.
 export function getTransactionDate(db: Database.Database, id: string): string | null {

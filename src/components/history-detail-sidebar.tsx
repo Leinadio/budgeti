@@ -337,10 +337,13 @@ function BudgetEditBlock({ info }: { info: BudgetEditInfo }) {
 //
 // Créer, c'est facile — rien n'existe encore. Modifier, c'est autre chose : des mois
 // sont déjà remplis. D'où la seule règle qui compte ici : rallonger passe sans rien
-// demander (rien n'est retiré, et le geste inverse ramène tout), raccourcir annonce
-// d'abord ce qui sort — les mois qui perdent leur budget et les transactions qui
-// repassent en non catégorisés. Rien n'est jamais détruit : les montants datés
-// survivent aux deux bouts, remettre la borne où elle était fait tout revenir.
+// demander, raccourcir annonce d'abord ce qui va bouger de place.
+//
+// Ce qui bouge, ce sont les transactions des mois retirés : elles retournent en non
+// catégorisés, et elles y restent — rallonger la durée ensuite ne les ramène pas
+// (cf. setGroupPeriod). C'est la seule chose que le geste défait pour de bon, donc la
+// seule sur laquelle on demande son avis à l'utilisateur. Le budget des mois retirés,
+// lui, reste en base et revient tel quel : rien à annoncer de ce côté.
 function PeriodEditBlock({ current, month, stripMin, stripMax, changes, askAmount, impactOf, onSave }: {
   current: { startMonth?: string | null; endMonth?: string | null };
   month: string;
@@ -358,8 +361,9 @@ function PeriodEditBlock({ current, month, stripMin, stripMax, changes, askAmoun
   const [draft, setDraft] = useState<PeriodDraft>(() => draftOfPeriod(current.startMonth, current.endMonth, month));
   const [amount, setAmount] = useState(() => String(amountAtMonth(changes, debutActuel) || ""));
   const [pending, setPending] = useState(false);
-  // Non nul = l'avertissement est à l'écran, en attente d'un « oui ».
-  const [impact, setImpact] = useState<PeriodImpact | null>(null);
+  // Non nul = l'avertissement est à l'écran, en attente d'un « oui ». Porte le détail
+  // par mois de ce qui va retourner en non catégorisés.
+  const [impact, setImpact] = useState<PeriodImpact["months"] | null>(null);
 
   const start = draft.start;
   const end = draft.choice === "permanent" ? null : draft.end ?? draft.start;
@@ -380,7 +384,7 @@ function PeriodEditBlock({ current, month, stripMin, stripMax, changes, askAmoun
     setPending(true);
     const coute = await impactOf(start, end);
     setPending(false);
-    if (coute.months.length > 0) setImpact(coute);
+    if (coute.months.length > 0) setImpact(coute.months);
     else await ecrire();
   };
 
@@ -415,18 +419,20 @@ function PeriodEditBlock({ current, month, stripMin, stripMax, changes, askAmoun
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Raccourcir cette durée ?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {impact && (
-                <>
-                  {impact.months.length === 1
-                    ? `${monthLabel(impact.months[0])} sort de la durée : son budget y disparaît`
-                    : `${impact.months.length} mois sortent de la durée, de ${monthLabel(impact.months[0]).toLowerCase()} à ${monthLabel(impact.months[impact.months.length - 1]).toLowerCase()} : leur budget y disparaît`}
-                  {impact.txns > 0
-                    ? `, et ${impact.txns} transaction${impact.txns > 1 ? "s" : ""} repasse${impact.txns > 1 ? "nt" : ""} en non catégorisés.`
-                    : "."}
-                  {" "}Rien n&apos;est supprimé : remettre la durée comme elle était fait tout revenir.
-                </>
-              )}
+            <AlertDialogDescription asChild>
+              {/* Le détail par mois, et pas un total : c'est là qu'il faudra aller
+                  recatégoriser à la main. Et le mot compte — « retourneront »,
+                  au futur : rallonger la durée ensuite ne les ramènera pas. */}
+              <div>
+                <p>Les transactions des mois suivants retourneront dans « Non catégorisés »</p>
+                <ul className="mt-2 list-disc pl-5">
+                  {(impact ?? []).map((m) => (
+                    <li key={m.month}>
+                      {monthLabel(m.month)} : {m.txns} transaction{m.txns > 1 ? "s" : ""}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

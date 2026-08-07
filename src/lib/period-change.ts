@@ -40,3 +40,15 @@ export function countTxnsIn(dropped: string[], txnMonths: string[]): number {
   const perdus = new Set(dropped);
   return txnMonths.filter((m) => perdus.has(m)).length;
 }
+
+// Le même décompte, mois par mois, dans l'ordre des mois perdus : c'est ce que
+// l'avertissement affiche. Un total seul ne dit pas où regarder ensuite pour
+// recatégoriser à la main. Les mois perdus sans aucune transaction sont écartés — la
+// question posée ne porte que sur ce qui va bouger de place.
+export type MonthTxnCount = { month: string; txns: number };
+
+export function txnsPerMonth(dropped: string[], txnMonths: string[]): MonthTxnCount[] {
+  return dropped
+    .map((month) => ({ month, txns: txnMonths.filter((m) => m === month).length }))
+    .filter((m) => m.txns > 0);
+}
