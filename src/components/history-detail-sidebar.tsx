@@ -28,6 +28,7 @@ import {
   linePeriodImpact,
   type PeriodImpact,
 } from "@/app/historique/actions";
+import { toast } from "sonner";
 import { groupPeriodLabel } from "@/lib/group-period-label";
 import { draftMode, draftOfPeriod, type PeriodDraft } from "@/lib/group-period";
 import { PeriodFields } from "@/components/period-fields";
@@ -52,6 +53,12 @@ const NUM = new Intl.NumberFormat("fr-FR", { minimumFractionDigits: 2, maximumFr
 const fmtAbs = (n: number) => NUM.format(Math.abs(n) < 0.005 ? 0 : Math.abs(n)).replace(/[  ]/g, " ");
 const fmtSigned = (n: number) => NUM.format(Math.abs(n) < 0.005 ? 0 : n).replace(/[  ]/g, " ");
 const opOf = (n: number) => (n < 0 ? "−" : "+");
+
+// Accusé de réception d'une action confirmée. Une confirmation ferme sa fenêtre et
+// laisse l'écran tel quel : sans ce mot, rien ne dit que le clic a porté — surtout
+// pour un changement qui se voit ailleurs (le tableau) ou pas du tout (une durée
+// rallongée vers des mois hors de la fenêtre affichée).
+const toastSucces = (message: string) => toast.success(message);
 // Surbrillance d'une ligne sélectionnée : fond foncé + liseré d'accent à gauche
 // rendu par une ombre interne (pas une bordure) pour ne pas décaler le tableau.
 // On fixe aussi la couleur au survol (hover:) sur la même teinte foncée, sinon le
@@ -198,6 +205,7 @@ function LineManageBlock({ info, onClose }: { info: LineManageInfo; onClose: () 
                   onClick={() =>
                     run(async () => {
                       await removeGroupLine(info.lineId);
+                      toastSucces("Ligne supprimée");
                       onClose();
                     })
                   }
@@ -269,6 +277,7 @@ function BudgetEditBlock({ info }: { info: BudgetEditInfo }) {
         : spreadGroupLineAmount(info.id, info.month, applique!),
     );
     setApplique(null);
+    toastSucces("Montant appliqué aux mois suivants");
   };
   return (
     <div className="mt-4 flex flex-col gap-4 border-t pt-4">
@@ -364,6 +373,7 @@ function PeriodEditBlock({ current, month, stripMin, stripMax, changes, askAmoun
     await onSave(start, end, rallongeAvant ? parseFloat(amount) || 0 : undefined);
     setPending(false);
     setImpact(null);
+    toastSucces("Durée enregistrée");
   };
 
   const enregistrer = async () => {
@@ -596,6 +606,7 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
                   onClick={() =>
                     run(async () => {
                       await deleteGroupAction(info.groupId);
+                      toastSucces("Groupe supprimé");
                       onClose();
                     })
                   }
@@ -686,6 +697,7 @@ function UncatProvisionBlock({ info, onClose }: { info: UncatProvisionInfo; onCl
                   onClick={async () => {
                     await run(() => spreadUncatProvision(info.month, applique));
                     setApplique(null);
+                    toastSucces("Montant appliqué aux mois suivants");
                   }}
                 >
                   Oui, remplacer tous les mois suivants

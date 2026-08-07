@@ -4,6 +4,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { DetailSidebarProvider } from "@/components/detail-sidebar";
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import { NotificationsButton } from "@/components/notifications-button";
+import { Toaster } from "@/components/ui/sonner";
 import { appNotifications } from "@/lib/app-notifications";
 
 export const metadata = { title: "Budget CIC" };
@@ -92,6 +93,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </SidebarInset>
           </SidebarProvider>
         </DetailSidebarProvider>
+        {/* Les accusés de réception des actions confirmées (voir toastSucces).
+            Hors des deux sidebars : un toast n'appartient à aucune colonne. */}
+        <Toaster />
       </body>
     </html>
   );
