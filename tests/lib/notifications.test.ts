@@ -149,13 +149,28 @@ describe("notifications rangées par mois", () => {
     ]);
   });
 
-  // Vu ou pas, la place ne change pas : l'acquittement grise, il ne déplace pas.
-  it("garde les acquittées à leur place dans leur mois", () => {
+  // Ce qui reste à voir passe devant, dans chaque mois : c'est ce qu'on vient chercher
+  // en ouvrant le panneau. Les acquittés restent là, en dessous, à titre de trace.
+  it("remonte les non vues en tête de leur mois", () => {
     const tous = overspendNotifications(parCompte, ["a1::g1::2026-07"]);
     const juillet = notificationsByMonth(tous)[0];
     expect(juillet.items.map((x) => [x.name, x.seen])).toEqual([
-      ["Courses", true],
       ["Loyer", false],
+      ["Courses", true],
+    ]);
+  });
+
+  // À état égal, l'ordre reçu ne bouge pas : le tri ne fait que remonter les non vues,
+  // il ne rebat pas les cartes entre elles.
+  it("garde l'ordre reçu entre notifications de même état", () => {
+    const troisEnJuillet = [{ accountId: "a1", accountName: "CIC", byMonth: {
+      "2026-07": [dep("Courses", "2026-07", 50), dep("Loyer", "2026-07", 30, 3), dep("Essence", "2026-07", 12, 2)],
+    } }];
+    const tous = overspendNotifications(troisEnJuillet, ["a1::g3::2026-07"]);
+    expect(notificationsByMonth(tous)[0].items.map((x) => x.name)).toEqual([
+      "Courses",
+      "Essence",
+      "Loyer",
     ]);
   });
 

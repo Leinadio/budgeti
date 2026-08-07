@@ -89,8 +89,12 @@ export function unseenIds(items: Notification[]): string[] {
 
 // Rangées par mois, le plus récent en tête. Un dépassement se lit d'abord par « quand » :
 // c'est ce qui dit s'il appelle encore une réaction ou s'il est déjà de l'histoire.
-// L'ordre à l'intérieur d'un mois est celui reçu — vu ou pas, la place ne change pas :
-// l'acquittement grise, il ne déplace pas.
+//
+// Dans chaque mois, ce qui reste à voir passe devant : c'est ce qu'on vient chercher en
+// ouvrant le panneau, et les acquittés restent en dessous à titre de trace. Le tri est
+// stable — à état égal, l'ordre reçu (celui de computeOverspends, par nom, compte par
+// compte) ne bouge pas. Conséquence assumée : acquitter un dépassement le fait
+// descendre sous ceux de son mois qui restent à voir.
 export type NotificationMonth = { month: string; items: Notification[] };
 
 export function notificationsByMonth(items: Notification[]): NotificationMonth[] {
@@ -101,7 +105,10 @@ export function notificationsByMonth(items: Notification[]): NotificationMonth[]
     else parMois.set(n.month, [n]);
   }
   return [...parMois.entries()]
-    .map(([month, dedans]) => ({ month, items: dedans }))
+    .map(([month, dedans]) => ({
+      month,
+      items: [...dedans.filter((n) => !n.seen), ...dedans.filter((n) => n.seen)],
+    }))
     .sort((a, b) => (a.month < b.month ? 1 : a.month > b.month ? -1 : 0));
 }
 
