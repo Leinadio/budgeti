@@ -4,6 +4,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { DetailSidebarProvider } from "@/components/detail-sidebar";
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar";
 import { NotificationsButton } from "@/components/notifications-button";
+import { SyncButton } from "@/components/sync-button";
 import { Toaster } from "@/components/ui/sonner";
 import { appNotifications } from "@/lib/app-notifications";
 
@@ -83,9 +84,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   arrondis de la carte. */}
               <header className="flex shrink-0 items-center gap-2 border-b px-4 py-2">
                 <SidebarTrigger />
-                {/* ml-auto : le bouton se pose à droite de l'en-tête, à l'opposé de
-                    l'ouverture du menu. */}
-                <div className="ml-auto">
+                {/* ml-auto : les deux boutons se posent à droite de l'en-tête, à
+                    l'opposé de l'ouverture du menu. Rafraîchir d'abord, puis ce que le
+                    rafraîchissement a pu faire apparaître. */}
+                <div className="ml-auto flex items-center gap-2">
+                  <SyncButton />
                   <NotificationsButton items={notifications} />
                 </div>
               </header>
