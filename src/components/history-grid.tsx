@@ -1,5 +1,5 @@
 "use client";
-import { Fragment, cloneElement, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, cloneElement, createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpRight, ArrowDownRight, ChevronDown, ChevronRight, Plus, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { monthLabel } from "@/lib/transactions-view";
@@ -8,6 +8,7 @@ import { type MonthCell, type HistorySection, type HistoryRow, type HistorySubRo
 import { sectionsAtMonth } from "@/lib/history-month-view";
 import { groupsForMonth } from "@/lib/group-options";
 import { groupPeriodLabel } from "@/lib/group-period-label";
+import { soldeCell } from "@/lib/solde-cell";
 import { notificationId } from "@/lib/notifications";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -95,7 +96,7 @@ function resteColor(v: number): string {
 }
 
 // Couleur d'une case des trois colonnes de solde, dictée par ce qui est écrit
-// DEVANT le montant. Une ligne d'opération porte un opérateur (cf. soldeWithSign) :
+// DEVANT le montant. Une ligne d'opération porte un opérateur (cf. SoldeAmount) :
 // « − » en rouge, « + » en vert. Une ligne de départ ou de résultat n'a pas
 // d'opérateur : seul le signe du montant compte, donc rouge s'il est négatif et
 // noir sinon. Un montant sans rien devant reste toujours noir.
@@ -274,24 +275,56 @@ function CellAmount({ children, className, detail, onSelect, cellKey: ck, selCel
 // signe « − -39,73 »). Fait lire la colonne comme un calcul qui s'enchaîne de haut
 // en bas. Si la ligne n'a rien changé (mouvement nul), la cellule reste vide : seules
 // les lignes qui « opèrent » sur le solde s'affichent.
-function soldeWithSign(v: number, delta: number | null | undefined): React.ReactNode {
-  // Aucun mouvement fourni (ligne de départ / total) : on affiche toujours le solde,
-  // signé, sans opérateur — ce ne sont pas des « opérations » mais des points de
-  // départ / résultats.
-  if (delta == null) return fmt(v);
-  // Mouvement fourni mais nul : la ligne n'a rien changé, cellule vide.
-  if (Math.abs(delta) < 0.005) return null;
+// Le mode détaillé des colonnes de solde, piloté par la case à cocher au-dessus du
+// tableau. Par un contexte et non par une propriété : la case est lue tout en bas de
+// l'arbre, dans chaque cellule de solde, et la traverser à la main obligerait à ajouter
+// un booléen à cinq composants qui n'en ont que faire.
+const SoldeDetaille = createContext(false);
+
+// Le contenu d'une case de solde. La règle des quatre cas vit dans src/lib/solde-cell.ts ;
+// ici on ne fait que l'habiller.
+//
+// En mode détaillé, chaque ligne porte sa propre couleur, et c'est tout l'intérêt :
+// le mouvement est vert ou rouge selon qu'il ajoute ou retranche, le solde rouge
+// seulement s'il est négatif. Ces couleurs-là écrasent celle de la cellule
+// (soldeColor), qui ne sait pas distinguer les deux.
+function SoldeAmount({ v, delta }: { v: number; delta?: number | null }) {
+  const detaille = useContext(SoldeDetaille);
+  const cell = soldeCell(v, delta, detaille);
+  if (cell.kind === "empty") return null;
+  if (cell.kind === "plain") return <>{fmt(cell.value)}</>;
+  if (cell.kind === "operation") {
+    return (
+      <>
+        <span className="text-muted-foreground">{cell.sign} </span>
+        {fmt(cell.value)}
+      </>
+    );
+  }
   return (
     <>
-      <span className="text-muted-foreground">{delta > 0 ? "+" : "−"} </span>
-      {fmt(Math.abs(v))}
+      {/* Le mouvement de la ligne, au-dessus et entre parenthèses : c'est ce qui a été
+          ajouté ou retranché pour arriver au solde du dessous. En bloc à part plutôt
+          qu'à côté — la colonne est étroite, et le mettre sur la même ligne
+          l'élargirait pour tout le tableau. */}
+      <span
+        className={cn(
+          "block text-[10px] leading-tight",
+          cell.delta > 0 ? "text-green-600" : "text-red-600",
+        )}
+      >
+        ({cell.delta > 0 ? "+" : "−"} {fmt(Math.abs(cell.delta))})
+      </span>
+      <span className={cn("block", cell.value < -0.005 ? "text-red-600" : "text-foreground")}>
+        {fmt(cell.value)}
+      </span>
     </>
   );
 }
 
 // plannedSoldeCol mais avec un détail (sidebar) et une clé de case. Non cliquable
 // si la valeur est absente (cellule vide). `delta` = mouvement de la ligne, pour le
-// signe d'opération (cf. soldeWithSign) ; absent = pas de signe (départ/total).
+// signe d'opération (cf. SoldeAmount) ; absent = pas de signe (départ/total).
 function plannedSoldeCell(
   key: string,
   val: number | null | undefined,
@@ -311,7 +344,7 @@ function plannedSoldeCell(
       cellKey={ck}
       selCellKey={selCellKey}
     >
-      {val != null ? soldeWithSign(val, delta) : ""}
+      {val != null ? <SoldeAmount v={val} delta={delta} /> : ""}
     </CellAmount>
   );
 }
@@ -579,7 +612,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
             ),
           soldeReel: (b) => (
             <CellAmount key="soldeReel" className={cn(b && MONTH_GAP, "text-right tabular-nums", soldeColor(s, net))} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
-              {s != null ? soldeWithSign(s, net) : ""}
+              {s != null ? <SoldeAmount v={s} delta={net} /> : ""}
             </CellAmount>
           ),
           soldePrevu: (b) => plannedSoldeCell("soldePrevu", soldePrevu?.[i] ?? null, b, soldePrevuDetail, onSelect, ck("soldePrevu"), selCellKey, mouvementPrevu),
@@ -822,7 +855,7 @@ function SectionTotalsCells({ sec, months, currentMonth, onSelect, solde, planPr
             ),
           soldeReel: (b) => (
             <CellAmount key="soldeReel" className={cn(b && MONTH_GAP, "text-right tabular-nums", soldeColor(s, net))} detail={soldeDetail} onSelect={onSelect} cellKey={ck("solde")} selCellKey={selCellKey}>
-              {s != null ? soldeWithSign(s, net) : ""}
+              {s != null ? <SoldeAmount v={s} delta={net} /> : ""}
             </CellAmount>
           ),
           // Non catégorisés : on affiche le solde du plan (identique aux clôtures
@@ -1258,13 +1291,16 @@ function scrollableAncestor(el: HTMLElement, axis: "x" | "y"): HTMLElement | nul
   return null;
 }
 
-export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast, sections, ignoredBlocks, overspend, grand, groups, solde, planned, onSelect, selected, anchor, accountId, overspendsByMonth }: {
+export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast, sections, ignoredBlocks, overspend, grand, groups, solde, planned, onSelect, selected, anchor, accountId, overspendsByMonth, showDeltas }: {
   months: string[];
   currentMonth: string;
   // Bornes de la frise : les mois que le calendrier du formulaire de création
   // inline d'un groupe accepte, passé compris.
   stripMin: string;
   stripMax: string;
+  // Mode détaillé des colonnes de solde : la case à cocher vit au-dessus du tableau,
+  // hors du défilement horizontal, donc son état arrive d'au-dessus (cf. SoldeDetaille).
+  showDeltas?: boolean;
   forecast: AccountForecast;
   sections: HistorySection[];
   // Transactions mises hors calcul par l'utilisateur, reçus puis dépenses. Rendues
@@ -2217,10 +2253,12 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
     // pas quand le panneau de détail s'ouvre.
     // Ce conteneur sert aussi d'ancre pour retrouver, par data-cellkey, la case
     // sélectionnée à faire défiler dans la vue.
-    <div ref={gridRef} className="flex w-max items-start gap-10">
-      {months.map((m, mi) => (
-        <div key={m}>{monthTable(m, mi)}</div>
-      ))}
-    </div>
+    <SoldeDetaille.Provider value={showDeltas ?? false}>
+      <div ref={gridRef} className="flex w-max items-start gap-10">
+        {months.map((m, mi) => (
+          <div key={m}>{monthTable(m, mi)}</div>
+        ))}
+      </div>
+    </SoldeDetaille.Provider>
   );
 }
