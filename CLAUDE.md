@@ -1,3 +1,9 @@
+# Répondre court, et humainement compréhensible
+
+Toujours : des phrases courtes, un langage humain, pas de jargon inutile. Aller
+droit au but. Si une explication tient en trois phrases, elle ne doit pas en
+faire dix.
+
 # Le projet : Budget CIC
 
 App web locale et personnelle de suivi de budget. Elle se connecte au compte CIC
