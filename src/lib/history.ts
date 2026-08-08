@@ -49,16 +49,18 @@ export type HistorySubRow = {
 export type HistoryRow = {
   id: number;
   name: string;
-  kind: "envelope" | "recurring";
   direction: "in" | "out";
   incomeKind: "principal" | "supplementary" | null; // classe de revenu (null hors rémunération)
   cells: MonthCell[]; // alignées sur la liste des mois passée à computeHistory
   aliveMonths: boolean[]; // aligné sur months : le groupe est-il vivant ce mois-là
-  subRows: HistorySubRow[]; // lignes des récurrents (vide pour une enveloppe)
-  txns: HistoryTxn[]; // transactions directement sous le groupe (enveloppe, ou récurrent sans ligne)
+  subRows: HistorySubRow[]; // sous-postes de la dépense (vide si elle est plate)
+  txns: HistoryTxn[]; // transactions posées directement sur le groupe (dépense plate)
 };
 export type HistorySection = {
-  kind: "income" | "envelope" | "recurring" | "uncategorized";
+  // Une seule section pour toutes les dépenses : « récurrent » et « enveloppe »
+  // promettaient deux comportements et n'en donnaient qu'un. Ce qui les distinguait —
+  // avoir des sous-postes ou non — se lit ligne par ligne (HistoryRow.subRows).
+  kind: "income" | "expense" | "uncategorized";
   rows: HistoryRow[];
   totals: MonthCell[];
   txns?: HistoryTxn[]; // uniquement pour « uncategorized » : liste plate
@@ -116,7 +118,7 @@ export function clampMonth(m: string, min: string, max: string): string {
 }
 
 function toOwnable(g: Group): OwnableGroup {
-  return { id: g.id, accountId: g.accountId, direction: g.direction, kind: g.kind };
+  return { id: g.id, accountId: g.accountId, direction: g.direction };
 }
 
 function emptyCell(): MonthCell {
@@ -214,7 +216,7 @@ export function computeHistory(
     // récurrent dont la transaction ne matche aucune ligne.
     const groupTxns = mine.filter((t) => lineOf(g, t) === null && inRange(t)).map(toHistoryTxn);
 
-    return { id: g.id, name: g.name, kind: g.kind, direction: g.direction, incomeKind: g.incomeKind ?? null, cells, aliveMonths, subRows, txns: groupTxns };
+    return { id: g.id, name: g.name, direction: g.direction, incomeKind: g.incomeKind ?? null, cells, aliveMonths, subRows, txns: groupTxns };
   };
 
   const sumRows = (rows: HistoryRow[]): MonthCell[] =>
@@ -250,15 +252,16 @@ export function computeHistory(
     return { kind: "income", rows, totals };
   };
 
-  // Sections de dépenses : uniquement les groupes de sortie ; les rémunérations
-  // sont sorties dans leur propre section (voir incomeSection).
-  const section = (kind: "envelope" | "recurring"): HistorySection | null => {
+  // La section des dépenses : tous les groupes de sortie, dans l'ordre reçu (celui
+  // du nom, déjà trié par listGroups). Les rémunérations ont leur propre section
+  // (voir incomeSection).
+  const expenseSection = (): HistorySection | null => {
     const rows = groups
-      .filter((g) => g.kind === kind && g.direction === "out")
+      .filter((g) => g.direction === "out")
       .filter((g) => months.some((m) => isGroupAlive(g, m)))
       .map(rowFor);
     if (rows.length === 0) return null;
-    return { kind, rows, totals: sumRows(rows) };
+    return { kind: "expense", rows, totals: sumRows(rows) };
   };
 
   // Reçus non catégorisés d'un mois (section « in »), indépendamment de la
@@ -299,7 +302,7 @@ export function computeHistory(
     return { kind: "uncategorized", rows: [], totals, txns: mine.map(toHistoryTxn), uncatDirection: direction };
   };
 
-  return [incomeSection(), uncategorized("in"), section("recurring"), section("envelope"), uncategorized("out")].filter(
+  return [incomeSection(), uncategorized("in"), expenseSection(), uncategorized("out")].filter(
     (s): s is HistorySection => s !== null,
   );
 }
@@ -597,9 +600,6 @@ export function uncatOverspendOf(outT?: MonthCell, inT?: MonthCell): number {
 // les cases des mois qu'il veut changer — un dépassement ne modifie donc jamais un
 // budget tout seul, ni ne se reconduit sur le prévisionnel.
 //
-// kind : nature de ce qui dépasse. Les non catégorisés (groupe 0) sont donnés pour une
-// enveloppe : ils ont une provision, pas des lignes datées.
-//
 // lineId : la ligne d'un récurrent qui déborde, null pour une enveloppe et pour les
 // non catégorisés. Un récurrent n'a pas de budget à lui — son budget est la somme de
 // ses lignes — donc c'est chaque LIGNE qui déborde ou non. Le groupe n'apparaît jamais
@@ -613,7 +613,6 @@ export type Overspend = {
   name: string;
   month: string;
   amount: number;
-  kind: "envelope" | "recurring";
 };
 
 export function computeOverspends(
@@ -642,28 +641,28 @@ export function computeOverspends(
     for (const g of groups) {
       if (g.direction !== "out") continue;
       if (!isGroupAlive(g, m)) continue;
-      if (g.kind === "recurring") {
-        // Ligne par ligne : chacune a son budget daté et sa propre dépense.
+      if (g.lines.length > 0) {
+        // Sous-poste par sous-poste : chacun a son budget daté et sa propre dépense.
         for (const l of g.lines) {
           const spent = owned
             .filter((o) => o.ownerId === g.id && o.t.lineId === l.id && o.month === m)
             .reduce((s, o) => s + Math.abs(o.t.amount), 0);
           const os = Math.max(0, spent - lineAmountInForce(l.id, m, datedLines));
           if (os <= 0.005) continue;
-          noter({ groupId: g.id, lineId: l.id, name: l.name, month: m, amount: os, kind: "recurring" });
+          noter({ groupId: g.id, lineId: l.id, name: l.name, month: m, amount: os });
         }
         continue;
       }
       const spent = owned.filter((o) => o.ownerId === g.id && o.month === m).reduce((s, o) => s + Math.abs(o.t.amount), 0);
       const os = Math.max(0, spent - budgetInForce(g, m, dated, datedLines));
       if (os <= 0.005) continue;
-      noter({ groupId: g.id, lineId: null, name: g.name, month: m, amount: os, kind: g.kind });
+      noter({ groupId: g.id, lineId: null, name: g.name, month: m, amount: os });
     }
     const uncat = owned.filter((o) => o.ownerId === null && o.month === m);
     const dep = uncat.filter((o) => o.t.amount < 0).reduce((s, o) => s + Math.abs(o.t.amount), 0);
     const rec = uncat.filter((o) => o.t.amount > 0).reduce((s, o) => s + o.t.amount, 0);
     const os = Math.max(0, dep - rec - provisionInForce(dated, m));
-    if (os > 0.005) noter({ groupId: 0, lineId: null, name: "Non catégorisés", month: m, amount: os, kind: "envelope" });
+    if (os > 0.005) noter({ groupId: 0, lineId: null, name: "Non catégorisés", month: m, amount: os });
   }
   // Tri par nom, pour un bandeau et des étiquettes stables.
   for (const m of Object.keys(byMonth)) byMonth[m].sort((a, b) => a.name.localeCompare(b.name));

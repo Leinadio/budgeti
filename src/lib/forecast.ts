@@ -9,7 +9,6 @@ export type GroupLine = {
   id: number;
   name: string;
   amount: number;
-  day: number;
   // Durée de vie propre de la ligne, indépendante de celle de son groupe : un
   // abonnement se résilie sans emporter le récurrent qui le porte. Sans bornes, la
   // ligne vit tant que son groupe vit — le cas de toutes celles créées avant qu'une
@@ -23,7 +22,6 @@ export type Group = {
   accountId: string;
   name: string;
   direction: Direction;
-  kind: "envelope" | "recurring";
   monthlyAmount: number | null;
   lines: GroupLine[];
   incomeKind?: "principal" | "supplementary" | null;
@@ -59,13 +57,10 @@ export function isLineAlive(l: Pick<GroupLine, "startMonth" | "endMonth">, month
   return aliveInMonth(l, month);
 }
 
-export type TimelineItem = { day: number; name: string; amount: number; seen: boolean };
-
 export type GroupView = {
   id: number;
   name: string;
   direction: Direction;
-  kind: "envelope" | "recurring";
   total: number;
   spent: number;
   overspend: number;
@@ -86,7 +81,6 @@ export type AccountForecast = {
   // Estimé mois prochain en gardant les dépassements du mois en cours.
   overspendTotal: number;
   nextEstimateWithOverspend: number;
-  timeline: TimelineItem[];
   groups: GroupView[];
   // Détail du calcul : ajustements appliqués depuis le solde jusqu'aux estimés.
   currentSteps: ForecastStep[]; // solde actuel -> estimé fin de mois
@@ -111,7 +105,7 @@ function nextMonthKey(m: string): string {
 }
 
 function toOwnable(g: Group): OwnableGroup {
-  return { id: g.id, accountId: g.accountId, direction: g.direction, kind: g.kind };
+  return { id: g.id, accountId: g.accountId, direction: g.direction };
 }
 
 export function computeForecast(
@@ -142,7 +136,6 @@ export function computeForecast(
 
   let current = balance;
   let nextDelta = 0;
-  const timeline: TimelineItem[] = [];
   const groupViews: GroupView[] = [];
   const currentSteps: ForecastStep[] = [];
   const nextSteps: ForecastStep[] = [];
@@ -156,7 +149,9 @@ export function computeForecast(
     if (!aliveNow && !aliveNext) continue;
     const sign = g.direction === "in" ? 1 : -1;
 
-    if (g.kind === "envelope") {
+    // Dépense plate : un reste à dépenser. Découpée (plus bas) : sous-poste par
+    // sous-poste. C'est la présence de sous-postes qui tranche, pas une nature déclarée.
+    if (g.lines.length === 0) {
       // Le montant en vigueur peut différer d'un mois à l'autre (budget daté) :
       // le mois courant lit son propre montant, la projection au mois prochain
       // lit celui en vigueur à CE mois-là (utile pour un groupe qui démarre le
@@ -180,7 +175,7 @@ export function computeForecast(
         const overspend = g.direction === "out" ? Math.max(0, spent - amount) : 0;
         const prevSpent = spentIn(g.id, prevMonth);
         const prevOverspend = g.direction === "out" ? Math.max(0, prevSpent - amount) : 0;
-        groupViews.push({ id: g.id, name: g.name, direction: g.direction, kind: g.kind, total: amount, spent, overspend, prevSpent, prevOverspend });
+        groupViews.push({ id: g.id, name: g.name, direction: g.direction, total: amount, spent, overspend, prevSpent, prevOverspend });
       }
       if (aliveNext && projectNext) {
         nextDelta += sign * nextAmount;
@@ -213,18 +208,16 @@ export function computeForecast(
         const seen = mine.some((t) => t.lineId === line.id);
         if (ligneNow && !seen) {
           current += sign * montant;
-          currentSteps.push({ label: `${g.name} · ${line.name} — pas encore passé (le ${line.day})`, amount: sign * montant, groupId: g.id, lineId: line.id });
+          currentSteps.push({ label: `${g.name} · ${line.name} — pas encore passé`, amount: sign * montant, groupId: g.id, lineId: line.id });
         }
         if (ligneNow && seen) seenSum += montant;
         if (ligneNext) nextSteps.push({ label: `${g.name} · ${line.name}`, amount: sign * nextMontant, groupId: g.id, lineId: line.id });
-        if (ligneNow) timeline.push({ day: line.day, name: line.name, amount: sign * montant, seen });
       }
       if (aliveNow)
-        groupViews.push({ id: g.id, name: g.name, direction: g.direction, kind: g.kind, total, spent: seenSum, overspend: 0, prevSpent: 0, prevOverspend: 0 });
+        groupViews.push({ id: g.id, name: g.name, direction: g.direction, total, spent: seenSum, overspend: 0, prevSpent: 0, prevOverspend: 0 });
     }
   }
 
-  timeline.sort((a, b) => a.day - b.day);
   const nextEstimate = current + nextDelta;
   // Projection « pessimiste » : le mois prochain, les groupes qui ont dépassé
   // ce mois-ci dépassent encore d'autant.
@@ -239,7 +232,6 @@ export function computeForecast(
     nextEstimate,
     overspendTotal,
     nextEstimateWithOverspend: nextEstimate - overspendTotal,
-    timeline,
     groups: groupViews,
     currentSteps,
     nextSteps,

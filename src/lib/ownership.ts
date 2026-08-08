@@ -4,7 +4,6 @@ export type OwnableGroup = {
   id: number;
   accountId: string;
   direction: Direction;
-  kind: "envelope" | "recurring";
 };
 
 export type OwnedTxn = {
@@ -33,14 +32,18 @@ export function resolveOwnership(txn: OwnedTxn, groups: OwnableGroup[]): Ownersh
   return { status: "none" };
 }
 
-// Un récurrent n'est pas une destination : ses dépenses appartiennent à une de ses
-// lignes (Direct Assurance, Sosh Internet…), jamais au groupe lui-même. Une enveloppe,
-// qui n'a pas de lignes, se rattache directement.
+// Une dépense découpée en sous-postes n'est pas une destination : ses transactions
+// appartiennent à un de ses sous-postes (Direct Assurance, Sosh Internet…), jamais au
+// groupe lui-même. Une dépense plate, elle, se rattache directement.
 //
 // Ce n'est pas une préférence d'affichage mais l'invariant qui tient le dépassement
-// d'un récurrent : son budget est la somme de ses lignes, donc une dépense posée sur le
-// groupe le ferait déborder sans venir d'aucune ligne — et ce dépassement n'aurait
-// nulle part où se trancher, puisque les décisions se prennent sur les lignes.
-export function canAttachToGroup(kind: "envelope" | "recurring", lineId: number | null): boolean {
-  return kind === "envelope" || lineId !== null;
+// d'une dépense découpée : son budget est la somme de ses sous-postes, donc une
+// transaction posée sur le groupe le ferait déborder sans venir d'aucun sous-poste — et
+// ce dépassement n'aurait nulle part où se lire.
+//
+// La question porte sur un fait (a-t-il des sous-postes ?) et non sur une nature
+// déclarée : « enveloppe » et « récurrent » promettaient deux comportements et n'en
+// donnaient qu'un, et n'importe quelle dépense peut désormais se découper.
+export function canAttachToGroup(hasLines: boolean, lineId: number | null): boolean {
+  return !hasLines || lineId !== null;
 }

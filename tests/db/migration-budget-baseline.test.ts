@@ -12,7 +12,7 @@
 // Les deux moitiés de la preuve ne se touchaient jamais. Celle-ci sème les mêmes
 // groupes, lignes et transactions que budget-baseline.test.ts, mais dans les
 // ANCIENNES colonnes (groups.monthly_amount, group_lines.amount — comme une
-// vraie base avant reprise, puisque insertEnvelopeGroup/insertRecurringGroup/
+// vraie base avant reprise, puisque insertGroup/insertGroup/
 // insertLine n'écrivent jamais budget_amounts ni line_amounts), appelle la
 // vraie migrateSeedDatedAmounts(), puis calcule les budgets avec computeHistory
 // sur ce qui en ressort — comparés aux mêmes valeurs attendues que la fixture
@@ -23,7 +23,7 @@ import { expect, test } from "vitest";
 import { getDb } from "../../src/db/index";
 import { migrateSeedDatedAmounts } from "../../src/db/migrations";
 import { upsertAccount } from "../../src/db/repositories/accounts";
-import { insertEnvelopeGroup, insertRecurringGroup, insertLine, listGroups } from "../../src/db/repositories/groups";
+import { insertGroup, insertLine, listGroups } from "../../src/db/repositories/groups";
 import { listBudgetAmounts } from "../../src/db/repositories/budget-amounts";
 import { listLineAmounts } from "../../src/db/repositories/line-amounts";
 import { insertManualTransaction, listTransactions } from "../../src/db/repositories/transactions";
@@ -60,19 +60,19 @@ test("les budgets calculés par computeHistory sont égaux au centime avant/apr�
   // Semé dans les ANCIENNES colonnes seulement (monthly_amount / group_lines.amount),
   // comme une vraie base avant reprise : ces fonctions n'écrivent jamais
   // budget_amounts ni line_amounts (voir src/db/repositories/groups.ts).
-  const abo = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2000-01", null);
-  const directAssurance = insertLine(db, abo, "Direct Assurance voiture", 81.84, 5);
-  const soshInternet = insertLine(db, abo, "Sosh Internet", 30.99, 8);
-  insertLine(db, abo, "Sosh Mobile", 15.99, 8);
-  const spotify = insertLine(db, abo, "Spotify", 12.14, 12);
-  const icloud = insertLine(db, abo, "iCloud", 9.99, 15);
-  const fitnessPark = insertLine(db, abo, "Fitness Park", 19.99, 20);
-  const impots = insertRecurringGroup(db, "a1", "Impôts", "out", null, "2000-01", null);
-  const prelevement = insertLine(db, impots, "Prélèvement à la source", 49, 15);
-  const carburant = insertEnvelopeGroup(db, "a1", "Carburant voiture", "out", 85, null, "2000-01", null);
-  const activites = insertEnvelopeGroup(db, "a1", "Activités", "out", 250, null, "2000-01", null);
-  insertEnvelopeGroup(db, "a1", "Vêtement", "out", 0, null, "2000-01", null);
-  insertEnvelopeGroup(db, "a1", "Rémunération Principale", "in", 652.09, "principal", "2000-01", null);
+  const abo = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2000-01", null);
+  const directAssurance = insertLine(db, abo, "Direct Assurance voiture", 81.84);
+  const soshInternet = insertLine(db, abo, "Sosh Internet", 30.99);
+  insertLine(db, abo, "Sosh Mobile", 15.99);
+  const spotify = insertLine(db, abo, "Spotify", 12.14);
+  const icloud = insertLine(db, abo, "iCloud", 9.99);
+  const fitnessPark = insertLine(db, abo, "Fitness Park", 19.99);
+  const impots = insertGroup(db, "a1", "Impôts", "out", 0, null, "2000-01", null);
+  const prelevement = insertLine(db, impots, "Prélèvement à la source", 49);
+  const carburant = insertGroup(db, "a1", "Carburant voiture", "out", 85, null, "2000-01", null);
+  const activites = insertGroup(db, "a1", "Activités", "out", 250, null, "2000-01", null);
+  insertGroup(db, "a1", "Vêtement", "out", 0, null, "2000-01", null);
+  insertGroup(db, "a1", "Rémunération Principale", "in", 652.09, "principal", "2000-01", null);
 
   // Mêmes transactions que tests/lib/budget-baseline.test.ts.
   const txn = (id: string, date: string, amount: number, label: string, groupId: number, lineId: number | null) =>

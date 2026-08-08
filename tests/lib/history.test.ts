@@ -6,19 +6,19 @@ import { seedDated, mergeDated } from "./dated-fixtures";
 // Fixtures partagées : une enveloppe « Courses » avec un budget mensuel, un groupe
 // récurrent « Abonnements » fait de deux lignes, et une rémunération « Salaire ».
 const courses: Group = {
-  id: 1, accountId: "a1", name: "Courses", direction: "out", kind: "envelope",
+  id: 1, accountId: "a1", name: "Courses", direction: "out",
   monthlyAmount: 300, lines: [],
 };
 const abo: Group = {
-  id: 2, accountId: "a1", name: "Abonnements", direction: "out", kind: "recurring",
+  id: 2, accountId: "a1", name: "Abonnements", direction: "out",
   monthlyAmount: null,
   lines: [
-    { id: 11, name: "Spotify", amount: 10, day: 3 },
-    { id: 12, name: "Netflix", amount: 15, day: 8 },
+    { id: 11, name: "Spotify", amount: 10 },
+    { id: 12, name: "Netflix", amount: 15 },
   ],
 };
 const salaire: Group = {
-  id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "envelope",
+  id: 9, accountId: "a1", name: "Salaire", direction: "in",
   monthlyAmount: 2000, lines: [],
 };
 
@@ -53,13 +53,13 @@ describe("Montants affichés dans le tableau de l'historique", () => {
     expect(row.cells[1].depense).toBe(80); // juillet 50 + 30
   });
 
-  it("devrait budgéter une enveloppe par son montant mensuel, un récurrent par la somme de ses lignes, et afficher le reste", () => {
+  it("devrait budgéter une dépense plate par son montant, une dépense découpée par la somme de ses sous-postes, et afficher le reste", () => {
     const txns = [tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 })];
     const sections = hist([courses, abo], txns, ["2026-07"], "2026-07");
-    const env = sections.find((s) => s.kind === "envelope")!.rows[0];
-    const rec = sections.find((s) => s.kind === "recurring")!.rows[0];
-    expect(env.cells[0]).toEqual({ budgeted: 300, depense: 120, recu: 0, balance: 180 });
-    expect(rec.cells[0].budgeted).toBe(25); // 10 + 15
+    // Une seule section : les deux dépenses y voisinent, dans l'ordre reçu.
+    const [plate, decoupee] = sections.find((s) => s.kind === "expense")!.rows;
+    expect(plate.cells[0]).toEqual({ budgeted: 300, depense: 120, recu: 0, balance: 180 });
+    expect(decoupee.cells[0].budgeted).toBe(25); // 10 + 15
   });
 
   it("devrait ignorer les transactions exclues", () => {
@@ -79,7 +79,7 @@ describe("Montants affichés dans le tableau de l'historique", () => {
   });
 
   it("devrait compter une rémunération comme argent reçu, jamais comme une dépense", () => {
-    const income: Group = { id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "envelope", monthlyAmount: 2000, lines: [] };
+    const income: Group = { id: 9, accountId: "a1", name: "Salaire", direction: "in", monthlyAmount: 2000, lines: [] };
     const txns = [tx({ id: "1", date: "2026-07-01", amount: 2000, label: "VIR REMU", groupId: 9 })];
     const sections = hist([income], txns, ["2026-07"], "2026-07");
     expect(sections[0].rows[0].cells[0]).toEqual({ budgeted: 2000, depense: 0, recu: 2000, balance: 0 });
@@ -87,7 +87,7 @@ describe("Montants affichés dans le tableau de l'historique", () => {
 
   it("devrait laisser un reste à zéro pour une rémunération, car l'argent reçu n'est pas un budget", () => {
     const remu: Group = {
-      id: 21, accountId: "a1", name: "Rémunération", direction: "in", kind: "recurring",
+      id: 21, accountId: "a1", name: "Rémunération", direction: "in",
       monthlyAmount: null, lines: [],
     };
     const txns = [
@@ -100,19 +100,19 @@ describe("Montants affichés dans le tableau de l'historique", () => {
     const remuRow = income.rows[0];
     // La rémunération n'a pas de budget de dépense : son reste est nul, l'argent reçu n'y entre pas.
     expect(remuRow.cells[0].balance).toBe(0);
-    // Le bloc récurrent ne garde plus que la dépense (abo : budget 25 - dépensé 10 = 15).
-    const rec = sections.find((s) => s.kind === "recurring")!;
-    expect(rec.rows.every((r) => r.direction === "out")).toBe(true);
-    expect(rec.totals[0].balance).toBe(15);
+    // Le bloc des dépenses ne garde que ce qui sort (abo : budget 25 - dépensé 10 = 15).
+    const depenses = sections.find((s) => s.kind === "expense")!;
+    expect(depenses.rows.every((r) => r.direction === "out")).toBe(true);
+    expect(depenses.totals[0].balance).toBe(15);
   });
 
-  it("devrait afficher les rémunérations dans un bloc à part, en haut, séparé des récurrents et des enveloppes", () => {
+  it("devrait afficher les rémunérations dans un bloc à part, en haut, séparé des dépenses", () => {
     const remuRec: Group = {
-      id: 30, accountId: "a1", name: "Salaire", direction: "in", kind: "recurring",
+      id: 30, accountId: "a1", name: "Salaire", direction: "in",
       monthlyAmount: null, lines: [], incomeKind: "principal",
     };
     const remuEnv: Group = {
-      id: 31, accountId: "a1", name: "Prime", direction: "in", kind: "envelope",
+      id: 31, accountId: "a1", name: "Prime", direction: "in",
       monthlyAmount: null, lines: [], incomeKind: "supplementary",
     };
     const txns = [
@@ -124,11 +124,10 @@ describe("Montants affichés dans le tableau de l'historique", () => {
     // Bloc rémunérations en tête, la principale avant la supplémentaire.
     expect(sections[0].kind).toBe("income");
     expect(sections[0].rows.map((r) => r.name)).toEqual(["Salaire", "Prime"]);
-    // Le seul groupe récurrent était une rémunération : plus de bloc récurrent.
-    expect(sections.find((s) => s.kind === "recurring")).toBeUndefined();
-    // Le bloc enveloppe ne garde que la dépense.
-    const env = sections.find((s) => s.kind === "envelope")!;
-    expect(env.rows.map((r) => r.name)).toEqual(["Courses"]);
+    // Les deux groupes entrants sont partis dans le bloc des rémunérations : le bloc
+    // des dépenses ne garde que ce qui sort.
+    const depenses = sections.find((s) => s.kind === "expense")!;
+    expect(depenses.rows.map((r) => r.name)).toEqual(["Courses"]);
   });
 
   it("devrait laisser un reste à zéro pour les non catégorisés qui entrent, qui n'ont pas de budget", () => {
@@ -170,7 +169,7 @@ describe("Montants affichés dans le tableau de l'historique", () => {
   });
 
   it("devrait réunir tous les blocs dans les totaux du mois, dépenses comme rémunérations", () => {
-    const income: Group = { id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "recurring", monthlyAmount: null, lines: [{ id: 91, name: "Paie", amount: 2000, day: 1 }], incomeKind: "principal" };
+    const income: Group = { id: 9, accountId: "a1", name: "Salaire", direction: "in", monthlyAmount: null, lines: [{ id: 91, name: "Paie", amount: 2000 }], incomeKind: "principal" };
     const txns = [
       tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
       tx({ id: "2", date: "2026-07-01", amount: 2000, label: "VIR REMU", groupId: 9 }),
@@ -182,7 +181,7 @@ describe("Montants affichés dans le tableau de l'historique", () => {
 
   it("devrait ne compter que ce qui dépasse le budget chaque mois, en ignorant les groupes sous leur budget et les rémunérations", () => {
     const c2: Group = { ...courses, id: 3, name: "C2", monthlyAmount: 50 };
-    const income: Group = { id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "envelope", monthlyAmount: 2000, lines: [] };
+    const income: Group = { id: 9, accountId: "a1", name: "Salaire", direction: "in", monthlyAmount: 2000, lines: [] };
     const txns = [
       tx({ id: "1", date: "2026-07-10", amount: -450, label: "CARREFOUR", groupId: 1 }), // budget 300 -> dépassement 150
       tx({ id: "2", date: "2026-07-10", amount: -20, label: "LECLERC", groupId: 3 }), // budget 50 -> sous le budget, 0
@@ -194,8 +193,7 @@ describe("Montants affichés dans le tableau de l'historique", () => {
 
   it("devrait ne pas compter la rémunération principale comme reçue dans le futur, mais continuer d'afficher son montant attendu", () => {
     const principal: Group = {
-      id: 30, accountId: "a1", name: "Rémunération principale", direction: "in",
-      kind: "envelope", monthlyAmount: 2000, lines: [], incomeKind: "principal",
+      id: 30, accountId: "a1", name: "Rémunération principale", direction: "in", monthlyAmount: 2000, lines: [], incomeKind: "principal",
     };
     const sections = hist([principal], [], ["2026-07", "2026-08"], "2026-07");
     const row = sections.find((s) => s.kind === "income")!.rows[0];
@@ -206,8 +204,7 @@ describe("Montants affichés dans le tableau de l'historique", () => {
 
   it("devrait ne pas afficher la rémunération supplémentaire comme reçue dans un mois futur", () => {
     const supp: Group = {
-      id: 31, accountId: "a1", name: "Rémunération supplémentaire", direction: "in",
-      kind: "envelope", monthlyAmount: 500, lines: [], incomeKind: "supplementary",
+      id: 31, accountId: "a1", name: "Rémunération supplémentaire", direction: "in", monthlyAmount: 500, lines: [], incomeKind: "supplementary",
     };
     const sections = hist([supp], [], ["2026-07", "2026-08"], "2026-07");
     const row = sections.find((s) => s.kind === "income")!.rows[0];
@@ -218,12 +215,10 @@ describe("Montants affichés dans le tableau de l'historique", () => {
 
   it("devrait ne compter que la rémunération principale dans le total du budget des rémunérations, pas la supplémentaire", () => {
     const principal: Group = {
-      id: 40, accountId: "a1", name: "Rémunération principale", direction: "in",
-      kind: "envelope", monthlyAmount: 2000, lines: [], incomeKind: "principal",
+      id: 40, accountId: "a1", name: "Rémunération principale", direction: "in", monthlyAmount: 2000, lines: [], incomeKind: "principal",
     };
     const supplementaire: Group = {
-      id: 41, accountId: "a1", name: "Rémunération supplémentaire", direction: "in",
-      kind: "envelope", monthlyAmount: 500, lines: [], incomeKind: "supplementary",
+      id: 41, accountId: "a1", name: "Rémunération supplémentaire", direction: "in", monthlyAmount: 500, lines: [], incomeKind: "supplementary",
     };
     const sections = hist([principal, supplementaire], [], ["2026-07"], "2026-07");
     const income = sections.find((s) => s.kind === "income")!;
@@ -241,7 +236,7 @@ describe("Répartition des transactions sous les groupes", () => {
       tx({ id: "2", date: "2026-07-08", amount: -15, label: "NETFLIX.COM", groupId: 2, lineId: 12 }),
     ];
     const sections = hist([abo], txns, ["2026-07"], "2026-07");
-    const rec = sections.find((s) => s.kind === "recurring")!.rows[0];
+    const rec = sections.find((s) => s.kind === "expense")!.rows[0];
     const spotify = rec.subRows.find((s) => s.id === 11)!;
     const netflix = rec.subRows.find((s) => s.id === 12)!;
     expect(spotify.cells[0].depense).toBe(10);
@@ -253,7 +248,7 @@ describe("Répartition des transactions sous les groupes", () => {
   it("devrait ranger une transaction sous une ligne dès qu'on la lui assigne à la main, même sans mot-clé", () => {
     const txns = [tx({ id: "1", date: "2026-07-05", amount: -15, label: "PRLV DIVERS 4821", groupId: 2, lineId: 12 })];
     const sections = hist([abo], txns, ["2026-07"], "2026-07");
-    const netflix = sections.find((s) => s.kind === "recurring")!.rows[0].subRows.find((s) => s.id === 12)!;
+    const netflix = sections.find((s) => s.kind === "expense")!.rows[0].subRows.find((s) => s.id === 12)!;
     expect(netflix.txns.map((t) => t.id)).toEqual(["1"]);
     expect(netflix.cells[0].depense).toBe(15);
   });
@@ -269,15 +264,27 @@ describe("Répartition des transactions sous les groupes", () => {
   it("devrait laisser une transaction de récurrent sans ligne correspondante directement sous le groupe", () => {
     const txns = [tx({ id: "1", date: "2026-07-10", amount: -40, label: "ACHAT INCONNU", groupId: 2 })];
     const sections = hist([abo], txns, ["2026-07"], "2026-07");
-    const rec = sections.find((s) => s.kind === "recurring")!.rows[0];
+    const rec = sections.find((s) => s.kind === "expense")!.rows[0];
     expect(rec.txns.map((t) => t.id)).toEqual(["1"]);
     expect(rec.subRows.every((s) => s.txns.length === 0)).toBe(true);
+  });
+
+  // Une seule section pour toutes les dépenses. « Récurrents » et « Enveloppes »
+  // promettaient deux comportements et n'en donnaient qu'un : même budget mensuel,
+  // même règle de dépassement, même poids dans l'estimé. Ce qui les distinguait —
+  // avoir des sous-postes ou non — se lit ligne par ligne, pas section par section.
+  it("devrait réunir toutes les dépenses dans une seule section", () => {
+    const sections = hist([courses, abo], [], ["2026-07"], "2026-07");
+    expect(sections.map((s) => s.kind)).toEqual(["expense"]);
+    // L'ordre reçu est conservé : c'est celui du nom, que listGroups a déjà trié.
+    expect(sections[0].rows.map((r) => r.name)).toEqual(["Courses", "Abonnements"]);
+    expect(sections[0].totals[0].budgeted).toBe(325); // 300 + (10 + 15)
   });
 
   it("devrait masquer les sections vides", () => {
     const txns = [tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 })];
     const sections = hist([courses], txns, ["2026-07"], "2026-07");
-    expect(sections.map((s) => s.kind)).toEqual(["envelope"]);
+    expect(sections.map((s) => s.kind)).toEqual(["expense"]);
   });
 
   it("devrait séparer les transactions sans groupe en deux blocs : l'argent qui entre et l'argent qui sort, avec une Balance « out » qui inclut les reçus croisés du bloc « in »", () => {
@@ -303,7 +310,7 @@ describe("Répartition des transactions sous les groupes", () => {
     // Ordre : l'argent qui entre juste après les rémunérations (ici : en tête), l'argent qui sort en dernier.
     expect(sections.map((s) => (s.kind === "uncategorized" ? `uncat-${s.uncatDirection}` : s.kind))).toEqual([
       "uncat-in",
-      "envelope",
+      "expense",
       "uncat-out",
     ]);
   });
@@ -430,8 +437,8 @@ describe("La ligne de solde courant", () => {
 describe("Les soldes prévisionnels", () => {
   it("devrait calculer le solde prévu comme départ + rémunérations − budget, avec une seconde ligne qui enlève aussi les dépassements", () => {
     // Rémunération principale 2000 (in), une dépense budget 300 dont on a dépensé 350 ce mois (dépassement 50).
-    const principal: Group = { id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", kind: "envelope", monthlyAmount: 2000, lines: [], incomeKind: "principal" };
-    const courses2: Group = { id: 2, accountId: "a1", name: "Courses", direction: "out", kind: "envelope", monthlyAmount: 300, lines: [], incomeKind: null };
+    const principal: Group = { id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", monthlyAmount: 2000, lines: [], incomeKind: "principal" };
+    const courses2: Group = { id: 2, accountId: "a1", name: "Courses", direction: "out", monthlyAmount: 300, lines: [], incomeKind: null };
     const txns = [
       tx({ id: "s", date: "2026-07-01", amount: 2000, label: "REMU", groupId: 1 }),
       tx({ id: "c", date: "2026-07-10", amount: -350, label: "CARREFOUR", groupId: 2 }),
@@ -511,7 +518,7 @@ describe("Les soldes prévisionnels", () => {
   });
 
   it("devrait compter la rémunération supplémentaire dans le mois en cours, mais ne jamais la projeter dans le futur", () => {
-    const supp: Group = { id: 3, accountId: "a1", name: "Rémunération supplémentaire", direction: "in", kind: "envelope", monthlyAmount: 500, lines: [], incomeKind: "supplementary" };
+    const supp: Group = { id: 3, accountId: "a1", name: "Rémunération supplémentaire", direction: "in", monthlyAmount: 500, lines: [], incomeKind: "supplementary" };
     const months = ["2026-07", "2026-08"];
     const sections = hist([supp], [], months, "2026-07");
     const solde = computeSolde(sections, months, "2026-07", 1000);
@@ -522,8 +529,8 @@ describe("Les soldes prévisionnels", () => {
   });
 
   it("devrait ne rien reporter sur les mois suivants : le « si dépassement » futur rejoint le « prévu »", () => {
-    const principal: Group = { id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", kind: "envelope", monthlyAmount: 2000, lines: [], incomeKind: "principal" };
-    const courses2: Group = { id: 2, accountId: "a1", name: "Courses", direction: "out", kind: "envelope", monthlyAmount: 300, lines: [], incomeKind: null };
+    const principal: Group = { id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", monthlyAmount: 2000, lines: [], incomeKind: "principal" };
+    const courses2: Group = { id: 2, accountId: "a1", name: "Courses", direction: "out", monthlyAmount: 300, lines: [], incomeKind: null };
     const txns = [
       tx({ id: "s", date: "2026-07-01", amount: 2000, label: "REMU", groupId: 1 }),
       tx({ id: "c", date: "2026-07-10", amount: -350, label: "CARREFOUR", groupId: 2 }), // dépassement courant : 50
@@ -544,9 +551,9 @@ describe("Les soldes prévisionnels", () => {
   });
 
   it("devrait cumuler le « si dépassement » d'un seul tenant : une enveloppe hérite des dépassements des sections du dessus", () => {
-    const principal: Group = { id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", kind: "envelope", monthlyAmount: 2000, lines: [], incomeKind: "principal" };
-    const loyer: Group = { id: 2, accountId: "a1", name: "Loyer", direction: "out", kind: "recurring", monthlyAmount: null, lines: [{ id: 21, name: "Loyer", amount: 100, day: 5 }], incomeKind: null };
-    const courses2: Group = { id: 3, accountId: "a1", name: "Courses", direction: "out", kind: "envelope", monthlyAmount: 100, lines: [], incomeKind: null };
+    const principal: Group = { id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", monthlyAmount: 2000, lines: [], incomeKind: "principal" };
+    const loyer: Group = { id: 2, accountId: "a1", name: "Loyer", direction: "out", monthlyAmount: null, lines: [{ id: 21, name: "Loyer", amount: 100 }], incomeKind: null };
+    const courses2: Group = { id: 3, accountId: "a1", name: "Courses", direction: "out", monthlyAmount: 100, lines: [], incomeKind: null };
     const txns = [
       tx({ id: "s", date: "2026-07-01", amount: 2000, label: "REMU", groupId: 1 }),
       tx({ id: "l", date: "2026-07-05", amount: -150, label: "LOYER", groupId: 2 }), // budget 100 -> dépassement 50 (section Récurrents)
@@ -691,11 +698,11 @@ describe("Rappels d'argent dépensé au-delà du budget", () => {
     ];
     const r = over([courses], txns, "2026-07");
     expect(r.byMonth["2026-06"]).toEqual([
-      { groupId: 1, lineId: null, name: "Courses", month: "2026-06", amount: 50, kind: "envelope" },
-      { groupId: 0, lineId: null, name: "Non catégorisés", month: "2026-06", amount: 80, kind: "envelope" },
+      { groupId: 1, lineId: null, name: "Courses", month: "2026-06", amount: 50 },
+      { groupId: 0, lineId: null, name: "Non catégorisés", month: "2026-06", amount: 80 },
     ]);
     expect(r.byMonth["2026-07"]).toEqual([
-      { groupId: 1, lineId: null, name: "Courses", month: "2026-07", amount: 80, kind: "envelope" },
+      { groupId: 1, lineId: null, name: "Courses", month: "2026-07", amount: 80 },
     ]);
   });
 
@@ -710,8 +717,8 @@ describe("Rappels d'argent dépensé au-delà du budget", () => {
     // même mois. L'enveloppe remonte telle quelle ; le récurrent remonte par sa LIGNE,
     // qui est ce qui porte un budget et donc ce qui peut déborder.
     const loyer: Group = {
-      id: 2, accountId: "a1", name: "Loyer", direction: "out", kind: "recurring",
-      monthlyAmount: null, lines: [{ id: 21, name: "Loyer", amount: 100, day: 5 }], incomeKind: null,
+      id: 2, accountId: "a1", name: "Loyer", direction: "out",
+      monthlyAmount: null, lines: [{ id: 21, name: "Loyer", amount: 100 }], incomeKind: null,
     };
     const txns = [
       tx({ id: "1", date: "2026-07-10", amount: -350, label: "CARREFOUR", groupId: 1 }), // enveloppe : 50
@@ -719,8 +726,8 @@ describe("Rappels d'argent dépensé au-delà du budget", () => {
     ];
     const r = over([courses, loyer], txns, "2026-07");
     expect(r.byMonth["2026-07"]).toEqual([
-      { groupId: 1, lineId: null, name: "Courses", month: "2026-07", amount: 50, kind: "envelope" },
-      { groupId: 2, lineId: 21, name: "Loyer", month: "2026-07", amount: 30, kind: "recurring" },
+      { groupId: 1, lineId: null, name: "Courses", month: "2026-07", amount: 50 },
+      { groupId: 2, lineId: 21, name: "Loyer", month: "2026-07", amount: 30 },
     ]);
   });
 
@@ -744,10 +751,10 @@ describe("Rappels d'argent dépensé au-delà du budget", () => {
 // c'est donc chacune d'elles qui déborde ou non. Le dépassement se constate au niveau
 // de la ligne : Sosh Internet, pas Abonnements. Le groupe n'est qu'une somme.
 describe("Le dépassement d'un récurrent se constate ligne par ligne", () => {
-  const sosh = { id: 31, name: "Sosh Internet", amount: 30, day: 12 };
-  const assurance = { id: 32, name: "Direct Assurance", amount: 80, day: 5 };
+  const sosh = { id: 31, name: "Sosh Internet", amount: 30 };
+  const assurance = { id: 32, name: "Direct Assurance", amount: 80 };
   const abonnements: Group = {
-    id: 3, accountId: "a1", name: "Abonnements", direction: "out", kind: "recurring",
+    id: 3, accountId: "a1", name: "Abonnements", direction: "out",
     monthlyAmount: null, lines: [sosh, assurance], startMonth: "2026-01", endMonth: null, incomeKind: null,
   };
   const datedLines = toDatedLineAmounts([
@@ -762,7 +769,7 @@ describe("Le dépassement d'un récurrent se constate ligne par ligne", () => {
       tx({ id: "b", date: "2026-07-05", amount: -80, label: "ASSURANCE", groupId: 3, lineId: 32 }),
     ];
     expect(over(txns).byMonth["2026-07"]).toEqual([
-      { groupId: 3, lineId: 31, name: "Sosh Internet", month: "2026-07", amount: 15, kind: "recurring" },
+      { groupId: 3, lineId: 31, name: "Sosh Internet", month: "2026-07", amount: 15 },
     ]);
   });
 
@@ -782,8 +789,8 @@ describe("Le dépassement d'un récurrent se constate ligne par ligne", () => {
       tx({ id: "b", date: "2026-07-05", amount: -95, label: "ASSURANCE", groupId: 3, lineId: 32 }),
     ];
     expect(over(txns).byMonth["2026-07"]).toEqual([
-      { groupId: 3, lineId: 32, name: "Direct Assurance", month: "2026-07", amount: 15, kind: "recurring" },
-      { groupId: 3, lineId: 31, name: "Sosh Internet", month: "2026-07", amount: 15, kind: "recurring" },
+      { groupId: 3, lineId: 32, name: "Direct Assurance", month: "2026-07", amount: 15 },
+      { groupId: 3, lineId: 31, name: "Sosh Internet", month: "2026-07", amount: 15 },
     ]);
   });
 
@@ -791,7 +798,7 @@ describe("Le dépassement d'un récurrent se constate ligne par ligne", () => {
     const txns = [tx({ id: "c", date: "2026-07-10", amount: -350, label: "CARREFOUR", groupId: 1 })];
     const r = computeOverspends([courses], txns, "2026-07", seedDated([courses]).dated, {});
     expect(r.byMonth["2026-07"]).toEqual([
-      { groupId: 1, lineId: null, name: "Courses", month: "2026-07", amount: 50, kind: "envelope" },
+      { groupId: 1, lineId: null, name: "Courses", month: "2026-07", amount: 50 },
     ]);
   });
 });
@@ -804,7 +811,7 @@ describe("Le dépassement d'un récurrent se constate ligne par ligne", () => {
 // « Vu » — acquitter retire le dépassement de la liste, et l'étiquette suit.
 describe("Cases qui portent l'étiquette dépassement", () => {
   const item = (groupId: number, lineId: number | null, month: string): Overspend => ({
-    groupId, lineId, name: "x", month, amount: 10, kind: lineId === null ? "envelope" : "recurring",
+    groupId, lineId, name: "x", month, amount: 10,
   });
 
   it("marque la case de ce qui déborde, au bon mois", () => {
@@ -827,7 +834,7 @@ describe("Cases qui portent l'étiquette dépassement", () => {
 
 describe("Ce qu'un groupe signale à trancher chez ses lignes", () => {
   const item = (groupId: number, lineId: number | null, month: string): Overspend => ({
-    groupId, lineId, name: "x", month, amount: 10, kind: lineId === null ? "envelope" : "recurring",
+    groupId, lineId, name: "x", month, amount: 10,
   });
 
   it("marque le groupe au mois où une de ses lignes attend une décision", () => {
@@ -877,12 +884,12 @@ describe("Durée de vie d'une ligne de récurrent", () => {
     const aboPonctuel: Group = {
       ...abo,
       lines: [
-        { id: 11, name: "Spotify", amount: 10, day: 3 },
-        { id: 12, name: "Assurance vacances", amount: 15, day: 8, startMonth: "2026-07", endMonth: "2026-07" },
+        { id: 11, name: "Spotify", amount: 10 },
+        { id: 12, name: "Assurance vacances", amount: 15, startMonth: "2026-07", endMonth: "2026-07" },
       ],
     };
     const sections = hist([aboPonctuel], [], ["2026-06", "2026-07", "2026-08"], "2026-07");
-    const row = sections.find((s) => s.kind === "recurring")!.rows[0];
+    const row = sections.find((s) => s.kind === "expense")!.rows[0];
     const ponctuelle = row.subRows.find((s) => s.id === 12)!;
     expect(ponctuelle.cells.map((c) => c.budgeted)).toEqual([0, 15, 0]);
     expect(ponctuelle.aliveMonths).toEqual([false, true, false]);
@@ -895,12 +902,12 @@ describe("Durée de vie d'une ligne de récurrent", () => {
     const aboFini: Group = {
       ...abo,
       lines: [
-        { id: 11, name: "Spotify", amount: 10, day: 3 },
-        { id: 12, name: "Netflix", amount: 15, day: 8, startMonth: null, endMonth: "2026-07" },
+        { id: 11, name: "Spotify", amount: 10 },
+        { id: 12, name: "Netflix", amount: 15, startMonth: null, endMonth: "2026-07" },
       ],
     };
     const sections = hist([aboFini], [], ["2026-06", "2026-07", "2026-08"], "2026-07");
-    const row = sections.find((s) => s.kind === "recurring")!.rows[0];
+    const row = sections.find((s) => s.kind === "expense")!.rows[0];
     expect(row.cells.map((c) => c.budgeted)).toEqual([25, 25, 10]);
   });
 });
@@ -1001,11 +1008,11 @@ describe("Durée de vie d'un groupe", () => {
     // Juin est ici le mois courant : c'est le seul qui se tranche encore.
     // Sans provision : dépassement = 260.
     const sans = over([], txns, "2026-06");
-    expect(sans.byMonth["2026-06"]).toEqual([{ groupId: 0, lineId: null, name: "Non catégorisés", month: "2026-06", amount: 260, kind: "envelope" }]);
+    expect(sans.byMonth["2026-06"]).toEqual([{ groupId: 0, lineId: null, name: "Non catégorisés", month: "2026-06", amount: 260 }]);
     // Provision de 100 en vigueur en juin (budget daté du groupe 0) : dépassement = 160.
     const dated = { 0: [{ effectiveMonth: "2026-06", amount: 100 }] };
     const avec = over([], txns, "2026-06", dated);
-    expect(avec.byMonth["2026-06"]).toEqual([{ groupId: 0, lineId: null, name: "Non catégorisés", month: "2026-06", amount: 160, kind: "envelope" }]);
+    expect(avec.byMonth["2026-06"]).toEqual([{ groupId: 0, lineId: null, name: "Non catégorisés", month: "2026-06", amount: 160 }]);
   });
 });
 
@@ -1015,7 +1022,7 @@ describe("Durée de vie d'un groupe", () => {
 // détail n'additionnerait plus le chiffre de la case qu'il prétend expliquer.
 describe("Ce qu'une ligne apporte au plan du mois", () => {
   const row = (p: Partial<HistoryRow>): HistoryRow => ({
-    id: 1, name: "L", kind: "envelope", direction: "out", incomeKind: null,
+    id: 1, name: "L", direction: "out", incomeKind: null,
     cells: [{ budgeted: 100, depense: 0, recu: 0, balance: 100 }],
     aliveMonths: [true], subRows: [], txns: [], ...p,
   });
@@ -1124,14 +1131,14 @@ describe("Le débordement des dépenses sans groupe", () => {
 });
 
 describe("montant en vigueur", () => {
-  const spotify = { id: 11, name: "Spotify", amount: 10, day: 3 };
-  const netflix = { id: 12, name: "Netflix", amount: 15, day: 8 };
+  const spotify = { id: 11, name: "Spotify", amount: 10 };
+  const netflix = { id: 12, name: "Netflix", amount: 15 };
   const recurrent: Group = {
-    id: 2, accountId: "a1", name: "Abonnements", direction: "out", kind: "recurring",
+    id: 2, accountId: "a1", name: "Abonnements", direction: "out",
     monthlyAmount: null, lines: [spotify, netflix], startMonth: "2026-01", endMonth: null,
   };
   const enveloppe: Group = {
-    id: 1, accountId: "a1", name: "Courses", direction: "out", kind: "envelope",
+    id: 1, accountId: "a1", name: "Courses", direction: "out",
     monthlyAmount: 300, lines: [], startMonth: "2026-01", endMonth: null,
   };
 
@@ -1222,7 +1229,7 @@ describe("montant en vigueur", () => {
     // remonte pas.
     const enJuillet = computeOverspends([recurrent], txns, "2026-07", {}, datedLines);
     expect(enJuillet.byMonth["2026-07"]).toEqual([
-      { groupId: 2, lineId: 12, name: "Netflix", month: "2026-07", amount: 5, kind: "recurring" },
+      { groupId: 2, lineId: 12, name: "Netflix", month: "2026-07", amount: 5 },
     ]);
     // Vu depuis août, la ligne relevée a absorbé la dépense : plus aucun dépassement en
     // août. Celui de juillet, lui, a bien eu lieu et reste signalé — c'est un fait, pas
@@ -1238,13 +1245,13 @@ describe("montant en vigueur", () => {
 // mois a le sien, et c'est bien un budget PAR MOIS qu'il faut transmettre.
 describe("budgets par mois", () => {
   const courses: Group = {
-    id: 1, accountId: "a1", name: "Courses", direction: "out", kind: "envelope",
+    id: 1, accountId: "a1", name: "Courses", direction: "out",
     monthlyAmount: null, lines: [], startMonth: "2026-01", endMonth: null,
   };
   const abo: Group = {
-    id: 2, accountId: "a1", name: "Abonnements", direction: "out", kind: "recurring",
+    id: 2, accountId: "a1", name: "Abonnements", direction: "out",
     monthlyAmount: null, startMonth: "2026-01", endMonth: null,
-    lines: [{ id: 11, name: "Spotify", amount: 10, day: 3 }],
+    lines: [{ id: 11, name: "Spotify", amount: 10 }],
   };
   // Budget relevé de 300 à 500 en juin : trancher un dépassement de mars doit
   // proposer 300, pas 500.

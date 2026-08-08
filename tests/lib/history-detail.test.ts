@@ -1,20 +1,6 @@
 import { expect, describe, it } from "vitest";
 import type { HistoryRow, HistorySection, HistoryTxn, MonthCell, SoldeColumn } from "../../src/lib/history";
-import {
-  netCol,
-  colOf,
-  groupNode,
-  sectionNode,
-  negateNode,
-  txnChildren,
-  budgetNodes,
-  labelOfSection,
-  sectionRowKey,
-  soldeActuelDetail,
-  budgetEditOfGroup,
-  budgetEditOfLine,
-  detailKey,
-} from "../../src/lib/history-detail";
+import { netCol, colOf, groupNode, sectionNode, negateNode, txnChildren, budgetNodes, labelOfSection, sectionRowKey, soldeActuelDetail, budgetEditOfGroup, budgetEditOfLine, detailKey } from "../../src/lib/history-detail";
 import type { DetailNode } from "../../src/lib/history-explain";
 
 function cell(p: Partial<MonthCell> = {}): MonthCell {
@@ -29,7 +15,6 @@ function txn(id: string, date: string, amount: number, label = "ACHAT"): History
 const courses: HistoryRow = {
   id: 1,
   name: "Courses",
-  kind: "envelope",
   direction: "out",
   incomeKind: null,
   cells: [cell({ budgeted: 300, depense: 0, balance: 300 }), cell({ budgeted: 300, depense: 350, balance: -50 })],
@@ -42,7 +27,6 @@ const courses: HistoryRow = {
 const salaire: HistoryRow = {
   id: 9,
   name: "Salaire",
-  kind: "envelope",
   direction: "in",
   incomeKind: "principal",
   cells: [cell({ budgeted: 2000, recu: 2000 }), cell({ budgeted: 2000, recu: 0 })],
@@ -52,7 +36,7 @@ const salaire: HistoryRow = {
 };
 
 const envelopeSec: HistorySection = {
-  kind: "envelope",
+  kind: "expense",
   rows: [courses],
   totals: [cell({ budgeted: 300, balance: 300 }), cell({ budgeted: 300, depense: 350, balance: -50 })],
 };
@@ -146,8 +130,7 @@ describe("Un groupe vu comme une ligne du calcul affiché dans le panneau", () =
 describe("Une section vue comme une ligne du calcul", () => {
   it("devrait nommer chaque section comme le tableau la nomme", () => {
     expect(labelOfSection("income")).toBe("Rémunérations");
-    expect(labelOfSection("recurring")).toBe("Récurrents");
-    expect(labelOfSection("envelope")).toBe("Enveloppes");
+    expect(labelOfSection("expense")).toBe("Dépenses");
     expect(labelOfSection("uncategorized")).toBe("Non catégorisés");
   });
 
@@ -223,7 +206,6 @@ describe("Les transactions et les postes d'une ligne", () => {
       ...courses,
       id: 2,
       name: "Loyer",
-      kind: "recurring",
       subRows: [
         { id: 21, name: "Loyer", cells: [cell({ budgeted: 800 }), cell({ budgeted: 800 })], aliveMonths: [true, true], txns: [] },
         { id: 22, name: "Assurance", cells: [cell(), cell()], aliveMonths: [true, true], txns: [] },
@@ -252,7 +234,7 @@ describe("Le détail du Solde actuel", () => {
     expect(d.nodes.map((n) => n.label)).toEqual([
       "Argent de départ",
       "Rémunérations",
-      "Enveloppes",
+      "Dépenses",
       "Non catégorisés",
     ]);
     expect(d.nodes[0].amount).toBe(1500);
@@ -313,7 +295,7 @@ describe("Ce qu'une case « Budget dép. » laisse modifier", () => {
   const courses = {
     id: 7,
     name: "Courses",
-    kind: "envelope" as const,
+    lines: [] as { id: number }[],
     changes: [
       { month: "2026-01", amount: 300, isStart: true, scope: "ongoing" as const },
       { month: "2026-06", amount: 350, isStart: false, scope: "ongoing" as const },
@@ -342,7 +324,7 @@ describe("Ce qu'une case « Budget dép. » laisse modifier", () => {
   // Un récurrent n'a pas de montant à lui : son budget est la somme de ses lignes.
   // Il n'y a rien à écrire au niveau du groupe, donc rien à modifier depuis sa case.
   it("ne laisse rien modifier sur la case d'un groupe récurrent", () => {
-    expect(budgetEditOfGroup({ ...courses, kind: "recurring" }, "2026-07", "2026-07")).toBeNull();
+    expect(budgetEditOfGroup({ ...courses, lines: [{ id: 1 }] }, "2026-07", "2026-07")).toBeNull();
   });
 
   // Un mois révolu s'édite comme les autres : on y corrige un budget après coup, la
@@ -413,7 +395,7 @@ describe("L'identité d'un détail, qui décide quand le panneau repart de zéro
   it("devrait donner son identité propre à la gestion d'un groupe", () => {
     const k = detailKey({
       title: "Courses", nodes: [], result: 0,
-      groupManage: { groupId: 3, name: "Courses", kind: "envelope", month: "2026-07", stripMin: "2026-01", stripMax: "2027-01", changes: [], lines: [] },
+      groupManage: { groupId: 3, name: "Courses", month: "2026-07", stripMin: "2026-01", stripMax: "2027-01", changes: [], lines: [] },
     });
     expect(k).toContain("3");
     expect(k).toContain("2026-07");
@@ -425,11 +407,11 @@ describe("L'identité d'un détail, qui décide quand le panneau repart de zéro
   it("devrait donner son identité propre à la gestion d'une ligne, distincte du groupe", () => {
     const ligne = detailKey({
       title: "Sosh Internet", nodes: [], result: 0,
-      lineManage: { lineId: 3, name: "Sosh Internet", day: 12, month: "2026-07", stripMin: "2026-01", stripMax: "2027-01", changes: [] },
+      lineManage: { lineId: 3, name: "Sosh Internet", month: "2026-07", stripMin: "2026-01", stripMax: "2027-01", changes: [] },
     });
     const groupe = detailKey({
       title: "Abonnements", nodes: [], result: 0,
-      groupManage: { groupId: 3, name: "Abonnements", kind: "recurring", month: "2026-07", stripMin: "2026-01", stripMax: "2027-01", changes: [], lines: [] },
+      groupManage: { groupId: 3, name: "Abonnements", month: "2026-07", stripMin: "2026-01", stripMax: "2027-01", changes: [], lines: [] },
     });
     expect(ligne).toBe("line:3");
     expect(ligne).not.toBe(groupe);

@@ -8,19 +8,21 @@ import { PeriodFields } from "@/components/period-fields";
 import { clampMonth } from "@/lib/history";
 import { draftMode, type PeriodDraft } from "@/lib/group-period";
 
-// Formulaire de création inline d'un groupe (enveloppe ou récurrent), monté
-// juste sous le titre de section quand l'utilisateur clique le bouton « + ».
-// Toujours en dépense : direction et incomeKind sont fixés côté server action.
+// Formulaire de création inline d'une dépense, monté juste sous le titre de section
+// quand l'utilisateur clique le bouton « + ». Toujours en dépense : direction et
+// incomeKind sont fixés côté server action.
+//
+// Une dépense naît plate, avec son montant à elle. Elle se découpe ensuite en
+// sous-postes si on veut, depuis son panneau — et c'est alors leur somme qui fait son
+// budget. Rien à choisir ici : le découpage n'est pas une nature, c'est une suite.
 export function NewGroupInline({
   accountId,
-  kind,
   stripMin,
   stripMax,
   defaultMonth,
   onDone,
 }: {
   accountId: string;
-  kind: "envelope" | "recurring";
   stripMin: string;
   stripMax: string;
   defaultMonth: string;
@@ -37,9 +39,8 @@ export function NewGroupInline({
     setPending(true);
     await createGroup({
       accountId,
-      kind,
       name: String(formData.get("name") ?? ""),
-      amount: kind === "envelope" ? Number(formData.get("amount") ?? 0) : null,
+      amount: Number(formData.get("amount") ?? 0),
       startMonth: draft.start,
       // Sans mois de fin, la durée vaut pour le seul mois de départ : c'est le mode
       // qui le dit (single), le mois de fin envoyé n'est là que pour une plage.
@@ -54,14 +55,12 @@ export function NewGroupInline({
     <form action={submit} className="flex flex-wrap items-end gap-2 py-2 pl-6">
       <div className="flex flex-col gap-1">
         <Label className="font-normal">Nom</Label>
-        <Input name="name" required className="max-w-40" placeholder={kind === "envelope" ? "Ex: Courses" : "Ex: Abonnements"} />
+        <Input name="name" required className="max-w-40" placeholder="Ex: Courses" />
       </div>
-      {kind === "envelope" && (
-        <div className="flex flex-col gap-1">
-          <Label className="font-normal">Montant €</Label>
-          <Input type="number" name="amount" step="0.01" min="0" className="max-w-28" placeholder="0.00" />
-        </div>
-      )}
+      <div className="flex flex-col gap-1">
+        <Label className="font-normal">Montant €</Label>
+        <Input type="number" name="amount" step="0.01" min="0" className="max-w-28" placeholder="0.00" />
+      </div>
       <PeriodFields draft={draft} onChange={setDraft} stripMin={stripMin} stripMax={stripMax} />
       <Button type="submit" size="sm" variant="secondary" disabled={pending}>Ajouter</Button>
       <Button type="button" size="sm" variant="ghost" onClick={onDone}>Annuler</Button>

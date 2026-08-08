@@ -119,9 +119,9 @@ function DetailRow({ row, selected, onToggle, onSelect }: {
 // sa suppression. Aucun montant : il est daté et se fixe depuis la case
 // « Budget dép. » de la ligne, au mois de la colonne — exactement comme pour
 // une enveloppe, et pour la même raison (voir BudgetEditBlock).
-// Plus de jour du mois non plus : il ne pilotait plus rien d'affiché, et un champ
-// qu'on remplit sans effet coûte plus qu'il ne rapporte. La valeur déjà en base
-// reste intacte, on la repasse telle quelle au renommage.
+// Plus de jour du mois non plus : il ne pilotait aucun calcul, et il n'a plus de sens
+// maintenant que n'importe quelle dépense peut avoir des sous-postes — « Boulangerie,
+// le combien ? ». La colonne a été retirée de la base (migrateDropLineDay).
 function LineManageBlock({ info, onClose }: { info: LineManageInfo; onClose: () => void }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -162,14 +162,14 @@ function LineManageBlock({ info, onClose }: { info: LineManageInfo; onClose: () 
               size="sm"
               variant="secondary"
               disabled={busy || !name.trim() || name.trim() === info.name}
-              onClick={() => run(() => editGroupLine(info.lineId, name.trim(), info.day))}
+              onClick={() => run(() => editGroupLine(info.lineId, name.trim()))}
             >
               Enregistrer
             </Button>
           </div>
         </div>
         {/* Sa durée de vie, comme pour un groupe : c'est ici qu'on résilie un
-            abonnement sans emporter le récurrent qui le porte, ni son passé. */}
+            abonnement sans emporter la dépense qui le porte, ni son passé. */}
         <PeriodEditBlock
           current={periode}
           month={info.month}
@@ -515,7 +515,7 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
           stripMin={info.stripMin}
           stripMax={info.stripMax}
           changes={info.changes}
-          askAmount={info.kind === "envelope"}
+          askAmount={info.lines.length === 0}
           impactOf={(s, e) => groupPeriodImpact(info.groupId, s, e)}
           onSave={async (s, e, a) => {
             await run(() => setGroupPeriod(info.groupId, s, e, a));
@@ -523,65 +523,64 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
           }}
         />
 
-        {/* Ajout d'une ligne (récurrent). Les lignes existantes ne se modifient plus
-            ici : chacune a son propre crayon dans le tableau, à côté de son nom, qui
-            ouvre son panneau (LineManageBlock). Les renommer d'ici obligeait à les
-            chercher toutes dans une liste, alors qu'on les a sous les yeux. */}
-        {info.kind === "recurring" && (
-          <div className="flex flex-col gap-3">
-            <Label className="font-normal">Ajouter une ligne</Label>
-            {lines.length === 0 && <p className="text-muted-foreground text-sm">Aucune ligne pour l&apos;instant.</p>}
-            <div className="mt-1 flex flex-col gap-3 border-t pt-3">
-              <div className="flex items-end gap-2">
-                <div className="flex min-w-0 flex-1 flex-col gap-1">
-                  <Label className="text-muted-foreground text-xs font-normal">Nom</Label>
-                  <Input value={newName} onChange={(e) => setNewName(e.target.value)} className="h-8" placeholder="Ex: Spotify" />
-                </div>
-                {/* Montant de départ de la ligne, seul montant qui subsiste dans ce
-                    panneau : il ne montre rien d'existant, il en pose un. Il prend effet
-                    au mois de départ choisi juste en dessous, et se modifie ensuite
-                    depuis la case de la ligne, mois par mois. */}
-                <div className="flex w-20 flex-col gap-1">
-                  <Label className="text-muted-foreground text-xs font-normal">Montant de départ</Label>
-                  <Input type="number" step="0.01" min="0" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} className="h-8 text-right tabular-nums" placeholder="0.00" />
-                </div>
+        {/* Découpage en sous-postes, ouvert à n'importe quelle dépense : c'est une
+            suite possible, pas une nature qu'on choisirait à la création. Dès qu'il y
+            en a un, le budget de la dépense devient leur somme et sa case passe en
+            lecture seule.
+            Les sous-postes existants ne se modifient plus ici : chacun a son propre
+            crayon dans le tableau, à côté de son nom, qui ouvre son panneau
+            (LineManageBlock). Les renommer d'ici obligeait à les chercher tous dans
+            une liste, alors qu'on les a sous les yeux. */}
+        <div className="flex flex-col gap-3">
+          <Label className="font-normal">Ajouter un sous-poste</Label>
+          {lines.length === 0 && <p className="text-muted-foreground text-sm">Aucun sous-poste pour l&apos;instant.</p>}
+          <div className="mt-1 flex flex-col gap-3 border-t pt-3">
+            <div className="flex items-end gap-2">
+              <div className="flex min-w-0 flex-1 flex-col gap-1">
+                <Label className="text-muted-foreground text-xs font-normal">Nom</Label>
+                <Input value={newName} onChange={(e) => setNewName(e.target.value)} className="h-8" placeholder="Ex: Spotify" />
               </div>
-              {/* Durée de la ligne : la même question que pour un groupe, dans les
-                  mêmes mots. Une ligne a sa vie propre — un abonnement se résilie sans
-                  emporter le récurrent qui le porte. */}
-              <PeriodFields draft={draft} onChange={setDraft} stripMin={info.stripMin} stripMax={info.stripMax} compact />
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                className="self-start"
-                disabled={busy || !newName.trim()}
-                onClick={() =>
-                  run(async () => {
-                    const n = newName.trim();
-                    const a = parseFloat(newAmount) || 0;
-                    // Le jour ne se demande plus (il ne pilotait rien d'affiché) : la
-                    // colonne existe toujours en base, on y pose 1 sans le dire.
-                    const d = 1;
-                    const id = await addGroupLine(
-                      info.groupId, n, a, d, draft.start, draftMode(draft), draft.end ?? draft.start,
-                    );
-                    // On n'ajoute la ligne optimiste qu'avec le vrai id en base : sinon
-                    // une suppression/édition immédiate (sans refermer le panneau)
-                    // viserait un id fictif et laisserait une ligne fantôme en base.
-                    if (id > 0) {
-                      setLines((cur) => [...cur, { id, name: n, day: d }]);
-                    }
-                    setNewName("");
-                    setNewAmount("");
-                  })
-                }
-              >
-                Ajouter
-              </Button>
+              {/* Montant de départ de la ligne, seul montant qui subsiste dans ce
+                  panneau : il ne montre rien d'existant, il en pose un. Il prend effet
+                  au mois de départ choisi juste en dessous, et se modifie ensuite
+                  depuis la case de la ligne, mois par mois. */}
+              <div className="flex w-20 flex-col gap-1">
+                <Label className="text-muted-foreground text-xs font-normal">Montant de départ</Label>
+                <Input type="number" step="0.01" min="0" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} className="h-8 text-right tabular-nums" placeholder="0.00" />
+              </div>
             </div>
+            {/* Durée de la ligne : la même question que pour un groupe, dans les
+                mêmes mots. Une ligne a sa vie propre — un abonnement se résilie sans
+                emporter la dépense qui le porte. */}
+            <PeriodFields draft={draft} onChange={setDraft} stripMin={info.stripMin} stripMax={info.stripMax} compact />
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              className="self-start"
+              disabled={busy || !newName.trim()}
+              onClick={() =>
+                run(async () => {
+                  const n = newName.trim();
+                  const a = parseFloat(newAmount) || 0;
+                  const id = await addGroupLine(
+                    info.groupId, n, a, draft.start, draftMode(draft), draft.end ?? draft.start,
+                  );
+                  // On n'ajoute la ligne optimiste qu'avec le vrai id en base : sinon
+                  // une suppression/édition immédiate (sans refermer le panneau)
+                  // viserait un id fictif et laisserait une ligne fantôme en base.
+                  if (id > 0) {
+                    setLines((cur) => [...cur, { id, name: n }]);
+                  }
+                  setNewName("");
+                  setNewAmount("");
+                })
+              }
+            >
+              Ajouter
+            </Button>
           </div>
-        )}
+        </div>
 
         {/* Suppression du groupe */}
         <div className="border-t pt-4">

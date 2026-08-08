@@ -3,8 +3,7 @@ import { db } from "../../db/index";
 import { setBudgetAmount, deleteBudgetAmount, deleteBudgetAmountsAfter, listBudgetAmounts } from "../../db/repositories/budget-amounts";
 import { listLineAmounts, setLineAmount, deleteLineAmount, deleteLineAmountsAfter } from "../../db/repositories/line-amounts";
 import {
-  insertEnvelopeGroup,
-  insertRecurringGroup,
+  insertGroup,
   renameGroup,
   deleteGroup,
   insertLine,
@@ -45,28 +44,23 @@ import { revalidatePath } from "next/cache";
 // base, quel que soit l'appelant.
 export async function createGroup(input: {
   accountId: string;
-  kind: "envelope" | "recurring";
   name: string;
   amount: number | null;
   startMonth: string;
   endMonth?: string;
   period: PeriodMode;
 }): Promise<void> {
-  const { accountId, kind, name, amount, period } = input;
+  const { accountId, name, amount, period } = input;
   const bornes = groupPeriod(period, input.startMonth, input.endMonth);
   if (!bornes) return;
   const { startMonth, endMonth } = bornes;
   const trimmed = name.trim();
   if (!trimmed) return;
   const database = db();
-  if (kind === "envelope") {
-    const gid = insertEnvelopeGroup(database, accountId, trimmed, "out", amount ?? 0, null, startMonth, endMonth);
-    setBudgetAmount(database, gid, startMonth, amount ?? 0);
-  } else {
-    insertRecurringGroup(database, accountId, trimmed, "out", null, startMonth, endMonth);
-    // Un récurrent n'a pas de montant à lui : il n'y a rien à poser tant qu'il
-    // n'a pas de ligne.
-  }
+  // Une dépense naît plate, avec son montant à elle. Si on la découpe ensuite en
+  // sous-postes, c'est leur somme qui fera son budget et ce montant-ci cessera d'être lu.
+  const gid = insertGroup(database, accountId, trimmed, "out", amount ?? 0, null, startMonth, endMonth);
+  setBudgetAmount(database, gid, startMonth, amount ?? 0);
   revalidatePath("/historique");
   revalidatePath("/");
 }
@@ -245,7 +239,7 @@ export async function createRemuneration(
   const database = db();
   if (hasIncomeGroup(database, accountId, incomeKind)) return; // déjà créée
   const name = incomeKind === "principal" ? "Rémunération principale" : "Rémunération supplémentaire";
-  const gid = insertEnvelopeGroup(database, accountId, name, "in", amount, incomeKind, "2000-01", null);
+  const gid = insertGroup(database, accountId, name, "in", amount, incomeKind, "2000-01", null);
   setBudgetAmount(database, gid, "2000-01", amount);
   await revalidate();
 }
@@ -378,7 +372,7 @@ export async function setUncatProvision(
 // entrer en base, quel que soit l'appelant. Rend -1 dans ce cas, comme pour un nom
 // vide : rien n'a été créé, l'écran ne doit pas ajouter de ligne optimiste.
 export async function addGroupLine(
-  groupId: number, name: string, amount: number, day: number, month: string,
+  groupId: number, name: string, amount: number, month: string,
   period: PeriodMode = "from", endMonth?: string,
 ): Promise<number> {
   const trimmed = name.trim();
@@ -386,27 +380,26 @@ export async function addGroupLine(
   const bornes = groupPeriod(period, month, endMonth);
   if (!bornes) return -1;
   const database = db();
-  const id = insertLine(database, groupId, trimmed, amount, day, bornes.startMonth, bornes.endMonth);
+  const id = insertLine(database, groupId, trimmed, amount, bornes.startMonth, bornes.endMonth);
   setLineAmount(database, id, month, amount);
   await revalidate();
   return id;
 }
 
-// Modifie le nom et le jour d'une ligne : ses deux seules propriétés qui valent pour
-// tous les mois, et donc les seules qu'on puisse changer depuis un panneau qui
-// n'affiche aucun mois. Le montant, lui, est daté : il se fixe depuis la case
+// Modifie le nom d'une ligne : sa seule propriété qui vaille pour tous les mois, et
+// donc la seule qu'on puisse changer depuis un panneau qui n'affiche aucun mois. Le montant, lui, est daté : il se fixe depuis la case
 // « Budget dép. » de la ligne (setGroupLineAmount), au mois de sa colonne. Aucun mois
 // n'entre ici, donc rien à valider côté calendrier.
-export async function editGroupLine(lineId: number, name: string, day: number): Promise<void> {
+export async function editGroupLine(lineId: number, name: string): Promise<void> {
   const trimmed = name.trim();
   if (!trimmed) return;
-  renameLine(db(), lineId, trimmed, day);
+  renameLine(db(), lineId, trimmed);
   await revalidate();
 }
 
 // Fixe le seul montant daté d'une ligne de récurrent, pour un mois. Appelée par le
 // bloc d'édition ouvert depuis la case « Budget dép. » de la ligne : cette case ne
-// connaît ni son nom ni son jour, qui valent pour tous les mois et se modifient
+// connaît pas son nom, qui vaut pour tous les mois et se modifie
 // depuis « Gérer le groupe » (editGroupLine). Même sémantique once/ongoing que
 // setGroupAmount, et même vie du montant rendue pour que le panneau se resynchronise
 // sur ce que le serveur vient réellement de poser.

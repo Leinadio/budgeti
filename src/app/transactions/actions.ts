@@ -15,7 +15,7 @@ import { isValidManualForm, toManualInput, type ManualFormInput } from "@/lib/ma
 import { normalizeComment } from "@/lib/txn-comment";
 import { canAttachToGroup } from "@/lib/ownership";
 import { isGroupAlive } from "@/lib/forecast";
-import { getGroupKind, getLineGroupId, getGroupLifespan } from "../../db/repositories/groups";
+import { countGroupLines, getLineGroupId, getGroupLifespan } from "../../db/repositories/groups";
 import { revalidatePath } from "next/cache";
 
 function revalidateAll() {
@@ -24,9 +24,10 @@ function revalidateAll() {
   revalidatePath("/");
 }
 
-// Rattache une transaction (groupId null = non catégorisée). Un récurrent n'est pas
-// une destination : ses dépenses appartiennent à une de ses lignes, jamais au groupe
-// lui-même (canAttachToGroup). Le sélecteur ne le propose plus, mais masquer une option
+// Rattache une transaction (groupId null = non catégorisée). Une dépense découpée en
+// sous-postes n'est pas une destination : ses transactions appartiennent à un de ses
+// sous-postes, jamais au groupe lui-même (canAttachToGroup). Le sélecteur ne le
+// propose plus, mais masquer une option
 // n'empêche pas d'appeler cette action directement — la règle est donc tenue ici, comme
 // le verrou des mois passés l'est dans les actions de budget.
 //
@@ -41,8 +42,8 @@ export async function setGroup(
   const lid = lineId !== null && Number.isFinite(lineId) ? lineId : null;
   const database = db();
   if (gid !== null) {
-    const kind = getGroupKind(database, gid);
-    if (kind === null || !canAttachToGroup(kind, lid)) return;
+    const lignes = countGroupLines(database, gid);
+    if (lignes === null || !canAttachToGroup(lignes > 0, lid)) return;
     // Une ligne d'un AUTRE groupe écrirait un couple (groupe, ligne) incohérent, que
     // plus aucun calcul ne relit correctement.
     if (lid !== null && getLineGroupId(database, lid) !== gid) return;

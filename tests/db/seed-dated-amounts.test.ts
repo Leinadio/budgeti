@@ -3,7 +3,7 @@ import Database from "better-sqlite3";
 import { getDb } from "../../src/db/index";
 import { migrateSeedDatedAmounts } from "../../src/db/migrations";
 import { upsertAccount } from "../../src/db/repositories/accounts";
-import { insertEnvelopeGroup, insertRecurringGroup, insertLine, updateLine } from "../../src/db/repositories/groups";
+import { insertGroup, insertLine, updateLine } from "../../src/db/repositories/groups";
 import { listBudgetAmounts, setBudgetAmount } from "../../src/db/repositories/budget-amounts";
 import { listLineAmounts, setLineAmount } from "../../src/db/repositories/line-amounts";
 
@@ -17,15 +17,15 @@ function seed() {
 
 test("une enveloppe créée reçoit son montant comme première entrée datée", () => {
   const db = seed();
-  const gid = insertEnvelopeGroup(db, "a1", "Activités", "out", 250, null, "2026-03", null);
+  const gid = insertGroup(db, "a1", "Activités", "out", 250, null, "2026-03", null);
   migrateSeedDatedAmounts(db);
   expect(listBudgetAmounts(db)).toEqual([{ groupId: gid, effectiveMonth: "2026-03", amount: 250, scope: "ongoing" }]);
 });
 
 test("une ligne de récurrent reçoit son montant au mois de départ de son groupe", () => {
   const db = seed();
-  const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-03", null);
-  const lid = insertLine(db, gid, "Spotify", 12.14, 12);
+  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-03", null);
+  const lid = insertLine(db, gid, "Spotify", 12.14);
   migrateSeedDatedAmounts(db);
   expect(listLineAmounts(db)).toEqual([{ lineId: lid, effectiveMonth: "2026-03", amount: 12.14, scope: "ongoing" }]);
   // Le groupe récurrent n'a AUCUN montant à lui.
@@ -35,7 +35,7 @@ test("une ligne de récurrent reçoit son montant au mois de départ de son grou
 test("un groupe sans mois de départ retombe sur 2000-01", () => {
   const db = seed();
   db.prepare(
-    `INSERT INTO groups (account_id, name, direction, kind, monthly_amount, start_month) VALUES ('a1', 'Vieux', 'out', 'envelope', 42, NULL)`,
+    `INSERT INTO groups (account_id, name, direction, monthly_amount, start_month) VALUES ('a1', 'Vieux', 'out', 42, NULL)`,
   ).run();
   const gid = db.prepare(`SELECT id FROM groups WHERE name = 'Vieux'`).get() as { id: number };
   migrateSeedDatedAmounts(db);
@@ -45,7 +45,7 @@ test("un groupe sans mois de départ retombe sur 2000-01", () => {
 test("une enveloppe sans montant reçoit 0", () => {
   const db = seed();
   db.prepare(
-    `INSERT INTO groups (account_id, name, direction, kind, monthly_amount, start_month) VALUES ('a1', 'Vide', 'out', 'envelope', NULL, '2026-01')`,
+    `INSERT INTO groups (account_id, name, direction, monthly_amount, start_month) VALUES ('a1', 'Vide', 'out', NULL, '2026-01')`,
   ).run();
   const gid = db.prepare(`SELECT id FROM groups WHERE name = 'Vide'`).get() as { id: number };
   migrateSeedDatedAmounts(db);
@@ -54,7 +54,7 @@ test("une enveloppe sans montant reçoit 0", () => {
 
 test("la migration n'écrase pas une entrée déjà posée au mois de départ", () => {
   const db = seed();
-  const gid = insertEnvelopeGroup(db, "a1", "Activités", "out", 250, null, "2026-03", null);
+  const gid = insertGroup(db, "a1", "Activités", "out", 250, null, "2026-03", null);
   setBudgetAmount(db, gid, "2026-03", 999);
   migrateSeedDatedAmounts(db);
   expect(listBudgetAmounts(db)).toEqual([{ groupId: gid, effectiveMonth: "2026-03", amount: 999, scope: "ongoing" }]);
@@ -62,8 +62,8 @@ test("la migration n'écrase pas une entrée déjà posée au mois de départ", 
 
 test("la migration est idempotente", () => {
   const db = seed();
-  const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-03", null);
-  insertLine(db, gid, "Spotify", 12.14, 12);
+  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-03", null);
+  insertLine(db, gid, "Spotify", 12.14);
   migrateSeedDatedAmounts(db);
   migrateSeedDatedAmounts(db);
   migrateSeedDatedAmounts(db);
@@ -85,10 +85,10 @@ test("la provision des non catégorisés (groupe 0) n'est pas touchée", () => {
 // écrite par editGroupLine.
 test("le rejeu de la migration ne recrée pas d'entrée rétroactive pour une ligne ajoutée en cours de route", () => {
   const db = seed();
-  const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
   // Comme addGroupLine : la ligne est ajoutée en juin, son entrée datée est posée
   // à son mois d'ajout, pas au mois de départ du groupe (janvier).
-  const lid = insertLine(db, gid, "Netflix", 15, 8);
+  const lid = insertLine(db, gid, "Netflix", 15);
   setLineAmount(db, lid, "2026-06", 15);
   // Simule un redémarrage du serveur : getDb rappellerait migrateSeedDatedAmounts.
   migrateSeedDatedAmounts(db);
@@ -97,13 +97,13 @@ test("le rejeu de la migration ne recrée pas d'entrée rétroactive pour une li
 
 test("le rejeu de la migration ne propage pas un montant « ce mois seulement » au mois de départ", () => {
   const db = seed();
-  const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-01", null);
-  const lid = insertLine(db, gid, "Netflix", 15, 8);
+  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+  const lid = insertLine(db, gid, "Netflix", 15);
   setLineAmount(db, lid, "2026-06", 15);
   // Simule une exception de juillet à 25 : le montant ponctuel atterrit aussi dans
   // group_lines.amount, la colonne héritée que plus aucun calcul ne lit (updateLine).
   // C'est ce montant périmé que la migration ne doit pas réinjecter au mois de départ.
-  updateLine(db, lid, "Netflix", 25, 8);
+  updateLine(db, lid, "Netflix", 25);
   setLineAmount(db, lid, "2026-07", 25, "once");
 
   // Simule un redémarrage du serveur.

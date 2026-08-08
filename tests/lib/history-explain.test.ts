@@ -1,17 +1,5 @@
 import { expect, describe, it } from "vitest";
-import {
-  sumOf,
-  makeDetail,
-  makeInfo,
-  txnNode,
-  cellKey,
-  openingRow,
-  sectionRow,
-  groupRow,
-  subRow,
-  txnRow,
-  type DetailNode,
-} from "../../src/lib/history-explain";
+import { sumOf, makeDetail, makeInfo, txnNode, cellKey, openingRow, sectionRow, groupRow, subRow, txnRow, type DetailNode } from "../../src/lib/history-explain";
 
 describe("Le détail affiché dans le panneau latéral quand on clique une cellule", () => {
   it("devrait additionner les montants signés de chaque ligne du détail", () => {

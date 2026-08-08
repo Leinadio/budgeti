@@ -12,7 +12,7 @@ export type MonthRemuneration = {
 };
 
 function toOwnable(g: Group): OwnableGroup {
-  return { id: g.id, accountId: g.accountId, direction: g.direction, kind: g.kind };
+  return { id: g.id, accountId: g.accountId, direction: g.direction };
 }
 
 // Analyse d'un mois : principal vs supplémentaire reçus, dépenses, et les deux

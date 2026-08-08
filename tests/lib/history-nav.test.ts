@@ -1,10 +1,6 @@
 import { expect, describe, it } from "vitest";
 import type { HistorySection, HistoryRow, HistoryTxn, MonthCell, SoldeColumn, PlannedSoldes } from "../../src/lib/history";
-import {
-  computeRevealKeys, computePrevDisplayed, rowOpenKey, lineOpenKey, uncatOpenKey,
-  flattenNodes, cellsForNode, cellsForTotal, highlightedCells, rowKeyOf, withRevealed,
-  openKeyIn, monthIndexOf, selectionForDetail, selectionForRow, TOTAL_ROW,
-} from "../../src/lib/history-nav";
+import { computeRevealKeys, computePrevDisplayed, rowOpenKey, lineOpenKey, uncatOpenKey, flattenNodes, cellsForNode, cellsForTotal, highlightedCells, rowKeyOf, withRevealed, openKeyIn, monthIndexOf, selectionForDetail, selectionForRow, TOTAL_ROW } from "../../src/lib/history-nav";
 import type { DetailNode } from "../../src/lib/history-explain";
 
 function cell(p: Partial<MonthCell> = {}): MonthCell {
@@ -17,7 +13,7 @@ function txn(id: string): HistoryTxn {
 
 function row(p: Partial<HistoryRow> & { id: number }): HistoryRow {
   return {
-    name: `G${p.id}`, kind: "envelope", direction: "out", incomeKind: null,
+    name: `G${p.id}`, direction: "out", incomeKind: null,
     cells: [cell()], aliveMonths: [true], subRows: [], txns: [], ...p,
   };
 }
@@ -25,7 +21,7 @@ function row(p: Partial<HistoryRow> & { id: number }): HistoryRow {
 describe("Retrouver ce qu'il faut déplier pour montrer une ligne choisie dans le panneau", () => {
   it("devrait déplier le groupe qui porte une transaction", () => {
     const sec: HistorySection = {
-      kind: "envelope",
+      kind: "expense",
       rows: [row({ id: 1, txns: [txn("t1")] })],
       totals: [cell()],
     };
@@ -36,8 +32,8 @@ describe("Retrouver ce qu'il faut déplier pour montrer une ligne choisie dans l
     // Une transaction rangée sous un poste est masquée deux fois : il faut ouvrir
     // les deux niveaux, sinon la surbrillance vise une ligne qui n'existe pas.
     const sec: HistorySection = {
-      kind: "recurring",
-      rows: [row({ id: 2, kind: "recurring", subRows: [{ id: 21, name: "Spotify", cells: [cell()], aliveMonths: [true], txns: [txn("t2")] }] })],
+      kind: "expense",
+      rows: [row({ id: 2, subRows: [{ id: 21, name: "Spotify", cells: [cell()], aliveMonths: [true], txns: [txn("t2")] }] })],
       totals: [cell()],
     };
     const keys = computeRevealKeys([sec]);
@@ -56,7 +52,7 @@ describe("Retrouver ce qu'il faut déplier pour montrer une ligne choisie dans l
   });
 
   it("ne devrait rien demander à déplier pour une ligne toujours visible", () => {
-    const sec: HistorySection = { kind: "envelope", rows: [row({ id: 1 })], totals: [cell()] };
+    const sec: HistorySection = { kind: "expense", rows: [row({ id: 1 })], totals: [cell()] };
     expect(computeRevealKeys([sec]).get("group:1")).toBeUndefined();
   });
 });
@@ -65,7 +61,7 @@ describe("À quelle case renvoie le « Solde précédent » d'une ligne", () => 
   // Trois groupes empilés. En colonne Solde : 100 → 90 → 90 (le 2e groupe n'a rien
   // bougé, sa case est donc VIDE dans le tableau) → 70.
   const sections: HistorySection[] = [
-    { kind: "envelope", rows: [row({ id: 1 }), row({ id: 2 }), row({ id: 3 })], totals: [cell()] },
+    { kind: "expense", rows: [row({ id: 1 }), row({ id: 2 }), row({ id: 3 })], totals: [cell()] },
   ];
   const solde: SoldeColumn = {
     openings: [100],
@@ -126,7 +122,7 @@ describe("À quelle case renvoie le « Solde précédent » d'une ligne", () => 
 
   it("devrait traverser les non catégorisés comme n'importe quelle étape", () => {
     const withUncat: HistorySection[] = [
-      { kind: "envelope", rows: [row({ id: 1 })], totals: [cell()] },
+      { kind: "expense", rows: [row({ id: 1 })], totals: [cell()] },
       { kind: "uncategorized", uncatDirection: "out", rows: [], totals: [cell()], txns: [] },
     ];
     const p = computePrevDisplayed(

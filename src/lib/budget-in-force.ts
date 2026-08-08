@@ -67,7 +67,10 @@ export function budgetInForce(
   dated?: DatedBudgets,
   datedLines?: DatedLineAmounts,
 ): number {
-  if (g.kind === "recurring") {
+  // Découpée en sous-postes : c'est leur somme qui fait le budget, et le montant
+  // propre du groupe (s'il en avait un avant d'être découpé) ne compte plus. Un seul
+  // endroit où le budget existe, donc jamais deux chiffres qui se contredisent.
+  if (g.lines.length > 0) {
     return g.lines.reduce((s, l) => s + (aliveInMonth(l, month) ? lineAmountInForce(l.id, month, datedLines) : 0), 0);
   }
   return amountInForce(dated?.[g.id] ?? [], month);

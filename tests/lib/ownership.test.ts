@@ -1,9 +1,9 @@
 import { expect, test, describe, it } from "vitest";
 import { resolveOwnership, canAttachToGroup, type OwnableGroup, type OwnedTxn } from "../../src/lib/ownership";
 
-const courses: OwnableGroup = { id: 1, accountId: "a1", direction: "out", kind: "envelope" };
-const abo: OwnableGroup = { id: 2, accountId: "a1", direction: "out", kind: "recurring" };
-const salaire: OwnableGroup = { id: 3, accountId: "a1", direction: "in", kind: "recurring" };
+const courses: OwnableGroup = { id: 1, accountId: "a1", direction: "out" };
+const abo: OwnableGroup = { id: 2, accountId: "a1", direction: "out" };
+const salaire: OwnableGroup = { id: 3, accountId: "a1", direction: "in" };
 const groups = [courses, abo, salaire];
 
 function txn(p: Partial<OwnedTxn>): OwnedTxn {
@@ -19,7 +19,7 @@ test("keyword no longer auto-matches -> none", () => {
 });
 
 test("multiple groups sharing a keyword: still none without manual attachment", () => {
-  const dup: OwnableGroup = { id: 4, accountId: "a1", direction: "out", kind: "envelope" };
+  const dup: OwnableGroup = { id: 4, accountId: "a1", direction: "out" };
   expect(resolveOwnership(txn({ label: "CARREFOUR" }), [...groups, dup])).toEqual({ status: "none" });
 });
 
@@ -34,7 +34,7 @@ test("no manual group -> none (even if a keyword would have matched)", () => {
 });
 
 test("manual to a group of another account -> none (not owned)", () => {
-  const other: OwnableGroup = { id: 9, accountId: "a2", direction: "out", kind: "envelope" };
+  const other: OwnableGroup = { id: 9, accountId: "a2", direction: "out" };
   expect(resolveOwnership(txn({ groupId: 9, label: "CARREFOUR" }), [...groups, other])).toEqual({ status: "none" });
 });
 
@@ -42,20 +42,24 @@ test("manual group on another account is ignored", () => {
   expect(resolveOwnership(txn({ accountId: "a2", groupId: 1 }), groups)).toEqual({ status: "none" });
 });
 
-// Un récurrent n'est pas une destination : ses dépenses appartiennent à une de ses
-// lignes (Direct Assurance, Sosh Internet…), jamais au groupe lui-même. C'est ce qui
-// garantit qu'un dépassement de récurrent vient toujours d'une ligne, et a donc
-// toujours un endroit où se trancher.
+// Une dépense découpée en sous-postes n'est pas une destination : ses transactions
+// appartiennent à un de ses sous-postes (Direct Assurance, Sosh Internet…), jamais au
+// groupe lui-même. C'est ce qui garantit qu'un dépassement vient toujours d'un
+// sous-poste, et a donc toujours un endroit où se lire.
+//
+// La question n'est plus la nature du groupe mais un fait : est-ce qu'il a des
+// sous-postes ? Une dépense plate se rattache directement, comme avant ; la même
+// dépense, une fois découpée, ne l'accepte plus.
 describe("ce à quoi une transaction peut être rattachée", () => {
-  it("accepte une enveloppe, avec ou sans ligne (une enveloppe n'en a pas)", () => {
-    expect(canAttachToGroup("envelope", null)).toBe(true);
+  it("accepte une dépense sans sous-poste", () => {
+    expect(canAttachToGroup(false, null)).toBe(true);
   });
 
-  it("refuse un récurrent tout seul", () => {
-    expect(canAttachToGroup("recurring", null)).toBe(false);
+  it("refuse une dépense à sous-postes prise en bloc", () => {
+    expect(canAttachToGroup(true, null)).toBe(false);
   });
 
-  it("accepte un récurrent dès qu'une de ses lignes est visée", () => {
-    expect(canAttachToGroup("recurring", 3)).toBe(true);
+  it("accepte une dépense à sous-postes dès qu'un sous-poste est visé", () => {
+    expect(canAttachToGroup(true, 3)).toBe(true);
   });
 });

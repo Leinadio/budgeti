@@ -1,14 +1,14 @@
 import { expect, test } from "vitest";
 import { getDb } from "../../src/db/index";
 import { upsertAccount } from "../../src/db/repositories/accounts";
-import { insertRecurringGroup, insertLine, deleteLine } from "../../src/db/repositories/groups";
+import { insertGroup, insertLine, deleteLine } from "../../src/db/repositories/groups";
 import { listLineAmounts, setLineAmount, deleteLineAmount } from "../../src/db/repositories/line-amounts";
 
 function seed() {
   const db = getDb(":memory:");
   upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-01", null);
-  const lid = insertLine(db, gid, "Spotify", 12.14, 12);
+  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+  const lid = insertLine(db, gid, "Spotify", 12.14);
   return { db, gid, lid };
 }
 

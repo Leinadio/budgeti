@@ -5,7 +5,7 @@ import type Database from "better-sqlite3";
 import { freshDb, at } from "./setup";
 import { addGroupLine, editGroupLine, setGroupLineAmount } from "../../../src/app/historique/actions";
 import { revalidatePath } from "next/cache";
-import { insertRecurringGroup } from "../../../src/db/repositories/groups";
+import { insertGroup } from "../../../src/db/repositories/groups";
 import { listLineAmounts } from "../../../src/db/repositories/line-amounts";
 import { toDatedLineAmounts, lineAmountInForce } from "../../../src/lib/history";
 
@@ -14,11 +14,11 @@ let gid: number;
 beforeEach(() => {
   db = freshDb();
   vi.mocked(revalidatePath).mockClear();
-  gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-01", null);
+  gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
 });
 
 test("une ligne ajoutée compte à partir du mois donné, pas rétroactivement", async () => {
-  const lid = await addGroupLine(gid, "Netflix", 15, 8, "2026-06");
+  const lid = await addGroupLine(gid, "Netflix", 15, "2026-06");
 
   const datedLines = toDatedLineAmounts(listLineAmounts(db));
   expect(lineAmountInForce(lid, "2026-05", datedLines)).toBe(0);
@@ -33,19 +33,19 @@ const bornes = (db: Database.Database, lid: number) =>
   db.prepare(`SELECT start_month AS start, end_month AS fin FROM group_lines WHERE id = ?`).get(lid);
 
 test("une ligne est permanente par défaut : elle commence au mois donné et ne finit pas", async () => {
-  const lid = await addGroupLine(gid, "Spotify", 10, 1, "2026-06");
+  const lid = await addGroupLine(gid, "Spotify", 10, "2026-06");
 
   expect(bornes(db, lid)).toEqual({ start: "2026-06", fin: null });
 });
 
 test("une ligne « ce mois seulement » commence et finit au mois donné", async () => {
-  const lid = await addGroupLine(gid, "Assurance vacances", 40, 1, "2026-06", "single");
+  const lid = await addGroupLine(gid, "Assurance vacances", 40, "2026-06", "single");
 
   expect(bornes(db, lid)).toEqual({ start: "2026-06", fin: "2026-06" });
 });
 
 test("une ligne « d'un mois à un autre » garde ses deux bornes", async () => {
-  const lid = await addGroupLine(gid, "Stage", 200, 1, "2026-06", "range", "2026-09");
+  const lid = await addGroupLine(gid, "Stage", 200, "2026-06", "range", "2026-09");
 
   expect(bornes(db, lid)).toEqual({ start: "2026-06", fin: "2026-09" });
 });
@@ -54,8 +54,8 @@ test("une ligne « d'un mois à un autre » garde ses deux bornes", async () => 
 // mois de départ n'entre pas en base, quel que soit l'appelant. Masquer le mois dans
 // le formulaire n'empêche pas d'appeler l'action directement.
 test("refuse une plage qui finit avant d'avoir commencé, sans rien créer", async () => {
-  expect(await addGroupLine(gid, "Stage", 200, 1, "2026-06", "range", "2026-06")).toBe(-1);
-  expect(await addGroupLine(gid, "Stage", 200, 1, "2026-06", "range", "2026-03")).toBe(-1);
+  expect(await addGroupLine(gid, "Stage", 200, "2026-06", "range", "2026-06")).toBe(-1);
+  expect(await addGroupLine(gid, "Stage", 200, "2026-06", "range", "2026-03")).toBe(-1);
 
   expect(db.prepare(`SELECT COUNT(*) AS n FROM group_lines`).get()).toEqual({ n: 0 });
 });
@@ -64,34 +64,34 @@ test("refuse une plage qui finit avant d'avoir commencé, sans rien créer", asy
 // Le montant a quitté ce chemin : il se modifie depuis la case « Budget dép. » de la
 // ligne, au mois de sa colonne (setGroupLineAmount, plus bas).
 test("editGroupLine change le nom et le jour, pour tous les mois", async () => {
-  const lid = await addGroupLine(gid, "Spotify", 10, 3, "2026-01");
+  const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
 
-  await editGroupLine(lid, "Spotify Famille", 15);
+  await editGroupLine(lid, "Spotify Famille");
 
-  expect(db.prepare(`SELECT name, day FROM group_lines WHERE id = ?`).get(lid)).toEqual({ name: "Spotify Famille", day: 15 });
+  expect(db.prepare(`SELECT name FROM group_lines WHERE id = ?`).get(lid)).toEqual({ name: "Spotify Famille" });
 });
 
 test("editGroupLine ne touche à aucun montant daté", async () => {
-  const lid = await addGroupLine(gid, "Spotify", 10, 3, "2026-01");
+  const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
 
-  await editGroupLine(lid, "Spotify Famille", 15);
+  await editGroupLine(lid, "Spotify Famille");
 
   expect(listLineAmounts(db)).toEqual([{ lineId: lid, effectiveMonth: "2026-01", amount: 10, scope: "ongoing" }]);
 });
 
 test("editGroupLine refuse un nom vide", async () => {
-  const lid = await addGroupLine(gid, "Spotify", 10, 3, "2026-01");
+  const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
 
-  await editGroupLine(lid, "   ", 15);
+  await editGroupLine(lid, "   ");
 
-  expect(db.prepare(`SELECT name, day FROM group_lines WHERE id = ?`).get(lid)).toEqual({ name: "Spotify", day: 3 });
+  expect(db.prepare(`SELECT name FROM group_lines WHERE id = ?`).get(lid)).toEqual({ name: "Spotify" });
 });
 
 // Le montant d'une ligne se modifie désormais depuis sa case « Budget dép. », qui
 // ne connaît ni son nom ni son jour : ceux-là valent pour tous les mois et se
 // changent depuis « Gérer le groupe ». D'où une action qui ne touche qu'au montant.
 test("setGroupLineAmount « à partir de ce mois » vaut pour les mois suivants, sans toucher au nom ni au jour", async () => {
-  const lid = await addGroupLine(gid, "Spotify", 10, 3, "2026-01");
+  const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
 
   await setGroupLineAmount(lid, "2026-07", 12, "ongoing");
 
@@ -99,11 +99,11 @@ test("setGroupLineAmount « à partir de ce mois » vaut pour les mois suivants,
   expect(lineAmountInForce(lid, "2026-06", datedLines)).toBe(10);
   expect(lineAmountInForce(lid, "2026-07", datedLines)).toBe(12);
   expect(lineAmountInForce(lid, "2027-01", datedLines)).toBe(12);
-  expect(db.prepare(`SELECT name, day FROM group_lines WHERE id = ?`).get(lid)).toEqual({ name: "Spotify", day: 3 });
+  expect(db.prepare(`SELECT name FROM group_lines WHERE id = ?`).get(lid)).toEqual({ name: "Spotify" });
 });
 
 test("setGroupLineAmount « ce mois seulement » ne vaut que pour son mois, sans rien écrire au mois suivant", async () => {
-  const lid = await addGroupLine(gid, "Spotify", 10, 3, "2026-01");
+  const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
 
   await setGroupLineAmount(lid, "2026-07", 25, "once");
 
@@ -115,7 +115,7 @@ test("setGroupLineAmount « ce mois seulement » ne vaut que pour son mois, sans
 });
 
 test("setGroupLineAmount écrit dans un mois passé", async () => {
-  const lid = await addGroupLine(gid, "Spotify", 10, 3, "2026-01");
+  const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
   at("2026-07");
 
   await setGroupLineAmount(lid, "2026-03", 99, "ongoing");
@@ -124,7 +124,7 @@ test("setGroupLineAmount écrit dans un mois passé", async () => {
 });
 
 test("setGroupLineAmount renvoie la vie du montant à jour de la ligne", async () => {
-  const lid = await addGroupLine(gid, "Spotify", 10, 3, "2026-01");
+  const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
 
   const changes = await setGroupLineAmount(lid, "2026-07", 12, "ongoing");
 

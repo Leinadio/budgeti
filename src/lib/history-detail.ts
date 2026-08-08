@@ -93,10 +93,8 @@ export function labelOfSection(kind: HistorySection["kind"]): string {
   switch (kind) {
     case "income":
       return "Rémunérations";
-    case "recurring":
-      return "Récurrents";
-    case "envelope":
-      return "Enveloppes";
+    case "expense":
+      return "Dépenses";
     case "uncategorized":
       return "Non catégorisés";
   }
@@ -171,11 +169,11 @@ export function soldeActuelDetail(
 // autres, on y corrige un budget après coup. Rend null sur un groupe inconnu, où il
 // n'y aurait ni frise ni montant à proposer.
 export function budgetEditOfGroup(
-  group: { id: number; name: string; kind: "envelope" | "recurring"; changes: BudgetChange[] } | undefined,
+  group: { id: number; name: string; lines: unknown[]; changes: BudgetChange[] } | undefined,
   month: string,
   currentMonth: string,
 ): BudgetEditInfo | null {
-  if (!group || group.kind !== "envelope") return null;
+  if (!group || group.lines.length > 0) return null;
   return {
     target: "group",
     id: group.id,

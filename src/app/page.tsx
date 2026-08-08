@@ -26,7 +26,7 @@ export default function Dashboard() {
   const allTxns = listTransactions(database);
   const groups = listGroups(database);
   const ownable = groups.map((g) => ({
-    id: g.id, accountId: g.accountId, direction: g.direction, kind: g.kind,
+    id: g.id, accountId: g.accountId, direction: g.direction,
   }));
   const groupCell = (t: (typeof allTxns)[number]) => {
     const res = resolveOwnership(

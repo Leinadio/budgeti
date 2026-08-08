@@ -3,15 +3,15 @@ import { monthRemuneration } from "../../src/lib/remuneration";
 import type { Group, Txn } from "../../src/lib/forecast";
 
 const principalGroup: Group = {
-  id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", kind: "recurring",
+  id: 1, accountId: "a1", name: "Rémunération principale", direction: "in",
   monthlyAmount: null, lines: [], incomeKind: "principal",
 };
 const supGroup: Group = {
-  id: 2, accountId: "a1", name: "Rémunération supplémentaire", direction: "in", kind: "envelope",
+  id: 2, accountId: "a1", name: "Rémunération supplémentaire", direction: "in",
   monthlyAmount: 0, lines: [], incomeKind: "supplementary",
 };
 const courses: Group = {
-  id: 3, accountId: "a1", name: "Courses", direction: "out", kind: "envelope",
+  id: 3, accountId: "a1", name: "Courses", direction: "out",
   monthlyAmount: 652.09, lines: [], incomeKind: null,
 };
 

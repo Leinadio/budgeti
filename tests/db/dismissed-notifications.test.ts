@@ -4,9 +4,7 @@
 // changement de navigateur ou à un vidage de cache.
 import { expect, test } from "vitest";
 import { getDb } from "../../src/db/index";
-import {
-  listDismissedNotifications, dismissNotification, dismissNotifications, restoreNotifications,
-} from "../../src/db/repositories/dismissed-notifications";
+import { listDismissedNotifications, dismissNotification, dismissNotifications, restoreNotifications } from "../../src/db/repositories/dismissed-notifications";
 
 const freshDb = () => getDb(":memory:");
 

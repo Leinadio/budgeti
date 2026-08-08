@@ -16,36 +16,36 @@ const hist = (groups: Group[], txns: Txn[], months: string[], current: string) =
 // Ce fichier fige les budgets tels qu'ils sortent AUJOURD'HUI. Aucune tâche de
 // la refonte n'a le droit de le faire bouger.
 const abonnements: Group = {
-  id: 13, accountId: "a1", name: "Abonnements", direction: "out", kind: "recurring",
+  id: 13, accountId: "a1", name: "Abonnements", direction: "out",
   monthlyAmount: null, startMonth: "2000-01", endMonth: null,
   lines: [
-    { id: 101, name: "Direct Assurance voiture", amount: 81.84, day: 5 },
-    { id: 102, name: "Sosh Internet", amount: 30.99, day: 8 },
-    { id: 103, name: "Sosh Mobile", amount: 15.99, day: 8 },
-    { id: 104, name: "Spotify", amount: 12.14, day: 12 },
-    { id: 105, name: "iCloud", amount: 9.99, day: 15 },
-    { id: 106, name: "Fitness Park", amount: 19.99, day: 20 },
+    { id: 101, name: "Direct Assurance voiture", amount: 81.84 },
+    { id: 102, name: "Sosh Internet", amount: 30.99 },
+    { id: 103, name: "Sosh Mobile", amount: 15.99 },
+    { id: 104, name: "Spotify", amount: 12.14 },
+    { id: 105, name: "iCloud", amount: 9.99 },
+    { id: 106, name: "Fitness Park", amount: 19.99 },
   ],
 };
 const impots: Group = {
-  id: 15, accountId: "a1", name: "Impôts", direction: "out", kind: "recurring",
+  id: 15, accountId: "a1", name: "Impôts", direction: "out",
   monthlyAmount: null, startMonth: "2000-01", endMonth: null,
-  lines: [{ id: 110, name: "Prélèvement à la source", amount: 49, day: 15 }],
+  lines: [{ id: 110, name: "Prélèvement à la source", amount: 49 }],
 };
 const carburant: Group = {
-  id: 14, accountId: "a1", name: "Carburant voiture", direction: "out", kind: "envelope",
+  id: 14, accountId: "a1", name: "Carburant voiture", direction: "out",
   monthlyAmount: 85, lines: [], startMonth: "2000-01", endMonth: null,
 };
 const activites: Group = {
-  id: 16, accountId: "a1", name: "Activités", direction: "out", kind: "envelope",
+  id: 16, accountId: "a1", name: "Activités", direction: "out",
   monthlyAmount: 250, lines: [], startMonth: "2000-01", endMonth: null,
 };
 const vetement: Group = {
-  id: 17, accountId: "a1", name: "Vêtement", direction: "out", kind: "envelope",
+  id: 17, accountId: "a1", name: "Vêtement", direction: "out",
   monthlyAmount: 0, lines: [], startMonth: "2000-01", endMonth: null,
 };
 const remuneration: Group = {
-  id: 21, accountId: "a1", name: "Rémunération Principale", direction: "in", kind: "envelope",
+  id: 21, accountId: "a1", name: "Rémunération Principale", direction: "in",
   monthlyAmount: 652.09, lines: [], incomeKind: "principal", startMonth: "2000-01", endMonth: null,
 };
 const GROUPS = [abonnements, impots, carburant, activites, vetement, remuneration];

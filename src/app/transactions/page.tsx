@@ -18,10 +18,9 @@ export default function TransactionsPage() {
     accountId: g.accountId,
     name: g.name,
     direction: g.direction,
-    kind: g.kind,
     startMonth: g.startMonth,
     endMonth: g.endMonth,
-    lines: g.kind === "recurring" ? g.lines.map((l) => ({ id: l.id, name: l.name })) : [],
+    lines: g.lines.map((l) => ({ id: l.id, name: l.name })),
   }));
 
   const suggestions = findReconcileSuggestions(database).map((s) => ({

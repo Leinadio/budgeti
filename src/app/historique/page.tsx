@@ -140,13 +140,12 @@ export default async function HistoriquePage({
           const selectGroups = groups.map((g) => ({
             id: g.id,
             name: g.name,
-            kind: g.kind,
             direction: g.direction,
             startMonth: g.startMonth,
             endMonth: g.endMonth,
             changes: budgetChanges(datedBudgets[g.id] ?? []),
             lines: g.lines.map((l) => ({
-              id: l.id, name: l.name, amount: l.amount, day: l.day,
+              id: l.id, name: l.name, amount: l.amount,
               startMonth: l.startMonth, endMonth: l.endMonth,
               changes: budgetChanges(datedLines[l.id] ?? []),
             })),

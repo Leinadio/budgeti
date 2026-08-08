@@ -3,14 +3,8 @@ import Database from "better-sqlite3";
 import { getDb } from "../../src/db/index";
 import { migrateTransactionIgnored } from "../../src/db/migrations";
 import { upsertAccount } from "../../src/db/repositories/accounts";
-import {
-  listTransactions,
-  setTransactionIgnored,
-  setTransactionGroup,
-  sumIgnoredByAccount,
-  upsertTransaction,
-} from "../../src/db/repositories/transactions";
-import { insertEnvelopeGroup } from "../../src/db/repositories/groups";
+import { listTransactions, setTransactionIgnored, setTransactionGroup, sumIgnoredByAccount, upsertTransaction } from "../../src/db/repositories/transactions";
+import { insertGroup } from "../../src/db/repositories/groups";
 
 function seed() {
   const db = getDb(":memory:");
@@ -65,7 +59,7 @@ test("une transaction non comptabilisée ne pèse plus sur le total du mois", ()
 
 test("une transaction non comptabilisée garde son rattachement de groupe", () => {
   const db = seed();
-  const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 200, null, "2000-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 200, null, "2000-01", null);
   setTransactionGroup(db, "t2", gid);
   setTransactionIgnored(db, "t2", true);
   setTransactionIgnored(db, "t2", false);

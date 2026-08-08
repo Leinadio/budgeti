@@ -36,9 +36,16 @@ export function migrateAccountCustomName(db: Database.Database): void {
 // Refonte des groupes : type (enveloppe/recurring) + montant mensuel + mots-clés,
 // et rattachement manuel des transactions (group_id). Clean slate sur les groupes
 // (comptes/transactions conservés). Idempotent.
+//
+// ATTENTION : le marqueur de version est `monthly_amount`, et cette migration DÉTRUIT
+// les groupes quand elle ne le trouve pas. Il a longtemps été `kind` — jusqu'à ce que
+// cette colonne disparaisse (migrateDropGroupKind) : la base rouverte se serait crue en
+// v1 et aurait effacé tous les groupes au redémarrage suivant. Ne jamais retirer
+// `monthly_amount` sans changer ce marqueur d'abord. C'est le genre de mine qu'une base
+// « :memory: » ne fait jamais sauter (voir tests/db/migration-drop-group-kind.test.ts).
 export function migrateGroupsV2(db: Database.Database): void {
   const gcols = db.prepare("PRAGMA table_info(groups)").all() as { name: string }[];
-  if (!gcols.some((c) => c.name === "kind")) {
+  if (!gcols.some((c) => c.name === "monthly_amount")) {
     db.transaction(() => {
       db.exec(`
         DROP TABLE IF EXISTS group_keywords;
@@ -137,6 +144,10 @@ export function migrateGroupIncomeKind(db: Database.Database): void {
 export function migrateRemunerationPrincipalToEnvelope(db: Database.Database): void {
   const cols = db.prepare("PRAGMA table_info(groups)").all() as { name: string }[];
   if (!cols.some((c) => c.name === "income_kind")) return;
+  // Sans la colonne `kind`, il n'y a plus de nature à convertir : la reprise a déjà eu
+  // lieu, sur une base d'avant sa suppression. Sans cette garde, le SELECT ci-dessous
+  // planterait à chaque démarrage.
+  if (!cols.some((c) => c.name === "kind")) return;
   const rows = db
     .prepare(`SELECT id FROM groups WHERE income_kind = 'principal' AND kind = 'recurring'`)
     .all() as { id: number }[];
@@ -175,6 +186,29 @@ export function migrateLineLifespan(db: Database.Database) {
     db.exec(`ALTER TABLE group_lines ADD COLUMN start_month TEXT`);
   if (!cols.some((c) => c.name === "end_month"))
     db.exec(`ALTER TABLE group_lines ADD COLUMN end_month TEXT`);
+}
+
+// Retire la nature d'un groupe (« enveloppe » / « récurrent »). Elle ne décidait plus
+// rien : le budget, le dépassement, la prévision et le rattachement se règlent tous sur
+// un fait — la dépense a-t-elle des sous-postes. Deux mots qui promettaient deux
+// comportements et n'en donnaient qu'un valaient moins que rien : ils faisaient croire
+// à un choix au moment de créer une dépense.
+//
+// À passer APRÈS toutes les migrations qui lisent encore la colonne. Idempotent.
+export function migrateDropGroupKind(db: Database.Database): void {
+  const cols = db.prepare("PRAGMA table_info(groups)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "kind")) return;
+  db.exec(`ALTER TABLE groups DROP COLUMN kind`);
+}
+
+// Retire le jour du mois des sous-postes. Il ne pilotait plus rien : aucun calcul ne
+// le comparait à une date, et la frise d'échéances qu'il triait n'était plus affichée.
+// Maintenant que n'importe quelle dépense peut avoir des sous-postes, le demander
+// n'aurait aucun sens — « Boulangerie, le combien ? ». Idempotent.
+export function migrateDropLineDay(db: Database.Database): void {
+  const cols = db.prepare("PRAGMA table_info(group_lines)").all() as { name: string }[];
+  if (!cols.some((c) => c.name === "day")) return;
+  db.exec(`ALTER TABLE group_lines DROP COLUMN day`);
 }
 
 // Retire la FK sur budget_amounts.group_id : la provision « non catégorisés »
@@ -334,7 +368,7 @@ export function migrateSeedDatedAmounts(db: Database.Database): void {
       INSERT OR IGNORE INTO budget_amounts (group_id, effective_month, amount)
         SELECT g.id, COALESCE(g.start_month, '2000-01'), COALESCE(g.monthly_amount, 0)
         FROM groups g
-        WHERE g.kind = 'envelope'
+        WHERE NOT EXISTS (SELECT 1 FROM group_lines l WHERE l.group_id = g.id)
           AND NOT EXISTS (SELECT 1 FROM budget_amounts b WHERE b.group_id = g.id);
       INSERT OR IGNORE INTO line_amounts (line_id, effective_month, amount)
         SELECT l.id, COALESCE(g.start_month, '2000-01'), l.amount
@@ -342,17 +376,19 @@ export function migrateSeedDatedAmounts(db: Database.Database): void {
         WHERE NOT EXISTS (SELECT 1 FROM line_amounts la WHERE la.line_id = l.id);
     `);
   })();
-  // Les entrées datées posées sur un groupe RÉCURRENT sont un vestige de l'ancien
-  // modèle : elles n'ont plus de sens (un récurrent n'a plus de montant propre) et
-  // ne sont plus lues. On les signale sans y toucher ; la base réelle n'en contient
-  // aucune.
+  // Un montant daté posé sur un groupe QUI A DES SOUS-POSTES est un vestige : il n'est
+  // plus lu (son budget est la somme de ses sous-postes). On le signale sans y toucher ;
+  // la base réelle n'en contient aucun.
   const vestiges = db
-    .prepare(`SELECT COUNT(*) AS n FROM budget_amounts b JOIN groups g ON g.id = b.group_id WHERE g.kind = 'recurring'`)
+    .prepare(
+      `SELECT COUNT(*) AS n FROM budget_amounts b
+       WHERE EXISTS (SELECT 1 FROM group_lines l WHERE l.group_id = b.group_id)`,
+    )
     .get() as { n: number };
   if (vestiges.n > 0) {
     console.warn(
-      `[budgets] ${vestiges.n} montant(s) daté(s) posé(s) sur un groupe récurrent sont ignorés : ` +
-        `un récurrent tire désormais son budget de ses lignes. À reporter à la main sur les lignes concernées.`,
+      `[budgets] ${vestiges.n} montant(s) daté(s) posé(s) sur une dépense découpée sont ignorés : ` +
+        `son budget est la somme de ses sous-postes. À reporter à la main sur les sous-postes concernés.`,
     );
   }
 }

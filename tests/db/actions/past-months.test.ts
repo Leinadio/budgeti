@@ -10,12 +10,9 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type Database from "better-sqlite3";
 import { freshDb, at } from "./setup";
-import {
-  setGroupAmount, setUncatProvision, removeGroupAmount, removeLineAmount,
-  addGroupLine, editGroupLine, setGroupLineAmount,
-} from "../../../src/app/historique/actions";
+import { setGroupAmount, setUncatProvision, removeGroupAmount, removeLineAmount, addGroupLine, editGroupLine, setGroupLineAmount } from "../../../src/app/historique/actions";
 import { revalidatePath } from "next/cache";
-import { insertEnvelopeGroup, insertRecurringGroup } from "../../../src/db/repositories/groups";
+import { insertGroup } from "../../../src/db/repositories/groups";
 import { listBudgetAmounts, setBudgetAmount } from "../../../src/db/repositories/budget-amounts";
 import { listLineAmounts } from "../../../src/db/repositories/line-amounts";
 import { toDatedBudgets, toDatedLineAmounts, lineAmountInForce } from "../../../src/lib/history";
@@ -35,7 +32,7 @@ const amountsOf = (groupId: number) =>
 
 describe("setGroupAmount", () => {
   test("écrit dans un mois passé", async () => {
-    const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
 
     await setGroupAmount(gid, "2026-03", 350, "ongoing");
@@ -44,7 +41,7 @@ describe("setGroupAmount", () => {
   });
 
   test("écrit aussi « ce mois seulement » dans un mois passé", async () => {
-    const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
 
     await setGroupAmount(gid, "2026-03", 350, "once");
@@ -54,7 +51,7 @@ describe("setGroupAmount", () => {
   });
 
   test("accepte le mois courant", async () => {
-    const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
 
     await setGroupAmount(gid, "2026-07", 350, "ongoing");
@@ -63,7 +60,7 @@ describe("setGroupAmount", () => {
   });
 
   test("accepte un mois futur", async () => {
-    const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
 
     await setGroupAmount(gid, "2026-09", 350, "ongoing");
@@ -74,7 +71,7 @@ describe("setGroupAmount", () => {
   // Le seul refus qui subsiste : un mois qui n'est pas une clé « YYYY-MM ». Il ne
   // doit pas entrer en base, où il se comparerait n'importe comment aux autres.
   test("refuse un mois mal formé", async () => {
-    const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
 
     await setGroupAmount(gid, "mars 2026", 350, "ongoing");
@@ -85,7 +82,7 @@ describe("setGroupAmount", () => {
   // Le panneau se resynchronise sur ce qu'elle renvoie : la vie du budget rendue
   // doit inclure le montant qu'on vient de poser sur le mois passé.
   test("renvoie la vie du budget à jour après une écriture dans le passé", async () => {
-    const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
 
     const changes = await setGroupAmount(gid, "2026-03", 350, "ongoing");
@@ -127,7 +124,7 @@ describe("removeGroupAmount", () => {
   // La corbeille est la face arrière de l'édition : un montant posé par erreur sur
   // un mois passé doit pouvoir en repartir.
   test("retire un changement posé dans un mois passé", async () => {
-    const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
     setBudgetAmount(db, gid, "2026-03", 350);
 
@@ -138,7 +135,7 @@ describe("removeGroupAmount", () => {
   });
 
   test("accepte de retirer un changement du mois courant", async () => {
-    const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
     setBudgetAmount(db, gid, "2026-07", 350);
 
@@ -150,7 +147,7 @@ describe("removeGroupAmount", () => {
   // Ce refus-là n'est pas une affaire de calendrier : sans montant de départ, les
   // mois qui le précédaient n'auraient plus de budget du tout.
   test("refuse toujours de retirer le montant de départ, même dans le passé", async () => {
-    const gid = insertEnvelopeGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
     setBudgetAmount(db, gid, "2026-03", 350);
 
@@ -162,27 +159,27 @@ describe("removeGroupAmount", () => {
 
 describe("addGroupLine", () => {
   test("crée une ligne dans un mois passé", async () => {
-    const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
 
-    const lid = await addGroupLine(gid, "Netflix", 15, 8, "2026-03");
+    const lid = await addGroupLine(gid, "Netflix", 15, "2026-03");
 
     expect(lid).toBeGreaterThan(0);
     expect(lineAmountInForce(lid, "2026-03", toDatedLineAmounts(listLineAmounts(db)))).toBe(15);
   });
 
   test("accepte de créer une ligne au mois courant", async () => {
-    const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
 
-    const lid = await addGroupLine(gid, "Netflix", 15, 8, "2026-07");
+    const lid = await addGroupLine(gid, "Netflix", 15, "2026-07");
 
     expect(lid).toBeGreaterThan(0);
     expect(lineAmountInForce(lid, "2026-07", toDatedLineAmounts(listLineAmounts(db)))).toBe(15);
   });
 
   test("refuse un mois mal formé", async () => {
-    const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
 
-    const lid = await addGroupLine(gid, "Netflix", 15, 8, "bientôt");
+    const lid = await addGroupLine(gid, "Netflix", 15, "bientôt");
 
     expect(lid).toBe(-1);
     expect(db.prepare(`SELECT COUNT(*) AS n FROM group_lines`).get()).toEqual({ n: 0 });
@@ -191,9 +188,9 @@ describe("addGroupLine", () => {
 
 describe("setGroupLineAmount", () => {
   test("modifie le montant d'une ligne dans un mois passé", async () => {
-    const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
     at("2026-01");
-    const lid = await addGroupLine(gid, "Spotify", 10, 3, "2026-01");
+    const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
     at("2026-07");
 
     await setGroupLineAmount(lid, "2026-03", 12, "ongoing");
@@ -204,9 +201,9 @@ describe("setGroupLineAmount", () => {
   });
 
   test("accepte le mois courant", async () => {
-    const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
     at("2026-01");
-    const lid = await addGroupLine(gid, "Spotify", 10, 3, "2026-01");
+    const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
     at("2026-07");
 
     await setGroupLineAmount(lid, "2026-07", 12, "ongoing");
@@ -217,22 +214,22 @@ describe("setGroupLineAmount", () => {
   // Renommer une ligne n'a pas de mois : ce sont des propriétés qui valent pour tous
   // les mois. Rien à discuter côté calendrier, hier comme aujourd'hui.
   test("renommer une ligne reste possible, quel que soit le calendrier", async () => {
-    const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
     at("2026-01");
-    const lid = await addGroupLine(gid, "Spotify", 10, 3, "2026-01");
+    const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
     at("2026-07");
 
-    await editGroupLine(lid, "Spotify Famille", 15);
+    await editGroupLine(lid, "Spotify Famille");
 
-    expect(db.prepare(`SELECT name, day FROM group_lines WHERE id = ?`).get(lid)).toEqual({ name: "Spotify Famille", day: 15 });
+    expect(db.prepare(`SELECT name FROM group_lines WHERE id = ?`).get(lid)).toEqual({ name: "Spotify Famille" });
   });
 });
 
 describe("removeLineAmount", () => {
   test("retire un montant posé dans un mois passé", async () => {
-    const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
     at("2026-01");
-    const lid = await addGroupLine(gid, "Spotify", 10, 3, "2026-01");
+    const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
     at("2026-07");
     await setGroupLineAmount(lid, "2026-07", 12, "ongoing");
     at("2026-09");
@@ -244,9 +241,9 @@ describe("removeLineAmount", () => {
   });
 
   test("accepte de retirer un montant du mois courant", async () => {
-    const gid = insertRecurringGroup(db, "a1", "Abonnements", "out", null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
     at("2026-01");
-    const lid = await addGroupLine(gid, "Spotify", 10, 3, "2026-01");
+    const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
     at("2026-07");
     await setGroupLineAmount(lid, "2026-07", 12, "ongoing");
 

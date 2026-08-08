@@ -60,8 +60,9 @@ CREATE TABLE IF NOT EXISTS groups (
   account_id TEXT NOT NULL REFERENCES accounts(id),
   name TEXT NOT NULL,
   direction TEXT NOT NULL CHECK (direction IN ('in', 'out')),
-  kind TEXT NOT NULL CHECK (kind IN ('envelope', 'recurring')),
   -- Vestige : plus lu par aucun calcul de budget (la vérité est dans budget_amounts).
+  -- Sert AUSSI de marqueur de version à migrateGroupsV2, qui détruit les groupes quand
+  -- il ne le trouve pas : ne pas retirer sans changer ce marqueur d'abord.
   -- Conservé parce que les INSERT existants le remplissent encore ; ne pas s'en servir.
   monthly_amount REAL,
   income_kind TEXT,                -- 'principal' | 'supplementary' | NULL (revenu)

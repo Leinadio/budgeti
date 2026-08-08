@@ -4,7 +4,6 @@ export type GroupLineRow = {
   id: number;
   name: string;
   amount: number;
-  day: number;
   // Durée de vie de la ligne, comme celle d'un groupe : un abonnement résilié
   // s'arrête sans emporter le récurrent qui le porte. NULL des deux côtés = pas de
   // borne (les lignes d'avant cette colonne, et celles créées « permanentes »).
@@ -17,7 +16,6 @@ export type GroupRow = {
   accountId: string;
   name: string;
   direction: "in" | "out";
-  kind: "envelope" | "recurring";
   monthlyAmount: number | null;
   incomeKind: "principal" | "supplementary" | null;
   startMonth: string | null;
@@ -28,9 +26,14 @@ export type GroupRow = {
 // Nature d'un groupe (enveloppe ou récurrent), ou null s'il n'existe pas. Le
 // groupe 0 (non catégorisés) n'a pas de ligne dans `groups` : c'est à
 // l'appelant de le traiter comme une enveloppe (il a une provision, pas des lignes).
-export function getGroupKind(db: Database.Database, id: number): "envelope" | "recurring" | null {
-  const row = db.prepare(`SELECT kind FROM groups WHERE id = ?`).get(id) as { kind: "envelope" | "recurring" } | undefined;
-  return row ? row.kind : null;
+// Nombre de sous-postes d'une dépense, ou null si le groupe n'existe pas. C'est ce
+// nombre, et non une nature déclarée, qui dit si une transaction peut se poser
+// directement sur le groupe (canAttachToGroup).
+export function countGroupLines(db: Database.Database, id: number): number | null {
+  const existe = db.prepare(`SELECT 1 FROM groups WHERE id = ?`).get(id);
+  if (!existe) return null;
+  const row = db.prepare(`SELECT COUNT(*) AS n FROM group_lines WHERE group_id = ?`).get(id) as { n: number };
+  return row.n;
 }
 
 // Durée de vie d'un groupe (mois de départ / de fin, null = sans borne de ce
@@ -68,13 +71,13 @@ export function getLineGroupId(db: Database.Database, lineId: number): number | 
 export function listGroups(db: Database.Database): GroupRow[] {
   const groups = db
     .prepare(
-      `SELECT id, account_id AS accountId, name, direction, kind, monthly_amount AS monthlyAmount,
+      `SELECT id, account_id AS accountId, name, direction, monthly_amount AS monthlyAmount,
               income_kind AS incomeKind, start_month AS startMonth, end_month AS endMonth
        FROM groups ORDER BY name`,
     )
     .all() as (Omit<GroupRow, "lines" | "incomeKind"> & { incomeKind: string | null })[];
   const lineStmt = db.prepare(
-    `SELECT id, name, amount, day, start_month AS startMonth, end_month AS endMonth
+    `SELECT id, name, amount, start_month AS startMonth, end_month AS endMonth
      FROM group_lines WHERE group_id = ? ORDER BY id`,
   );
   return groups.map((g) => ({
@@ -84,7 +87,11 @@ export function listGroups(db: Database.Database): GroupRow[] {
   }));
 }
 
-export function insertEnvelopeGroup(
+// Crée un groupe : une dépense, ou une rémunération quand direction vaut « in ». Une
+// seule fonction depuis que la nature a disparu — un groupe naît plat, avec son montant
+// à lui, et se découpe ensuite en sous-postes si on veut (c'est alors leur somme qui
+// fait son budget).
+export function insertGroup(
   db: Database.Database,
   accountId: string,
   name: string,
@@ -96,28 +103,10 @@ export function insertEnvelopeGroup(
 ): number {
   const info = db
     .prepare(
-      `INSERT INTO groups (account_id, name, direction, kind, monthly_amount, income_kind, start_month, end_month)
-       VALUES (?, ?, ?, 'envelope', ?, ?, ?, ?)`,
+      `INSERT INTO groups (account_id, name, direction, monthly_amount, income_kind, start_month, end_month)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
     .run(accountId, name, direction, monthlyAmount, incomeKind, startMonth, endMonth);
-  return Number(info.lastInsertRowid);
-}
-
-export function insertRecurringGroup(
-  db: Database.Database,
-  accountId: string,
-  name: string,
-  direction: "in" | "out",
-  incomeKind: "principal" | "supplementary" | null = null,
-  startMonth: string,
-  endMonth: string | null,
-): number {
-  const info = db
-    .prepare(
-      `INSERT INTO groups (account_id, name, direction, kind, monthly_amount, income_kind, start_month, end_month)
-       VALUES (?, ?, ?, 'recurring', NULL, ?, ?, ?)`,
-    )
-    .run(accountId, name, direction, incomeKind, startMonth, endMonth);
   return Number(info.lastInsertRowid);
 }
 
@@ -178,22 +167,21 @@ export function insertLine(
   groupId: number,
   name: string,
   amount: number,
-  day: number,
   startMonth: string | null = null,
   endMonth: string | null = null,
 ): number {
   const info = db
     .prepare(
-      `INSERT INTO group_lines (group_id, name, amount, day, keyword, start_month, end_month)
-       VALUES (?, ?, ?, ?, '', ?, ?)`,
+      `INSERT INTO group_lines (group_id, name, amount, keyword, start_month, end_month)
+       VALUES (?, ?, ?, '', ?, ?)`,
     )
-    .run(groupId, name, amount, day, startMonth, endMonth);
+    .run(groupId, name, amount, startMonth, endMonth);
   return Number(info.lastInsertRowid);
 }
 
 // Écrit aussi group_lines.amount, la colonne héritée que plus aucun calcul de budget
 // ne lit (les montants vivent dans line_amounts, datés). Plus appelée par l'app :
-// modifier une ligne ne touche plus qu'à son nom et son jour (renameLine ci-dessous),
+// modifier une ligne ne touche plus qu'à son nom (renameLine ci-dessous),
 // son montant se fixe depuis sa case du tableau. Gardée parce que la migration de
 // reprise doit continuer de bien se comporter face à des bases où cette colonne porte
 // un montant périmé — ce que vérifie tests/db/seed-dated-amounts.test.ts.
@@ -202,15 +190,14 @@ export function updateLine(
   id: number,
   name: string,
   amount: number,
-  day: number,
 ): void {
-  db.prepare(`UPDATE group_lines SET name = ?, amount = ?, day = ? WHERE id = ?`).run(name, amount, day, id);
+  db.prepare(`UPDATE group_lines SET name = ?, amount = ? WHERE id = ?`).run(name, amount, id);
 }
 
-// Nom et jour d'une ligne : ses deux seules propriétés qui valent pour tous les mois.
-// Ne touche pas à group_lines.amount, pour ne pas y laisser un montant périmé.
-export function renameLine(db: Database.Database, id: number, name: string, day: number): void {
-  db.prepare(`UPDATE group_lines SET name = ?, day = ? WHERE id = ?`).run(name, day, id);
+// Le nom d'une ligne : sa seule propriété qui vaille pour tous les mois. Ne touche
+// pas à group_lines.amount, pour ne pas y laisser un montant périmé.
+export function renameLine(db: Database.Database, id: number, name: string): void {
+  db.prepare(`UPDATE group_lines SET name = ? WHERE id = ?`).run(name, id);
 }
 
 export function deleteLine(db: Database.Database, id: number): void {

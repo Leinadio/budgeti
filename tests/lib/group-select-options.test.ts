@@ -2,28 +2,46 @@ import { describe, it, expect } from "vitest";
 import { groupSelectSections } from "../../src/lib/group-select-options";
 
 const env = (id: number, name: string, lines: { id: number; name: string }[] = []) =>
-  ({ id, name, kind: "envelope" as const, direction: "out" as const, lines });
+  ({ id, name, direction: "out" as const, lines });
 const rec = (id: number, name: string, lines: { id: number; name: string }[] = []) =>
-  ({ id, name, kind: "recurring" as const, direction: "out" as const, lines });
+  ({ id, name, direction: "out" as const, lines });
 // Une rémunération est un groupe entrant : c'est son sens, pas sa nature, qui la
 // distingue — elle est enregistrée comme une enveloppe.
 const rem = (id: number, name: string, lines: { id: number; name: string }[] = []) =>
-  ({ id, name, kind: "envelope" as const, direction: "in" as const, lines });
+  ({ id, name, direction: "in" as const, lines });
 
 describe("groupSelectSections", () => {
-  it("range les récurrents avant les enveloppes, comme le tableau", () => {
+  // Ce qu'on peut viser suit les sous-postes, pas la nature déclarée : une dépense
+  // découpée n'est pas une destination, ses transactions vont dans un sous-poste.
+  it("ne laisse pas choisir une enveloppe qui a des sous-postes", () => {
+    const [sec] = groupSelectSections([env(1, "Courses", [{ id: 11, name: "Boulangerie" }])]);
+    expect(sec.items).toEqual([
+      { type: "group", id: 1, name: "Courses", selectable: false },
+      { type: "line", id: 11, name: "Boulangerie" },
+    ]);
+  });
+
+  it("laisse choisir un récurrent qui n'a aucun sous-poste", () => {
+    const [sec] = groupSelectSections([rec(2, "Carburant")]);
+    expect(sec.items).toEqual([{ type: "group", id: 2, name: "Carburant", selectable: true }]);
+  });
+
+  // Une seule liste de dépenses, comme le tableau : « Récurrents » et « Enveloppes »
+  // ne recouvraient aucune différence de comportement.
+  it("réunit toutes les dépenses sous un seul titre, comme le tableau", () => {
     const secs = groupSelectSections([env(1, "Courses"), rec(2, "Sosh", [{ id: 10, name: "Internet" }])]);
-    expect(secs.map((s) => s.label)).toEqual(["Récurrents", "Enveloppes"]);
+    expect(secs.map((s) => s.label)).toEqual(["Dépenses"]);
+    expect(secs[0].items.map((i) => i.name)).toEqual(["Courses", "Sosh", "Internet"]);
   });
 
   it("sort les rémunérations des enveloppes et les met en tête, comme le tableau", () => {
     const secs = groupSelectSections([env(1, "Courses"), rem(21, "Rémunération Principale")]);
-    expect(secs.map((s) => s.label)).toEqual(["Rémunérations", "Enveloppes"]);
+    expect(secs.map((s) => s.label)).toEqual(["Rémunérations", "Dépenses"]);
   });
 
-  it("ne laisse aucune rémunération traîner dans les enveloppes", () => {
-    const [, enveloppes] = groupSelectSections([rem(21, "Rémunération Principale"), env(1, "Courses")]);
-    expect(enveloppes.items.map((i) => i.id)).toEqual([1]);
+  it("ne laisse aucune rémunération traîner dans les dépenses", () => {
+    const [, depenses] = groupSelectSections([rem(21, "Rémunération Principale"), env(1, "Courses")]);
+    expect(depenses.items.map((i) => i.id)).toEqual([1]);
   });
 
   it("laisse choisir une rémunération, comme une enveloppe", () => {
@@ -32,7 +50,7 @@ describe("groupSelectSections", () => {
   });
 
   it("garde un récurrent entrant dans les rémunérations, sans le rendre choisissable", () => {
-    const entrant = { id: 30, name: "Loyer perçu", kind: "recurring" as const, direction: "in" as const, lines: [{ id: 31, name: "Studio" }] };
+    const entrant = { id: 30, name: "Loyer perçu", direction: "in" as const, lines: [{ id: 31, name: "Studio" }] };
     const [sec] = groupSelectSections([entrant]);
     expect(sec.label).toBe("Rémunérations");
     expect(sec.items).toEqual([
@@ -43,7 +61,7 @@ describe("groupSelectSections", () => {
 
   it("n'ouvre pas une section vide", () => {
     const secs = groupSelectSections([env(1, "Courses")]);
-    expect(secs.map((s) => s.label)).toEqual(["Enveloppes"]);
+    expect(secs.map((s) => s.label)).toEqual(["Dépenses"]);
   });
 
   it("ne rend rien quand il n'y a aucun groupe", () => {
@@ -66,21 +84,8 @@ describe("groupSelectSections", () => {
     ]);
   });
 
-  it("garde le titre d'un récurrent sans ligne : il dit pourquoi rien n'est choisissable", () => {
-    const [sec] = groupSelectSections([rec(2, "Sosh")]);
-    expect(sec.items).toEqual([{ type: "group", id: 2, name: "Sosh", selectable: false }]);
-  });
-
   it("garde l'ordre reçu à l'intérieur d'une section", () => {
     const [sec] = groupSelectSections([env(3, "Sucreries"), env(1, "Courses")]);
     expect(sec.items.map((i) => i.id)).toEqual([3, 1]);
-  });
-
-  it("place les lignes d'une enveloppe sous elle", () => {
-    const [sec] = groupSelectSections([env(1, "Courses", [{ id: 20, name: "Drive" }])]);
-    expect(sec.items).toEqual([
-      { type: "group", id: 1, name: "Courses", selectable: true },
-      { type: "line", id: 20, name: "Drive" },
-    ]);
   });
 });

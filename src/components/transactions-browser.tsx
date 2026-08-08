@@ -70,10 +70,10 @@ export function TransactionsBrowser({ transactions, groups, accounts }: { transa
   // qui vivent le mois de la transaction (cf. src/lib/group-options.ts).
   const groupsOfTxn = (t: TxnView) =>
     groupsForMonth(groups.filter((g) => g.accountId === t.accountId), t.date.slice(0, 7), t.groupId)
-      // kind : le sélecteur en a besoin pour ne pas proposer un récurrent comme
-      // destination (seules ses lignes le sont). direction : pour ranger les
-      // rémunérations dans leur propre section plutôt qu'avec les enveloppes.
-      .map((g) => ({ id: g.id, name: g.name, kind: g.kind, direction: g.direction, lines: g.lines }));
+      // lines : le sélecteur en a besoin pour ne pas proposer comme destination une
+      // dépense découpée (seuls ses sous-postes le sont). direction : pour ranger les
+      // rémunérations dans leur propre section plutôt qu'avec les dépenses.
+      .map((g) => ({ id: g.id, name: g.name, direction: g.direction, lines: g.lines }));
   const lineName = (id: number) => {
     for (const g of groups) {
       const l = g.lines.find((x) => x.id === id);

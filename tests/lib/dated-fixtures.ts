@@ -2,12 +2,12 @@ import { toDatedBudgets, toDatedLineAmounts, type DatedBudgets, type DatedLineAm
 import type { Group } from "../../src/lib/forecast";
 
 // Reproduit migrateSeedDatedAmounts sur des fixtures : le montant porté par la
-// fixture (monthlyAmount pour une enveloppe, amount pour une ligne) devient la
-// première entrée datée, au mois de départ du groupe.
+// fixture (monthlyAmount pour une dépense plate, amount pour un sous-poste) devient
+// la première entrée datée, au mois de départ du groupe.
 export function seedDated(groups: Group[]): { dated: DatedBudgets; datedLines: DatedLineAmounts } {
   const start = (g: Group) => g.startMonth ?? "2000-01";
   const budgets = groups
-    .filter((g) => g.kind === "envelope")
+    .filter((g) => g.lines.length === 0)
     .map((g) => ({ groupId: g.id, effectiveMonth: start(g), amount: g.monthlyAmount ?? 0 }));
   const lines = groups.flatMap((g) =>
     g.lines.map((l) => ({ lineId: l.id, effectiveMonth: start(g), amount: l.amount })),

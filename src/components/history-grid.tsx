@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { monthLabel } from "@/lib/transactions-view";
 import type { AccountForecast } from "@/lib/forecast";
 import { type MonthCell, type HistorySection, type HistoryRow, type HistorySubRow, type HistoryTxn, type SoldeColumn, type PlannedSoldes, type Overspend, type IgnoredBlock, uncatOverspend, uncatOverspendOf, computeTableEstimate, rowRevenus, rowOverspend, groupsWithPending } from "@/lib/history";
-import { sectionsAtMonth } from "@/lib/history-month-view";
+import { sectionsAtMonth, sectionSlots } from "@/lib/history-month-view";
 import { groupsForMonth } from "@/lib/group-options";
 import { groupPeriodLabel } from "@/lib/group-period-label";
 import { soldeCell } from "@/lib/solde-cell";
@@ -61,7 +61,6 @@ import { type BudgetChange } from "@/lib/budget-history";
 export type SelectGroup = {
   id: number;
   name: string;
-  kind: "envelope" | "recurring";
   // Sens du groupe : sépare les rémunérations des dépenses dans le menu de
   // rattachement (cf. src/lib/group-select-options.ts).
   direction: "in" | "out";
@@ -72,7 +71,7 @@ export type SelectGroup = {
   changes: BudgetChange[];
   // Les lignes portent leur propre durée de vie, comme le groupe la sienne : c'est
   // elle qu'affiche la colonne de gauche à côté du nom du poste.
-  lines: { id: number; name: string; amount: number; day: number; startMonth?: string | null; endMonth?: string | null; changes: BudgetChange[] }[];
+  lines: { id: number; name: string; amount: number; startMonth?: string | null; endMonth?: string | null; changes: BudgetChange[] }[];
 };
 // Surbrillance de la case sélectionnée depuis le side panel : un anneau seul. Le fond
 // teinté qui l'accompagnait est parti avec les autres couleurs de fond — l'anneau
@@ -1356,7 +1355,7 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
   // ouvrent le mini-formulaire de rémunération (Task 7), qui réutilise le même état.
   // Le mois en fait partie : chaque tableau de mois porte ses propres boutons
   // d'ajout, et sans lui le même formulaire s'ouvrirait dans tous les mois à la fois.
-  type Adding = { kind: "recurring" | "envelope" | "principal" | "supplementary"; month: string };
+  type Adding = { kind: "expense" | "principal" | "supplementary"; month: string };
   const [adding, setAdding] = useState<Adding | null>(null);
   // Ouvre le formulaire de cette section dans CE tableau, ou le referme si c'est
   // déjà lui qui est ouvert.
@@ -1479,14 +1478,13 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
       groupManage: {
         groupId: r.id,
         name: r.name,
-        kind: sg?.kind ?? "envelope",
         month: manageMonth,
         stripMin,
         stripMax,
         startMonth: sg?.startMonth,
         endMonth: sg?.endMonth,
         changes: sg?.changes ?? [],
-        lines: (sg?.lines ?? []).map((l) => ({ id: l.id, name: l.name, day: l.day })),
+        lines: (sg?.lines ?? []).map((l) => ({ id: l.id, name: l.name })),
       },
     };
     return (
@@ -1500,8 +1498,8 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
             )}
             <span className="min-w-0 truncate font-medium">{r.name}</span>
             {/* Durée de vie du groupe, dite en clair : « ce mois uniquement »,
-                « permanent », ou la plage. Sans elle, une enveloppe de vacances
-                et une enveloppe de courses se ressemblent trait pour trait, et
+                « permanent », ou la plage. Sans elle, une dépense de vacances
+                et une dépense de courses se ressemblent trait pour trait, et
                 rien ne dit pourquoi l'une disparaît le mois suivant. Même
                 micro-typographie que la mention « projection » des en-têtes de
                 mois : une étiquette, pas un contenu. */}
@@ -1557,7 +1555,6 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
               const subAsRow: HistoryRow = {
                 id: sub.id,
                 name: sub.name,
-                kind: "recurring",
                 direction: r.direction,
                 incomeKind: null,
                 cells: sub.cells,
@@ -1604,7 +1601,6 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
                             lineManage: {
                               lineId: sub.id,
                               name: sub.name,
-                              day: sgLine?.day ?? 1,
                               month: gMonth,
                               stripMin,
                               stripMax,
@@ -1653,10 +1649,10 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
     );
   };
 
-  // Ligne dédiée affichant le Reste/Manque final d'une section de dépense
-  // (Récurrents / Enveloppes) en bas du tableau, dans la colonne Reste/Manque.
-  // Le montant est retiré de la ligne « Total ... » et reporté ici.
-  const renderSectionResteRow = (kind: "recurring" | "envelope", label: string, secs: HistorySection[], mi: number) => {
+  // Ligne dédiée affichant le Reste/Manque final de la section des dépenses, en bas
+  // du tableau, dans la colonne Reste/Manque. Le montant est retiré de la ligne
+  // « Total ... » et reporté ici.
+  const renderSectionResteRow = (kind: "expense", label: string, secs: HistorySection[], mi: number) => {
     const sec = secs.find((s) => s.kind === kind);
     if (!sec) return null;
     const rowKey = `reste:${kind}`;
@@ -1807,6 +1803,83 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
     // transactions de ce mois-là. C'est toute la raison d'être des tableaux séparés.
     const secs = sectionsAtMonth(sections, mi, m);
     const totalCols = colsOfMonth(m);
+
+    // En-tête de la section des dépenses : le bouton qui crée une dépense, et le
+    // formulaire quand il est ouvert. Le même, que la section existe déjà ou qu'elle
+    // reste à naître — sans quoi un compte encore vide n'aurait aucun bouton, et il
+    // faudrait une dépense pour obtenir de quoi en créer une.
+    const enTeteDepense = () => (
+      <>
+        <TableRow className="hover:bg-transparent">
+          <TableCell colSpan={totalCols} className="p-0">
+            <div className="font-sans bg-background flex w-fit items-center py-1 pr-3 pl-1">
+              <Button type="button" size="xs" variant="outline" onClick={() => toggleAdding("expense", m)}>
+                <Plus />
+                Dépense
+              </Button>
+            </div>
+          </TableCell>
+        </TableRow>
+        {addingHere(m) === "expense" && (
+          <TableRow className="hover:bg-transparent">
+            <TableCell colSpan={totalCols} className="p-0">
+              <div className="font-sans bg-background w-fit">
+                {/* Créé depuis le tableau d'un mois : ce mois-là est proposé
+                    d'emblée comme mois de départ. */}
+                <NewGroupInline
+                  accountId={accountId}
+                  stripMin={stripMin}
+                  stripMax={stripMax}
+                  defaultMonth={m}
+                  onDone={() => setAdding(null)}
+                />
+              </div>
+            </TableCell>
+          </TableRow>
+        )}
+      </>
+    );
+
+    // En-tête des rémunérations : un bouton par type encore absent du compte —
+    // au plus une principale et une supplémentaire.
+    const enTeteRemuneration = (hasPrincipal: boolean, hasSupplementary: boolean) => (
+      <>
+        {(!hasPrincipal || !hasSupplementary) && (
+          <TableRow className="hover:bg-transparent">
+            <TableCell colSpan={totalCols} className="p-0">
+              <div className="font-sans bg-background flex w-fit items-center gap-3 py-0.5 pr-3 pl-1">
+                {!hasPrincipal && (
+                  <Button type="button" size="xs" variant="outline" onClick={() => toggleAdding("principal", m)}>
+                    <Plus />
+                    Rémunération principale
+                  </Button>
+                )}
+                {!hasSupplementary && (
+                  <Button type="button" size="xs" variant="outline" onClick={() => toggleAdding("supplementary", m)}>
+                    <Plus />
+                    Rémunération supplémentaire
+                  </Button>
+                )}
+              </div>
+            </TableCell>
+          </TableRow>
+        )}
+        {(addingHere(m) === "principal" || addingHere(m) === "supplementary") && (
+          <TableRow className="hover:bg-transparent">
+            <TableCell colSpan={totalCols} className="p-0">
+              <div className="font-sans bg-background w-fit">
+                <NewRemunerationInline
+                  accountId={accountId}
+                  incomeKind={addingHere(m) as "principal" | "supplementary"}
+                  onDone={() => setAdding(null)}
+                />
+              </div>
+            </TableCell>
+          </TableRow>
+        )}
+      </>
+    );
+
     return (
     <>
     {/* w-max : la largeur du tableau suit son contenu, pas le conteneur. Sinon
@@ -2013,64 +2086,31 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
             return <Fragment key={i}>{renderCols(cols, slots)}</Fragment>;
           })}
         </TableRow>
-        {secs.map((sec, si) => {
+        {sectionSlots(secs).map((slot, si) => {
           // Un petit espace sépare chaque section de la précédente.
           const spacer = si > 0 ? <SpacerRow cols={totalCols} /> : null;
+          // Emplacement d'une section encore inexistante : son bouton d'ajout, et
+          // rien d'autre. Pas de total ni de Balance — il n'y a rien à totaliser.
+          if (slot.kind === "empty") {
+            return (
+              <Fragment key={`vide-${slot.sectionKind}`}>
+                {spacer}
+                {slot.sectionKind === "income" ? enTeteRemuneration(false, false) : enTeteDepense()}
+              </Fragment>
+            );
+          }
+          const sec = slot.section;
           if (sec.kind === "income") {
             // Rémunérations : lignes au niveau des sections, tout en haut, puis les
             // reçus non catégorisés, puis une ligne « Total rémunérations »
-            // (principale + supplémentaire). L'en-tête n'affiche un bouton
-            // d'ajout (Task 7) que pour les types encore absents du compte —
-            // au plus une principale et une supplémentaire.
+            // (principale + supplémentaire).
             const uncatIn = secs.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in");
             const hasPrincipal = sec.rows.some((r) => r.incomeKind === "principal");
             const hasSupplementary = sec.rows.some((r) => r.incomeKind === "supplementary");
             return (
               <Fragment key={sec.kind}>
                 {spacer}
-                {(!hasPrincipal || !hasSupplementary) && (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={totalCols} className="p-0">
-                      <div className="font-sans bg-background flex w-fit items-center gap-3 py-0.5 pr-3 pl-1">
-                        {!hasPrincipal && (
-                          <Button
-                            type="button"
-                            size="xs"
-                            variant="outline"
-                            onClick={() => toggleAdding("principal", m)}
-                          >
-                            <Plus />
-                            Rémunération principale
-                          </Button>
-                        )}
-                        {!hasSupplementary && (
-                          <Button
-                            type="button"
-                            size="xs"
-                            variant="outline"
-                            onClick={() => toggleAdding("supplementary", m)}
-                          >
-                            <Plus />
-                            Rémunération supplémentaire
-                          </Button>
-                        )}
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )}
-                {(addingHere(m) === "principal" || addingHere(m) === "supplementary") && (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={totalCols} className="p-0">
-                      <div className="font-sans bg-background w-fit">
-                        <NewRemunerationInline
-                          accountId={accountId}
-                          incomeKind={addingHere(m) as "principal" | "supplementary"}
-                          onDone={() => setAdding(null)}
-                        />
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )}
+                {enTeteRemuneration(hasPrincipal, hasSupplementary)}
                 {sec.rows.map((r) => renderGroup(r, mi, true))}
                 {uncatIn && renderUncatRows(uncatIn, secs, mi)}
                 <TableRow className="font-medium">
@@ -2093,54 +2133,20 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
               </Fragment>
             );
           }
-          // Récurrents / Enveloppes : un titre de section avec un bouton d'ajout
-          // inline (Task 5), puis les lignes, puis une ligne de total en bas
-          // (« Total Récurrents » / « Total Enveloppes »), comme les rémunérations.
-          const sectionKind = sec.kind as "recurring" | "envelope";
+          // Les dépenses : un titre de section avec son bouton d'ajout inline, puis les
+          // lignes, puis une ligne de total en bas, comme les rémunérations.
           return (
             <Fragment key={sec.kind}>
               {spacer}
-              <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={totalCols} className="p-0">
-                  <div className="font-sans bg-background flex w-fit items-center py-1 pr-3 pl-1">
-                    <Button
-                      type="button"
-                      size="xs"
-                      variant="outline"
-                      onClick={() => toggleAdding(sectionKind, m)}
-                    >
-                      <Plus />
-                      {labelOfSection(sectionKind)}
-                    </Button>
-                  </div>
-                </TableCell>
-              </TableRow>
-              {addingHere(m) === sectionKind && (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={totalCols} className="p-0">
-                    <div className="font-sans bg-background w-fit">
-                      {/* Créé depuis le tableau d'un mois : ce mois-là est proposé
-                          d'emblée comme mois de départ. */}
-                      <NewGroupInline
-                        accountId={accountId}
-                        kind={sectionKind}
-                        stripMin={stripMin}
-                        stripMax={stripMax}
-                        defaultMonth={m}
-                        onDone={() => setAdding(null)}
-                      />
-                    </div>
-                  </TableCell>
-                </TableRow>
-              )}
+              {enTeteDepense()}
               {sec.rows.map((r) => renderGroup(r, mi))}
               <TableRow className="font-medium">
                 <TableCell className="h-px p-0">
-                  <FirstColBox>{sec.kind === "envelope" ? "Total Enveloppes" : "Total Récurrents"}</FirstColBox>
+                  <FirstColBox>Total Dépenses</FirstColBox>
                 </TableCell>
                 <SectionTotalsCells sec={sec} months={months} currentMonth={currentMonth} onSelect={onSelect} selCellKey={selCellKey} only={mi} />
               </TableRow>
-              {renderSectionResteRow(sec.kind, sec.kind === "envelope" ? "Balance enveloppes" : "Balance récurrents", secs, mi)}
+              {renderSectionResteRow("expense", "Balance dépenses", secs, mi)}
             </Fragment>
           );
         })}
@@ -2197,7 +2203,7 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
         </TableRow>
         {/* Dépassement final du mois : somme des montants rouges de la colonne
             Balance (groupes qui débordent + Non catégorisés), hors lignes
-            « Balance récurrents / enveloppes » qui agrègent déjà ces montants. */}
+            « Balance dépenses » qui agrège déjà ces montants. */}
         <TableRow className="text-sm">
           <TableCell className="bg-background h-px p-0">
             <FirstColBox><span className="text-muted-foreground">Dépassement hors budget</span></FirstColBox>

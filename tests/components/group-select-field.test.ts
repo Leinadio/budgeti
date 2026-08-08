@@ -18,39 +18,36 @@ const rendu = (groups: Parameters<typeof GroupSelectField>[0]["groups"]) =>
     createElement(GroupSelectField, { txnId: "t1", groups, defaultGroupId: null, defaultLineId: null }),
   );
 
-const courses = { id: 1, name: "Courses", kind: "envelope" as const, direction: "out" as const, lines: [] };
+const courses = { id: 1, name: "Courses", direction: "out" as const, lines: [] };
 const sosh = {
-  id: 2, name: "Sosh", kind: "recurring" as const, direction: "out" as const,
+  id: 2, name: "Sosh", direction: "out" as const,
   lines: [{ id: 10, name: "Internet" }],
 };
-const salaire = { id: 21, name: "Rémunération Principale", kind: "envelope" as const, direction: "in" as const, lines: [] };
+const salaire = { id: 21, name: "Rémunération Principale", direction: "in" as const, lines: [] };
 
 describe("GroupSelectField", () => {
-  it("sépare les récurrents des enveloppes, récurrents d'abord", () => {
+  // Une seule liste de dépenses, comme le tableau : plates et découpées y voisinent,
+  // et c'est le titre inerte d'une découpée qui dit qu'on vise ses sous-postes.
+  it("réunit les dépenses sous un seul titre", () => {
     const html = rendu([courses, sosh]);
-    expect(html.indexOf('<optgroup label="Récurrents">')).toBeGreaterThan(-1);
-    expect(html.indexOf('<optgroup label="Récurrents">')).toBeLessThan(
-      html.indexOf('<optgroup label="Enveloppes">'),
-    );
-  });
-
-  it("n'ouvre pas de section quand la nature est absente", () => {
-    expect(rendu([courses])).not.toContain("Récurrents");
+    expect(html).toContain('<optgroup label="Dépenses">');
+    expect(html).not.toContain('label="Récurrents"');
+    expect(html).not.toContain('label="Enveloppes"');
   });
 
   it("donne aux rémunérations leur propre section, en tête", () => {
     const html = rendu([courses, sosh, salaire]);
     expect(html).toContain('<optgroup label="Rémunérations">');
-    expect(html.indexOf('label="Rémunérations"')).toBeLessThan(html.indexOf('label="Récurrents"'));
-    // Et elle ne traîne plus au milieu des enveloppes.
+    expect(html.indexOf('label="Rémunérations"')).toBeLessThan(html.indexOf('label="Dépenses"'));
+    // Et elle ne traîne plus au milieu des dépenses.
     expect(html.indexOf("Rémunération Principale")).toBeLessThan(html.indexOf("Courses"));
   });
 
-  it("laisse choisir une enveloppe", () => {
+  it("laisse choisir une dépense plate", () => {
     expect(rendu([courses])).toContain('<option value="g:1">Courses</option>');
   });
 
-  it("affiche le nom d'un récurrent en titre inerte, jamais choisissable", () => {
+  it("affiche le nom d'une dépense découpée en titre inerte, jamais choisissable", () => {
     const html = rendu([sosh]);
     expect(html).toContain('<option value="t:2" disabled="">Sosh</option>');
     expect(html).not.toContain('value="g:2"');

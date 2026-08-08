@@ -6,7 +6,7 @@ import { overspendNotifications, withoutDismissed, notificationId, unseenIds, no
 import type { Overspend } from "../../src/lib/history";
 
 const dep = (name: string, month: string, amount: number, groupId = 1, lineId: number | null = null): Overspend => ({
-  groupId, lineId, name, month, amount, kind: lineId === null ? "envelope" : "recurring",
+  groupId, lineId, name, month, amount,
 });
 
 describe("notifications de dépassement", () => {
@@ -202,7 +202,7 @@ describe("identité d'une notification", () => {
 // affichage ait à se souvenir de vérifier.
 describe("dépassements acquittés retirés de la liste", () => {
   const item = (groupId: number, lineId: number | null, month: string): Overspend => ({
-    groupId, lineId, name: "x", month, amount: 10, kind: lineId === null ? "envelope" : "recurring",
+    groupId, lineId, name: "x", month, amount: 10,
   });
 
   it("retire la case acquittée, et elle seule", () => {

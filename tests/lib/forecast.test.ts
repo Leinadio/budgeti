@@ -9,21 +9,21 @@ const fc = (accountId: string, balance: number, groups: Group[], txns: Txn[], mo
 };
 
 const courses: Group = {
-  id: 1, accountId: "a1", name: "Courses", direction: "out", kind: "envelope",
+  id: 1, accountId: "a1", name: "Courses", direction: "out",
   monthlyAmount: 300, lines: [],
 };
 const abo: Group = {
-  id: 2, accountId: "a1", name: "Abonnements", direction: "out", kind: "recurring",
+  id: 2, accountId: "a1", name: "Abonnements", direction: "out",
   monthlyAmount: null,
   lines: [
-    { id: 11, name: "Spotify", amount: 10, day: 3 },
-    { id: 12, name: "Netflix", amount: 15, day: 8 },
+    { id: 11, name: "Spotify", amount: 10 },
+    { id: 12, name: "Netflix", amount: 15 },
   ],
 };
 const salaire: Group = {
-  id: 3, accountId: "a1", name: "Salaire", direction: "in", kind: "recurring",
+  id: 3, accountId: "a1", name: "Salaire", direction: "in",
   monthlyAmount: null,
-  lines: [{ id: 31, name: "Rémunération", amount: 2000, day: 1 }],
+  lines: [{ id: 31, name: "Rémunération", amount: 2000 }],
 };
 
 function tx(p: Partial<Txn>): Txn {
@@ -94,12 +94,11 @@ test("prevMonthKey handles year boundary (january -> previous december)", () => 
   expect(f.groups[0].prevOverspend).toBe(200);
 });
 
-test("recurring line unseen subtracted; seen ignored; timeline sorted", () => {
+test("recurring line unseen subtracted; seen ignored", () => {
   const txns = [tx({ id: "t1", amount: -10, label: "PRLV SPOTIFY", groupId: 2, lineId: 11 })]; // Spotify rattachée
   const f = fc("a1", 1000, [abo], txns, "2026-07");
   // Spotify vue -> ignorée ; Netflix non vue -> -15
   expect(f.currentEstimate).toBe(985);
-  expect(f.timeline.map((i) => [i.day, i.name, i.seen])).toEqual([[3, "Spotify", true], [8, "Netflix", false]]);
 });
 
 // Une ligne finie ne pèse plus sur l'estimation : ni sur le mois courant (elle n'est
@@ -109,14 +108,13 @@ test("ligne de récurrent finie : ni retirée du mois courant, ni projetée au s
   const aboFini: Group = {
     ...abo,
     lines: [
-      { id: 11, name: "Spotify", amount: 10, day: 3 },
-      { id: 12, name: "Netflix", amount: 15, day: 8, startMonth: null, endMonth: "2026-06" },
+      { id: 11, name: "Spotify", amount: 10 },
+      { id: 12, name: "Netflix", amount: 15, startMonth: null, endMonth: "2026-06" },
     ],
   };
   const f = fc("a1", 1000, [aboFini], [], "2026-07");
   expect(f.currentEstimate).toBe(990); // Spotify seule
   expect(f.nextEstimate).toBe(980); // et rien d'autre projeté en août
-  expect(f.timeline.map((i) => i.name)).toEqual(["Spotify"]);
 });
 
 test("recurring in-line added when unseen", () => {
@@ -135,7 +133,7 @@ test("ambiguous transaction counts in no group", () => {
 
 test("manual attachment overrides keyword", () => {
   // "CARREFOUR" matcherait Courses, mais rattaché manuellement à l'enveloppe id 5
-  const autre: Group = { id: 5, accountId: "a1", name: "Autre", direction: "out", kind: "envelope", monthlyAmount: 100, lines: [] };
+  const autre: Group = { id: 5, accountId: "a1", name: "Autre", direction: "out", monthlyAmount: 100, lines: [] };
   const txns = [tx({ id: "t1", amount: -40, label: "CARREFOUR", groupId: 5 })];
   const f = fc("a1", 1000, [courses, autre], txns, "2026-07");
   expect(f.groups.find((g) => g.id === 5)!.spent).toBe(40); // compte dans Autre
@@ -149,14 +147,13 @@ test("manual line attachment marks the line seen even without keyword match", ()
   const f = fc("a1", 1000, [abo], txns, "2026-07");
   // Netflix vue (rattachée) -> ignorée ; Spotify non vue -> -10
   expect(f.currentEstimate).toBe(990);
-  expect(f.timeline.map((i) => [i.name, i.seen])).toEqual([["Spotify", false], ["Netflix", true]]);
   // la ligne rattachée compte dans le dépensé "vu" du groupe
   expect(f.groups.find((g) => g.id === 2)!.spent).toBe(15);
 });
 
 test("income envelope adds to estimates instead of subtracting", () => {
   const salaireEnv: Group = {
-    id: 9, accountId: "a1", name: "Salaire", direction: "in", kind: "envelope",
+    id: 9, accountId: "a1", name: "Salaire", direction: "in",
     monthlyAmount: 2000, lines: [],
   };
   const f = fc("a1", 1000, [salaireEnv], [], "2026-07");
@@ -208,8 +205,7 @@ test("next month starts from current estimate and applies full amounts", () => {
 
 test("rémunération principale : ajoutée à l'estimé du mois courant ET du mois suivant", () => {
   const principal: Group = {
-    id: 40, accountId: "a1", name: "Rémunération principale", direction: "in",
-    kind: "envelope", monthlyAmount: 2000, lines: [], incomeKind: "principal",
+    id: 40, accountId: "a1", name: "Rémunération principale", direction: "in", monthlyAmount: 2000, lines: [], incomeKind: "principal",
   };
   const f = fc("a1", 100, [principal], [], "2026-07");
   expect(f.currentEstimate).toBe(2100); // 100 + 2000 attendus
@@ -218,8 +214,7 @@ test("rémunération principale : ajoutée à l'estimé du mois courant ET du mo
 
 test("rémunération supplémentaire : mois courant seulement, pas de projection au mois suivant", () => {
   const supp: Group = {
-    id: 41, accountId: "a1", name: "Rémunération supplémentaire", direction: "in",
-    kind: "envelope", monthlyAmount: 500, lines: [], incomeKind: "supplementary",
+    id: 41, accountId: "a1", name: "Rémunération supplémentaire", direction: "in", monthlyAmount: 500, lines: [], incomeKind: "supplementary",
   };
   const f = fc("a1", 100, [supp], [], "2026-07");
   expect(f.currentEstimate).toBe(600); // 100 + 500 attendus ce mois
@@ -260,7 +255,7 @@ it("enveloppe qui démarre le mois prochain : absente ce mois-ci, projetée au m
 
 it("prend le montant en vigueur du mois, pas celui de la fixture", () => {
   const g: Group = {
-    id: 1, accountId: "a1", name: "Courses", direction: "out", kind: "envelope",
+    id: 1, accountId: "a1", name: "Courses", direction: "out",
     monthlyAmount: 300, lines: [], startMonth: "2026-01", endMonth: null,
   };
   const dated = toDatedBudgets([

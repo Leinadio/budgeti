@@ -6,13 +6,11 @@
 // récurrents, enveloppes — pour qu'on lise la même chose des deux côtés, et on
 // indente ce qui appartient à une section.
 //
-// Le sens décide de la section, la nature décide de ce qui se clique : une
-// rémunération est enregistrée comme une enveloppe entrante, rien ne la distingue à
-// part sa direction.
+// Le sens décide de la section, les sous-postes décident de ce qui se clique : une
+// rémunération est un groupe entrant, rien ne la distingue à part sa direction.
 export type GroupLike = {
   id: number;
   name: string;
-  kind: "envelope" | "recurring";
   direction: "in" | "out";
   lines: { id: number; name: string }[];
 };
@@ -25,14 +23,17 @@ export type ChoiceItem =
 
 export type ChoiceSection = { label: string; items: ChoiceItem[] };
 
-// Un récurrent reste affiché même sans ligne : son titre explique pourquoi rien
-// n'est choisissable dessous, là où le retirer laisserait croire qu'il n'existe pas.
+// Une dépense découpée reste affichée même si on ne peut pas la viser elle-même : son
+// titre explique pourquoi ce sont ses sous-postes qu'on choisit dessous, là où la
+// retirer laisserait croire qu'elle n'existe pas.
 function itemsOf(g: GroupLike): ChoiceItem[] {
   const groupe: ChoiceItem = {
     type: "group",
     id: g.id,
     name: g.name,
-    selectable: g.kind === "envelope",
+    // Ce qui décide, c'est le fait d'avoir des sous-postes, pas une nature déclarée :
+    // une dépense découpée n'est pas une destination (voir canAttachToGroup).
+    selectable: g.lines.length === 0,
   };
   return [groupe, ...g.lines.map((l): ChoiceItem => ({ type: "line", id: l.id, name: l.name }))];
 }
@@ -46,7 +47,6 @@ export function groupSelectSections(groups: GroupLike[]): ChoiceSection[] {
   // et un récurrent entrant reste un revenu avant d'être un récurrent.
   return [
     section("Rémunérations", (g) => g.direction === "in"),
-    section("Récurrents", (g) => g.direction === "out" && g.kind === "recurring"),
-    section("Enveloppes", (g) => g.direction === "out" && g.kind === "envelope"),
+    section("Dépenses", (g) => g.direction === "out"),
   ].filter((s): s is ChoiceSection => s !== null);
 }

@@ -6,7 +6,7 @@ function freshDb() {
   const db = getDb(":memory:");
   db.prepare(`INSERT INTO accounts (id, name) VALUES ('a1', 'CIC')`).run();
   db.prepare(
-    `INSERT INTO groups (id, account_id, name, direction, kind, monthly_amount) VALUES (1, 'a1', 'Courses', 'out', 'envelope', 300)`,
+    `INSERT INTO groups (id, account_id, name, direction, monthly_amount) VALUES (1, 'a1', 'Courses', 'out', 300)`,
   ).run();
   return db;
 }

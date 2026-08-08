@@ -89,8 +89,7 @@ export function ForecastDetailSheet({ label, forecast: f }: { label: string; for
             </h3>
             <p className="text-muted-foreground text-sm">
               On part du solde actuel et on retire ce qui doit encore sortir d&apos;ici la fin du mois : la part non encore
-              dépensée de chaque enveloppe, et les échéances récurrentes pas encore prélevées. Les revenus pas encore reçus
-              sont ajoutés.
+              dépensée de chaque dépense, sous-postes compris. Les revenus pas encore reçus sont ajoutés.
             </p>
             <Breakdown
               start={f.balance}
@@ -154,8 +153,8 @@ export function ForecastDetailSheet({ label, forecast: f }: { label: string; for
               Solde estimé mois prochain · {formatEur(f.nextEstimate)}
             </h3>
             <p className="text-muted-foreground text-sm">
-              On repart de l&apos;estimé de fin de mois et on applique un mois complet de tous tes groupes : budgets
-              d&apos;enveloppes, échéances récurrentes et revenus. C&apos;est une tendance, si tu gardes le même rythme.
+              On repart de l&apos;estimé de fin de mois et on applique un mois complet de tous tes groupes : budgets de
+              dépenses et revenus. C&apos;est une tendance, si tu gardes le même rythme.
             </p>
             <Breakdown
               start={f.currentEstimate}
@@ -172,7 +171,7 @@ export function ForecastDetailSheet({ label, forecast: f }: { label: string; for
                 Solde mois prochain, dépassements maintenus · {formatEur(f.nextEstimateWithOverspend)}
               </h3>
               <p className="text-muted-foreground text-sm">
-                L&apos;estimé mois prochain suppose que chaque enveloppe coûte pile son budget. Si les groupes qui ont
+                L&apos;estimé mois prochain suppose que chaque dépense coûte pile son budget. Si les groupes qui ont
                 dépassé ce mois-ci continuent au même rythme, voilà où tu atterris.
               </p>
               <Breakdown

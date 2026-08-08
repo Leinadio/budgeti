@@ -54,16 +54,16 @@ export type OverspendNoticeInfo = {
   amount: number;
 };
 
-// Info nécessaire à la vue de gestion d'un groupe dans le side panel : quel groupe,
-// son nom, sa nature (une enveloppe n'a pas de lignes, un récurrent si), le mois où le
-// panneau se place (pour poser le montant de départ d'une ligne qu'on ajoute) et, pour
-// un récurrent, ses lignes réduites à ce qui vaut pour tous les mois : nom et jour.
+// Info nécessaire à la vue de gestion d'une dépense dans le side panel : laquelle,
+// son nom, le mois où le panneau se place (pour poser le montant de départ d'un
+// sous-poste qu'on ajoute) et ses sous-postes réduits à ce qui vaut pour tous les
+// mois : leur nom. Plus de nature : n'importe quelle dépense peut se découper, et
+// c'est le fait d'avoir des sous-postes qui change son comportement, pas une étiquette.
 // Aucun montant existant : un montant est daté, ce panneau n'affiche aucun mois, il ne
 // pourrait donc en montrer qu'un, vrai pour un seul mois — voir BudgetEditInfo.
 export type GroupManageInfo = {
   groupId: number;
   name: string;
-  kind: "envelope" | "recurring";
   month: string; // mois où le panneau se place (mois de départ proposé pour une ligne ajoutée)
   // Bornes de la frise du compte : les mois qu'un calendrier du panneau peut proposer
   // pour la durée d'une ligne ajoutée. Les mêmes que dans le formulaire de création
@@ -80,7 +80,7 @@ export type GroupManageInfo = {
   // mois qui n'ont jamais eu de montant à eux (vide pour un récurrent, qui n'a pas de
   // montant propre).
   changes: BudgetChange[];
-  lines: { id: number; name: string; day: number }[];
+  lines: { id: number; name: string }[];
 };
 
 // Info nécessaire à la vue de gestion d'une ligne de récurrent, ouverte par le crayon
@@ -91,13 +91,9 @@ export type GroupManageInfo = {
 // qui change encore quelque chose à l'écran. Son montant est daté et se fixe depuis sa
 // case du tableau (voir BudgetEditInfo) — même règle que pour une enveloppe, et pour
 // la même raison.
-// `day` n'est plus affiché ni saisissable ; il reste transporté pour être repassé tel
-// quel au renommage, qui écrit nom et jour d'un seul geste : sans lui, renommer une
-// ligne écraserait son jour en base.
 export type LineManageInfo = {
   lineId: number;
   name: string;
-  day: number;
   // Sa durée de vie, et de quoi la modifier : le mois où le panneau se place (repli
   // pour une ligne héritée, sans mois de départ), les bornes de la frise du compte, et
   // la vie de son montant — même rôle que pour un groupe (voir GroupManageInfo).
