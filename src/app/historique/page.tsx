@@ -10,6 +10,7 @@ import {
   sliceHistorySections, sliceSoldeColumn, slicePlannedSoldes, computeTableEstimate,
   toDatedBudgets, toDatedLineAmounts, computeOverspends, computeIgnoredBlocks,
 } from "../../lib/history";
+import { calcWindow } from "../../lib/calc-window";
 import { budgetChanges } from "../../lib/budget-history";
 import { withoutDismissed } from "../../lib/notifications";
 import { listDismissedNotifications } from "../../db/repositories/dismissed-notifications";
@@ -103,12 +104,12 @@ export default async function HistoriquePage({
           if (from > to) [from, to] = [to, from];
           if (monthRange(from, to).length > MAX_MONTHS) to = addMonthsKey(from, MAX_MONTHS - 1);
           const months = monthRange(from, to);
-          // Si la fenêtre commence après le mois courant, on calcule quand même
-          // depuis le mois courant (l'ancre des chaînes de solde), puis on ne garde
-          // que les mois affichés : les montants ne dépendent pas de la fenêtre.
-          const calcFrom = from <= currentMonth ? from : currentMonth;
-          const calcMonths = monthRange(calcFrom, to);
-          const k = calcMonths.length - months.length;
+          // La fenêtre de calcul contient TOUJOURS le mois courant, quitte à s'étendre
+          // des deux côtés : c'est lui qui ancre les chaînes de solde, en se fermant sur
+          // le solde de la banque. On coupe ensuite ce qui dépasse — les montants d'un
+          // mois ne doivent pas dépendre des mois affichés à côté (cf. calcWindow).
+          const w = calcWindow(from, to, currentMonth);
+          const calcMonths = monthRange(w.calcFrom, w.calcTo);
           // Le solde de la banque privé de ce qui est hors calcul : c'est LUI qui
           // ancre tout ce qui suit (prévision, estimé de fin de mois, chaîne de soldes).
           const balance = effectiveBalance(a.balance, ignoredByAccount[a.id]);
@@ -129,9 +130,9 @@ export default async function HistoriquePage({
             dismissed,
           );
           const plannedFull = computePlannedSoldes(sectionsFull, calcMonths, currentMonth, soldeFull.openings, estimateValue, datedBudgets);
-          const sections = sliceHistorySections(sectionsFull, calcMonths, k);
-          const solde = sliceSoldeColumn(soldeFull, k);
-          const planned = slicePlannedSoldes(plannedFull, k);
+          const sections = sliceHistorySections(sectionsFull, calcMonths, w.dropStart, w.dropEnd);
+          const solde = sliceSoldeColumn(soldeFull, w.dropStart, w.dropEnd);
+          const planned = slicePlannedSoldes(plannedFull, w.dropStart, w.dropEnd);
           const overspend = monthlyOverspend(sections, months.length);
           const grand = grandTotals(sections, months.length);
           // Calculé sur les mois affichés, à l'écart des sections : aucun total ne le voit.

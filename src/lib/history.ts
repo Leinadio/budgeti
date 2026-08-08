@@ -496,53 +496,65 @@ export type PlannedSoldes = {
 };
 
 // --- Découpe d'affichage ----------------------------------------------------
-// Quand la fenêtre choisie commence après le mois courant, les chaînes de solde
-// doivent quand même être calculées depuis le mois courant (leur ancre). La page
-// calcule donc sur une plage étendue, puis ne garde que les k derniers mois pour
-// l'affichage : ces fonctions retirent les k premiers mois de chaque structure.
+// Les chaînes de solde sont ancrées sur le mois courant : c'est lui qui se ferme sur
+// le solde de la banque. La page calcule donc toujours sur une plage qui le contient,
+// quitte à l'étendre des DEUX côtés (cf. calcWindow), puis coupe ce qui dépasse.
+// Ces fonctions retirent `k` mois au début et `j` mois à la fin de chaque structure.
+//
+// Couper aussi par la fin n'est pas un détail : sans ça, afficher juillet seul en août
+// posait le solde d'aujourd'hui à la fin de juillet, et l'argent de départ du mois
+// changeait selon la fenêtre (cf. tests/lib/solde-fenetre.test.ts).
 
-export function sliceHistorySections(sections: HistorySection[], calcMonths: string[], k: number): HistorySection[] {
-  if (k === 0) return sections;
-  const keep = new Set(calcMonths.slice(k));
+// Fin de tranche : `j` mois retirés par la fin, donc tout ce qui va jusqu'à
+// longueur - j. À j = 0 il faut prendre la longueur entière, pas slice(k, -0) — qui
+// vaut slice(k, 0) et rend un tableau vide.
+const finDe = (n: number, j: number) => n - j;
+
+export function sliceHistorySections(sections: HistorySection[], calcMonths: string[], k: number, j = 0): HistorySection[] {
+  if (k === 0 && j === 0) return sections;
+  const keep = new Set(calcMonths.slice(k, finDe(calcMonths.length, j)));
+  const coupe = <T,>(arr: T[]): T[] => arr.slice(k, finDe(arr.length, j));
   return sections.map((sec) => ({
     ...sec,
     rows: sec.rows.map((r) => ({
       ...r,
-      cells: r.cells.slice(k),
-      aliveMonths: r.aliveMonths.slice(k),
-      subRows: r.subRows.map((s) => ({ ...s, cells: s.cells.slice(k), aliveMonths: s.aliveMonths.slice(k), txns: s.txns.filter((t) => keep.has(t.month)) })),
+      cells: coupe(r.cells),
+      aliveMonths: coupe(r.aliveMonths),
+      subRows: r.subRows.map((s) => ({ ...s, cells: coupe(s.cells), aliveMonths: coupe(s.aliveMonths), txns: s.txns.filter((t) => keep.has(t.month)) })),
       txns: r.txns.filter((t) => keep.has(t.month)),
     })),
-    totals: sec.totals.slice(k),
+    totals: coupe(sec.totals),
     txns: sec.txns?.filter((t) => keep.has(t.month)),
   }));
 }
 
-export function sliceSoldeColumn(s: SoldeColumn, k: number): SoldeColumn {
-  if (k === 0) return s;
+export function sliceSoldeColumn(s: SoldeColumn, k: number, j = 0): SoldeColumn {
+  if (k === 0 && j === 0) return s;
+  const coupe = (arr: number[]) => arr.slice(k, finDe(arr.length, j));
   const rec = (r: Record<number, number[]>) =>
-    Object.fromEntries(Object.entries(r).map(([id, arr]) => [id, arr.slice(k)]));
+    Object.fromEntries(Object.entries(r).map(([id, arr]) => [id, coupe(arr)]));
   return {
-    openings: s.openings.slice(k),
-    closings: s.closings.slice(k),
+    openings: coupe(s.openings),
+    closings: coupe(s.closings),
     rowRunning: rec(s.rowRunning),
     uncategorizedRunning: s.uncategorizedRunning
-      ? { in: s.uncategorizedRunning.in?.slice(k), out: s.uncategorizedRunning.out?.slice(k) }
+      ? { in: s.uncategorizedRunning.in && coupe(s.uncategorizedRunning.in), out: s.uncategorizedRunning.out && coupe(s.uncategorizedRunning.out) }
       : null,
   };
 }
 
-export function slicePlannedSoldes(p: PlannedSoldes, k: number): PlannedSoldes {
-  if (k === 0) return p;
+export function slicePlannedSoldes(p: PlannedSoldes, k: number, j = 0): PlannedSoldes {
+  if (k === 0 && j === 0) return p;
+  const coupeN = <T,>(arr: T[]) => arr.slice(k, finDe(arr.length, j));
   const rec = (r: Record<number, (number | null)[]>) =>
-    Object.fromEntries(Object.entries(r).map(([id, arr]) => [id, arr.slice(k)]));
+    Object.fromEntries(Object.entries(r).map(([id, arr]) => [id, coupeN(arr)]));
   return {
-    prevuClosings: p.prevuClosings.slice(k),
-    depassClosings: p.depassClosings.slice(k),
+    prevuClosings: coupeN(p.prevuClosings),
+    depassClosings: coupeN(p.depassClosings),
     prevuRowRunning: rec(p.prevuRowRunning),
     depassRowRunning: rec(p.depassRowRunning),
-    uncatPrevuRunning: { in: p.uncatPrevuRunning.in?.slice(k), out: p.uncatPrevuRunning.out?.slice(k) },
-    uncatDepassRunning: { in: p.uncatDepassRunning.in?.slice(k), out: p.uncatDepassRunning.out?.slice(k) },
+    uncatPrevuRunning: { in: p.uncatPrevuRunning.in && coupeN(p.uncatPrevuRunning.in), out: p.uncatPrevuRunning.out && coupeN(p.uncatPrevuRunning.out) },
+    uncatDepassRunning: { in: p.uncatDepassRunning.in && coupeN(p.uncatDepassRunning.in), out: p.uncatDepassRunning.out && coupeN(p.uncatDepassRunning.out) },
   };
 }
 
