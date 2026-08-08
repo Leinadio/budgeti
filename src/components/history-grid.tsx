@@ -17,6 +17,7 @@ import { TxnCommentField } from "@/components/txn-comment-field";
 import { GroupSelectField } from "@/components/group-select-field";
 import { IgnoreTxnToggle } from "@/components/ignore-txn-toggle";
 import { NewGroupInline } from "@/components/new-group-inline";
+import { NewLineInline } from "@/components/new-line-inline";
 import { type ColKey, monthType, monthColumns, COL_LABEL, COL_INFO } from "@/lib/history-columns";
 import { computeRevealKeys, computePrevDisplayed, rowOpenKey, lineOpenKey, uncatOpenKey, highlightedCells, rowKeyOf, withRevealed, openKeyIn, monthIndexOf } from "@/lib/history-nav";
 import {
@@ -1349,14 +1350,27 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
   // deux côtés : seul le sens change.
   // Le mois en fait partie : chaque tableau de mois porte ses propres boutons
   // d'ajout, et sans lui le même formulaire s'ouvrirait dans tous les mois à la fois.
-  type Adding = { kind: "expense" | "income"; month: string };
+  // « line » porte en plus la dépense qu'on découpe : son formulaire ne s'ouvre pas
+  // sous un titre de section mais sous la ligne du groupe visé, là où on l'a demandé.
+  type Adding =
+    | { kind: "expense" | "income"; month: string }
+    | { kind: "line"; groupId: number; month: string };
   const [adding, setAdding] = useState<Adding | null>(null);
   // Ouvre le formulaire de cette section dans CE tableau, ou le referme si c'est
   // déjà lui qui est ouvert.
-  const toggleAdding = (kind: Adding["kind"], month: string) =>
+  const toggleAdding = (kind: "expense" | "income", month: string) =>
     setAdding((prev) => (prev && prev.kind === kind && prev.month === month ? null : { kind, month }));
   // Le formulaire ouvert dans ce tableau-ci, ou null : le même état sert les N mois.
   const addingHere = (month: string) => (adding?.month === month ? adding.kind : null);
+  // Idem pour un sous-poste, mais la question porte sur une dépense précise.
+  const addingLineHere = (groupId: number, month: string) =>
+    adding?.kind === "line" && adding.groupId === groupId && adding.month === month;
+  const toggleAddingLine = (groupId: number, month: string) =>
+    setAdding((prev) =>
+      prev?.kind === "line" && prev.groupId === groupId && prev.month === month
+        ? null
+        : { kind: "line", groupId, month },
+    );
 
   // Case active (B) choisie dans le panneau : sert au défilement et à la révélation.
   // S'il y en a plusieurs (somme), on défile vers la première.
@@ -1512,9 +1526,24 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
                 e.stopPropagation();
                 onSelect(manageDetail);
               }}
-              className="text-muted-foreground hover:text-foreground ml-1 shrink-0 opacity-0 group-hover:opacity-100"
+              className="text-muted-foreground hover:text-foreground ml-1 shrink-0 cursor-pointer opacity-0 group-hover:opacity-100"
             >
               <Pencil className="size-3.5" />
+            </button>
+            {/* Découper en sous-postes, juste à côté : le formulaire s'ouvre sous cette
+                ligne-ci, là où le sous-poste ira. Il ne touche PAS au dépliage du
+                groupe : le chevron montre les transactions, et ouvrir un formulaire de
+                création n'a aucune raison de dérouler ce qui a déjà été dépensé. */}
+            <button
+              type="button"
+              aria-label="Ajouter un sous-poste"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleAddingLine(r.id, gMonth);
+              }}
+              className="text-muted-foreground hover:text-foreground shrink-0 cursor-pointer opacity-0 group-hover:opacity-100"
+            >
+              <Plus className="size-3.5" />
             </button>
           </NameCell>
           <AmountCells
@@ -1537,6 +1566,24 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
             only={mi}
           />
         </TableRow>
+        {/* Le formulaire du nouveau sous-poste, juste sous sa dépense. Hors du bloc
+            replié ci-dessous : il ne dépend pas du dépliage, qui ne concerne que ce qui
+            existe déjà (sous-postes et transactions). */}
+        {addingLineHere(r.id, gMonth) && (
+          <TableRow className="hover:bg-transparent">
+            <TableCell colSpan={colsOfMonth(gMonth)} className="p-0">
+              <div className="font-sans bg-background w-fit">
+                <NewLineInline
+                  groupId={r.id}
+                  stripMin={stripMin}
+                  stripMax={stripMax}
+                  defaultMonth={gMonth}
+                  onDone={() => setAdding(null)}
+                />
+              </div>
+            </TableCell>
+          </TableRow>
+        )}
         {gOpen && (
           <>
             {r.subRows.map((sub: HistorySubRow) => {
@@ -1603,7 +1650,7 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
                             },
                           });
                         }}
-                        className="text-muted-foreground hover:text-foreground ml-1 shrink-0 opacity-0 group-hover:opacity-100"
+                        className="text-muted-foreground hover:text-foreground ml-1 shrink-0 cursor-pointer opacity-0 group-hover:opacity-100"
                       >
                         <Pencil className="size-3.5" />
                       </button>
@@ -1805,7 +1852,7 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
         <TableRow className="hover:bg-transparent">
           <TableCell colSpan={totalCols} className="p-0">
             <div className="font-sans bg-background flex w-fit items-center py-1 pr-3 pl-1">
-              <Button type="button" size="xs" variant="outline" onClick={() => toggleAdding("expense", m)}>
+              <Button type="button" size="xs" variant="outline" className="cursor-pointer" onClick={() => toggleAdding("expense", m)}>
                 <Plus />
                 Dépense
               </Button>
@@ -1842,7 +1889,7 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
         <TableRow className="hover:bg-transparent">
           <TableCell colSpan={totalCols} className="p-0">
             <div className="font-sans bg-background flex w-fit items-center py-1 pr-3 pl-1">
-              <Button type="button" size="xs" variant="outline" onClick={() => toggleAdding("income", m)}>
+              <Button type="button" size="xs" variant="outline" className="cursor-pointer" onClick={() => toggleAdding("income", m)}>
                 <Plus />
                 Revenu
               </Button>

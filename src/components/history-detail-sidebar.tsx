@@ -15,7 +15,6 @@ import {
   deleteGroupAction,
   setGroupAmount,
   setUncatProvision,
-  addGroupLine,
   editGroupLine,
   removeGroupLine,
   setGroupLineAmount,
@@ -30,7 +29,7 @@ import {
 } from "@/app/historique/actions";
 import { toast } from "sonner";
 import { groupPeriodLabel } from "@/lib/group-period-label";
-import { draftMode, draftOfPeriod, draftStart, type PeriodDraft } from "@/lib/group-period";
+import { draftOfPeriod, draftStart, type PeriodDraft } from "@/lib/group-period";
 import { PeriodFields } from "@/components/period-fields";
 import { Sidebar, SidebarHeader, SidebarContent } from "@/components/ui/sidebar";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
@@ -449,21 +448,10 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
   const router = useRouter();
   const [busy, setBusy] = useState(false);
   const [name, setName] = useState(info.name);
-  const [newName, setNewName] = useState("");
-  const [newAmount, setNewAmount] = useState("");
-  // Durée de la ligne à ajouter. Elle part du mois où le panneau se place — celui de
-  // la colonne cliquée — parce que c'est déjà de là qu'une ligne ajoutée compte ; on
-  // peut la déplacer, la frise du compte entière est proposée.
-  const [draft, setDraft] = useState<PeriodDraft>({ choice: "from", start: info.month, end: null });
   // Durée du groupe, en état local : `info` est un instantané capturé à l'ouverture du
   // panneau que router.refresh() ne remplace pas. Sans ça, l'étiquette du titre
   // continuerait d'annoncer « depuis toujours » juste après qu'on l'a arrêté.
   const [periode, setPeriode] = useState({ startMonth: info.startMonth, endMonth: info.endMonth });
-  // Liste des lignes affichée, en état local optimiste : `info.lines` est un
-  // instantané capturé à l'ouverture du panneau, que router.refresh() ne met pas à
-  // jour. On la maintient ici pour que l'ajout / la suppression se reflètent tout de
-  // suite (la vraie valeur sera rechargée à la prochaine ouverture du panneau).
-  const [lines, setLines] = useState(info.lines);
   const run = async <T,>(fn: () => Promise<T>): Promise<T> => {
     setBusy(true);
     const result = await fn();
@@ -523,65 +511,6 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
             setPeriode({ startMonth: s, endMonth: e });
           }}
         />
-
-        {/* Découpage en sous-postes, ouvert à n'importe quelle dépense : c'est une
-            suite possible, pas une nature qu'on choisirait à la création. Dès qu'il y
-            en a un, le budget de la dépense devient leur somme et sa case passe en
-            lecture seule.
-            Les sous-postes existants ne se modifient plus ici : chacun a son propre
-            crayon dans le tableau, à côté de son nom, qui ouvre son panneau
-            (LineManageBlock). Les renommer d'ici obligeait à les chercher tous dans
-            une liste, alors qu'on les a sous les yeux. */}
-        <div className="flex flex-col gap-3">
-          <Label className="font-normal">Ajouter un sous-poste</Label>
-          {lines.length === 0 && <p className="text-muted-foreground text-sm">Aucun sous-poste pour l&apos;instant.</p>}
-          <div className="mt-1 flex flex-col gap-3 border-t pt-3">
-            <div className="flex items-end gap-2">
-              <div className="flex min-w-0 flex-1 flex-col gap-1">
-                <Label className="text-muted-foreground text-xs font-normal">Nom</Label>
-                <Input value={newName} onChange={(e) => setNewName(e.target.value)} className="h-8" placeholder="Ex: Spotify" />
-              </div>
-              {/* Montant de départ de la ligne, seul montant qui subsiste dans ce
-                  panneau : il ne montre rien d'existant, il en pose un. Il prend effet
-                  au mois de départ choisi juste en dessous, et se modifie ensuite
-                  depuis la case de la ligne, mois par mois. */}
-              <div className="flex w-20 flex-col gap-1">
-                <Label className="text-muted-foreground text-xs font-normal">Montant de départ</Label>
-                <Input type="number" step="0.01" min="0" value={newAmount} onChange={(e) => setNewAmount(e.target.value)} className="h-8 text-right tabular-nums" placeholder="0.00" />
-              </div>
-            </div>
-            {/* Durée de la ligne : la même question que pour un groupe, dans les
-                mêmes mots. Une ligne a sa vie propre — un abonnement se résilie sans
-                emporter la dépense qui le porte. */}
-            <PeriodFields draft={draft} onChange={setDraft} stripMin={info.stripMin} stripMax={info.stripMax} compact />
-            <Button
-              type="button"
-              size="sm"
-              variant="secondary"
-              className="self-start"
-              disabled={busy || !newName.trim()}
-              onClick={() =>
-                run(async () => {
-                  const n = newName.trim();
-                  const a = parseFloat(newAmount) || 0;
-                  const id = await addGroupLine(
-                    info.groupId, n, a, draftStart(draft), draftMode(draft), draft.end ?? draft.start,
-                  );
-                  // On n'ajoute la ligne optimiste qu'avec le vrai id en base : sinon
-                  // une suppression/édition immédiate (sans refermer le panneau)
-                  // viserait un id fictif et laisserait une ligne fantôme en base.
-                  if (id > 0) {
-                    setLines((cur) => [...cur, { id, name: n }]);
-                  }
-                  setNewName("");
-                  setNewAmount("");
-                })
-              }
-            >
-              Ajouter
-            </Button>
-          </div>
-        </div>
 
         {/* Suppression du groupe */}
         <div className="border-t pt-4">
