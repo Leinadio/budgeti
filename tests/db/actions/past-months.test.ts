@@ -32,7 +32,7 @@ const amountsOf = (groupId: number) =>
 
 describe("setGroupAmount", () => {
   test("écrit dans un mois passé", async () => {
-    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
 
     await setGroupAmount(gid, "2026-03", 350, "ongoing");
@@ -41,7 +41,7 @@ describe("setGroupAmount", () => {
   });
 
   test("écrit aussi « ce mois seulement » dans un mois passé", async () => {
-    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
 
     await setGroupAmount(gid, "2026-03", 350, "once");
@@ -51,7 +51,7 @@ describe("setGroupAmount", () => {
   });
 
   test("accepte le mois courant", async () => {
-    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
 
     await setGroupAmount(gid, "2026-07", 350, "ongoing");
@@ -60,7 +60,7 @@ describe("setGroupAmount", () => {
   });
 
   test("accepte un mois futur", async () => {
-    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
 
     await setGroupAmount(gid, "2026-09", 350, "ongoing");
@@ -71,7 +71,7 @@ describe("setGroupAmount", () => {
   // Le seul refus qui subsiste : un mois qui n'est pas une clé « YYYY-MM ». Il ne
   // doit pas entrer en base, où il se comparerait n'importe comment aux autres.
   test("refuse un mois mal formé", async () => {
-    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
 
     await setGroupAmount(gid, "mars 2026", 350, "ongoing");
@@ -82,7 +82,7 @@ describe("setGroupAmount", () => {
   // Le panneau se resynchronise sur ce qu'elle renvoie : la vie du budget rendue
   // doit inclure le montant qu'on vient de poser sur le mois passé.
   test("renvoie la vie du budget à jour après une écriture dans le passé", async () => {
-    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
 
     const changes = await setGroupAmount(gid, "2026-03", 350, "ongoing");
@@ -124,7 +124,7 @@ describe("removeGroupAmount", () => {
   // La corbeille est la face arrière de l'édition : un montant posé par erreur sur
   // un mois passé doit pouvoir en repartir.
   test("retire un changement posé dans un mois passé", async () => {
-    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
     setBudgetAmount(db, gid, "2026-03", 350);
 
@@ -135,7 +135,7 @@ describe("removeGroupAmount", () => {
   });
 
   test("accepte de retirer un changement du mois courant", async () => {
-    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
     setBudgetAmount(db, gid, "2026-07", 350);
 
@@ -147,7 +147,7 @@ describe("removeGroupAmount", () => {
   // Ce refus-là n'est pas une affaire de calendrier : sans montant de départ, les
   // mois qui le précédaient n'auraient plus de budget du tout.
   test("refuse toujours de retirer le montant de départ, même dans le passé", async () => {
-    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
     setBudgetAmount(db, gid, "2026-03", 350);
 
@@ -159,7 +159,7 @@ describe("removeGroupAmount", () => {
 
 describe("addGroupLine", () => {
   test("crée une ligne dans un mois passé", async () => {
-    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2026-01", null);
 
     const lid = await addGroupLine(gid, "Netflix", 15, "2026-03");
 
@@ -168,7 +168,7 @@ describe("addGroupLine", () => {
   });
 
   test("accepte de créer une ligne au mois courant", async () => {
-    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2026-01", null);
 
     const lid = await addGroupLine(gid, "Netflix", 15, "2026-07");
 
@@ -177,7 +177,7 @@ describe("addGroupLine", () => {
   });
 
   test("refuse un mois mal formé", async () => {
-    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2026-01", null);
 
     const lid = await addGroupLine(gid, "Netflix", 15, "bientôt");
 
@@ -188,7 +188,7 @@ describe("addGroupLine", () => {
 
 describe("setGroupLineAmount", () => {
   test("modifie le montant d'une ligne dans un mois passé", async () => {
-    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2026-01", null);
     at("2026-01");
     const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
     at("2026-07");
@@ -201,7 +201,7 @@ describe("setGroupLineAmount", () => {
   });
 
   test("accepte le mois courant", async () => {
-    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2026-01", null);
     at("2026-01");
     const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
     at("2026-07");
@@ -214,7 +214,7 @@ describe("setGroupLineAmount", () => {
   // Renommer une ligne n'a pas de mois : ce sont des propriétés qui valent pour tous
   // les mois. Rien à discuter côté calendrier, hier comme aujourd'hui.
   test("renommer une ligne reste possible, quel que soit le calendrier", async () => {
-    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2026-01", null);
     at("2026-01");
     const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
     at("2026-07");
@@ -227,7 +227,7 @@ describe("setGroupLineAmount", () => {
 
 describe("removeLineAmount", () => {
   test("retire un montant posé dans un mois passé", async () => {
-    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2026-01", null);
     at("2026-01");
     const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
     at("2026-07");
@@ -241,7 +241,7 @@ describe("removeLineAmount", () => {
   });
 
   test("accepte de retirer un montant du mois courant", async () => {
-    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2026-01", null);
     at("2026-01");
     const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
     at("2026-07");

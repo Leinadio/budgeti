@@ -107,15 +107,17 @@ export function migrateTransactionLineId(db: Database.Database): void {
   db.exec(`ALTER TABLE transactions ADD COLUMN line_id INTEGER REFERENCES group_lines(id) ON DELETE SET NULL`);
 }
 
-// Ajoute les colonnes de saisie manuelle : manual (1 = saisie main), income_kind
-// (principale/supplémentaire pour une entrée), note (commentaire, reçoit le libellé
-// manuel après fusion). Idempotent.
+// Ajoute les colonnes de saisie manuelle : manual (1 = saisie main) et note
+// (commentaire, reçoit le libellé manuel après fusion). Idempotent.
+//
+// Elle ajoutait aussi income_kind, la classe de revenu d'une transaction saisie à la
+// main. Cette colonne est restée à NULL sur toutes les lignes : la classe venait du
+// groupe, pas de la transaction. Elle a été retirée (migrateDropIncomeKind) — la
+// rajouter ici la ferait revenir à chaque démarrage.
 export function migrateTransactionManualFields(db: Database.Database): void {
   const cols = db.prepare("PRAGMA table_info(transactions)").all() as { name: string }[];
   if (!cols.some((c) => c.name === "manual"))
     db.exec(`ALTER TABLE transactions ADD COLUMN manual INTEGER NOT NULL DEFAULT 0`);
-  if (!cols.some((c) => c.name === "income_kind"))
-    db.exec(`ALTER TABLE transactions ADD COLUMN income_kind TEXT`);
   if (!cols.some((c) => c.name === "note"))
     db.exec(`ALTER TABLE transactions ADD COLUMN note TEXT`);
 }
@@ -130,35 +132,22 @@ export function migrateReconcileIgnored(db: Database.Database): void {
   )`);
 }
 
-// Ajoute income_kind aux groupes : classe une entrée en revenu « principal » ou
-// « supplementary ». NULL pour une dépense ou un groupe non-revenu. Idempotent.
-export function migrateGroupIncomeKind(db: Database.Database): void {
-  const cols = db.prepare("PRAGMA table_info(groups)").all() as { name: string }[];
-  if (!cols.some((c) => c.name === "income_kind"))
-    db.exec(`ALTER TABLE groups ADD COLUMN income_kind TEXT`);
-}
-
-// Convertit les rémunérations principales de l'ancien modèle (récurrent + lignes)
-// vers une enveloppe portant un montant unique = somme des lignes, puis supprime
-// ces lignes. Idempotent : ne cible que income_kind='principal' encore en 'recurring'.
-export function migrateRemunerationPrincipalToEnvelope(db: Database.Database): void {
-  const cols = db.prepare("PRAGMA table_info(groups)").all() as { name: string }[];
-  if (!cols.some((c) => c.name === "income_kind")) return;
-  // Sans la colonne `kind`, il n'y a plus de nature à convertir : la reprise a déjà eu
-  // lieu, sur une base d'avant sa suppression. Sans cette garde, le SELECT ci-dessous
-  // planterait à chaque démarrage.
-  if (!cols.some((c) => c.name === "kind")) return;
-  const rows = db
-    .prepare(`SELECT id FROM groups WHERE income_kind = 'principal' AND kind = 'recurring'`)
-    .all() as { id: number }[];
-  if (rows.length === 0) return;
-  db.transaction(() => {
-    for (const { id } of rows) {
-      const sum = (db.prepare(`SELECT COALESCE(SUM(amount), 0) AS s FROM group_lines WHERE group_id = ?`).get(id) as { s: number }).s;
-      db.prepare(`UPDATE groups SET kind = 'envelope', monthly_amount = ? WHERE id = ?`).run(sum, id);
-      db.prepare(`DELETE FROM group_lines WHERE group_id = ?`).run(id);
+// Retire la classe de revenu, des groupes comme des transactions. « Principale » et
+// « supplémentaire » promettaient deux comportements et n'en disaient qu'un : ce revenu
+// se reproduit, ou non. Sa durée le dit mieux, et dit en plus de quels mois il s'agit.
+//
+// ATTENTION : deux migrations ajoutaient cette colonne quand elles ne la trouvaient pas
+// (migrateGroupIncomeKind, supprimée ; migrateTransactionManualFields, amputée). Toute
+// migration qui la rajouterait la ferait revenir au démarrage suivant, indéfiniment —
+// c'est ce que vérifie tests/db/migration-drop-income-kind.test.ts, sur une vraie base
+// sur disque rouverte plusieurs fois.
+export function migrateDropIncomeKind(db: Database.Database): void {
+  for (const table of ["groups", "transactions"]) {
+    const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    if (cols.some((c) => c.name === "income_kind")) {
+      db.exec(`ALTER TABLE ${table} DROP COLUMN income_kind`);
     }
-  })();
+  }
 }
 
 // Durée de vie des groupes : mois de départ / de fin. Les groupes existants

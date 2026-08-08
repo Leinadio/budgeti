@@ -8,7 +8,6 @@ export type ManualFormInput = {
   label: string;
   groupId: number | null;
   lineId: number | null;
-  incomeKind: "principal" | "supplementary" | null;
 };
 
 export function isValidManualForm(f: ManualFormInput): boolean {
@@ -24,6 +23,5 @@ export function toManualInput(f: ManualFormInput): ManualTxnInput {
   const magnitude = Math.abs(f.amount);
   const amount = f.direction === "in" ? magnitude : -magnitude;
   const label = f.label.trim() || (f.direction === "in" ? "Entrée manuelle" : "Sortie manuelle");
-  const incomeKind = null;
-  return { accountId: f.accountId, date: f.date, amount, label, groupId: f.groupId, lineId: f.lineId, incomeKind };
+  return { accountId: f.accountId, date: f.date, amount, label, groupId: f.groupId, lineId: f.lineId };
 }

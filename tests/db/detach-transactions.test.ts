@@ -17,14 +17,13 @@ beforeEach(() => {
 
 const depense = (mois: string, groupId: number | null, lineId: number | null = null) =>
   insertManualTransaction(db, {
-    accountId: "a1", date: `${mois}-12`, amount: -30, label: "PRLV", groupId, lineId, incomeKind: null,
-  });
+    accountId: "a1", date: `${mois}-12`, amount: -30, label: "PRLV", groupId, lineId, });
 
 const rattachement = (id: string) =>
   db.prepare(`SELECT group_id AS groupId, line_id AS lineId FROM transactions WHERE id = ?`).get(id);
 
 test("détache les transactions du groupe sur les mois donnés, et elles seules", () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
   const mai = depense("2026-05", gid);
   const juin = depense("2026-06", gid);
 
@@ -39,7 +38,7 @@ test("détache les transactions du groupe sur les mois donnés, et elles seules"
 // ça, la transaction retomberait sous le récurrent au lieu des non catégorisés, et
 // l'avertissement affiché aurait menti.
 test("détacher une ligne rend la transaction aux non catégorisés, groupe parent compris", () => {
-  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2026-01", null);
   const lid = insertLine(db, gid, "Spotify", 10);
   const t = depense("2026-06", gid, lid);
 
@@ -49,8 +48,8 @@ test("détacher une ligne rend la transaction aux non catégorisés, groupe pare
 });
 
 test("ne touche pas aux transactions d'un autre groupe", () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
-  const autre = insertGroup(db, "a1", "Essence", "out", 100, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
+  const autre = insertGroup(db, "a1", "Essence", "out", 100, "2026-01", null);
   const t = depense("2026-06", autre);
 
   detachTransactionsInMonths(db, { groupId: gid }, ["2026-06"]);
@@ -59,7 +58,7 @@ test("ne touche pas aux transactions d'un autre groupe", () => {
 });
 
 test("ne fait rien sur une liste de mois vide", () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
   const t = depense("2026-06", gid);
 
   expect(detachTransactionsInMonths(db, { groupId: gid }, [])).toBe(0);

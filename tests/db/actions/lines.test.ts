@@ -14,7 +14,7 @@ let gid: number;
 beforeEach(() => {
   db = freshDb();
   vi.mocked(revalidatePath).mockClear();
-  gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+  gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2026-01", null);
 });
 
 test("une ligne ajoutée compte à partir du mois donné, pas rétroactivement", async () => {

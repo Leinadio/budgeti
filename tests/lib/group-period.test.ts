@@ -1,7 +1,7 @@
 // La durée de vie d'un groupe, telle que le formulaire de création la demande :
 // un seul mois, une plage bornée, ou un début sans fin.
 import { describe, expect, it } from "vitest";
-import { groupPeriod, minEndMonth, fitEndMonth, draftMode, draftOfPeriod } from "../../src/lib/group-period";
+import { groupPeriod, minEndMonth, fitEndMonth, draftMode, draftOfPeriod, draftStart, ORIGIN_MONTH } from "../../src/lib/group-period";
 
 describe("groupPeriod", () => {
   it("un seul mois se termine le mois où il commence", () => {
@@ -56,12 +56,18 @@ describe("minEndMonth", () => {
   });
 });
 
-// Le formulaire ne pose plus trois choix mais deux : permanent, ou des mois précis.
-// « Un seul mois » et « d'un mois à un autre » ne sont pas deux natures différentes,
-// c'est la même chose avec ou sans mois de fin — d'où un « + » plutôt qu'un choix.
+// Le formulaire pose trois choix : depuis toujours, à partir d'un mois sans fin, ou
+// des mois précis. Les deux premiers ne diffèrent que par leur début — d'où le même
+// mode « from » en base. « Un seul mois » et « d'un mois à un autre » ne sont pas
+// deux natures différentes, c'est la même chose avec ou sans mois de fin — d'où un
+// « + » plutôt qu'un choix.
 describe("draftMode", () => {
-  it("permanent n'a pas de fin", () => {
-    expect(draftMode({ choice: "permanent", start: "2026-08", end: null })).toBe("from");
+  it("depuis toujours n'a pas de fin", () => {
+    expect(draftMode({ choice: "always", start: "2026-08", end: null })).toBe("from");
+  });
+
+  it("à partir d'un mois n'a pas de fin non plus", () => {
+    expect(draftMode({ choice: "from", start: "2026-08", end: null })).toBe("from");
   });
 
   it("des mois précis sans fin, c'est un seul mois", () => {
@@ -73,15 +79,37 @@ describe("draftMode", () => {
   });
 
   // Le mois de fin resté d'un aller-retour dans le menu ne doit pas ressurgir.
-  it("ignore une fin laissée sur un choix permanent", () => {
-    expect(draftMode({ choice: "permanent", start: "2026-08", end: "2026-12" })).toBe("from");
+  it("ignore une fin laissée sur un choix sans fin", () => {
+    expect(draftMode({ choice: "from", start: "2026-08", end: "2026-12" })).toBe("from");
+  });
+});
+
+// « Depuis toujours » ne demande aucun mois : l'écran n'affiche pas de champ, donc le
+// mois resté dans le brouillon (celui d'un aller-retour dans le menu, ou le mois par
+// défaut de l'écran) ne doit pas ressortir. C'est ici qu'on l'écrase par l'origine.
+describe("draftStart", () => {
+  it("depuis toujours part de l'origine, quoi que dise le brouillon", () => {
+    expect(draftStart({ choice: "always", start: "2026-08", end: null })).toBe(ORIGIN_MONTH);
+  });
+
+  it("les autres choix gardent le mois saisi", () => {
+    expect(draftStart({ choice: "from", start: "2026-08", end: null })).toBe("2026-08");
+    expect(draftStart({ choice: "dates", start: "2026-08", end: "2026-12" })).toBe("2026-08");
   });
 });
 
 // L'inverse, pour ouvrir le formulaire d'un groupe qui existe déjà sur ce qu'il est.
 describe("draftOfPeriod", () => {
-  it("sans fin, le groupe est permanent", () => {
-    expect(draftOfPeriod("2026-08", null)).toEqual({ choice: "permanent", start: "2026-08", end: null });
+  // Le mois de l'origine est le début du monde : un groupe ancré là n'a pas « démarré
+  // en janvier 2000 », il a toujours été là. Le formulaire doit le rouvrir sur ce
+  // choix-là, sinon l'enregistrer à nouveau le figerait sur une date qu'on n'a jamais
+  // choisie.
+  it("l'origine rouvre sur depuis toujours", () => {
+    expect(draftOfPeriod(ORIGIN_MONTH, null)).toEqual({ choice: "always", start: ORIGIN_MONTH, end: null });
+  });
+
+  it("sans fin, un départ daté rouvre sur à partir d'un mois", () => {
+    expect(draftOfPeriod("2026-08", null)).toEqual({ choice: "from", start: "2026-08", end: null });
   });
 
   it("une fin égale au début, c'est un seul mois", () => {
@@ -92,10 +120,11 @@ describe("draftOfPeriod", () => {
     expect(draftOfPeriod("2026-08", "2026-12")).toEqual({ choice: "dates", start: "2026-08", end: "2026-12" });
   });
 
-  // Les groupes hérités n'ont pas de mois de départ : on les ouvre sur le mois proposé
-  // par l'écran plutôt que sur rien.
-  it("retombe sur le mois par défaut quand le groupe n'a pas de départ", () => {
-    expect(draftOfPeriod(null, null, "2026-08")).toEqual({ choice: "permanent", start: "2026-08", end: null });
+  // Les groupes hérités n'ont pas de mois de départ : rien ne les a jamais bornés, ils
+  // valent donc depuis toujours. Le mois proposé par l'écran reste dans le brouillon
+  // pour le cas où on bascule sur un autre choix.
+  it("sans mois de départ, le groupe vaut depuis toujours", () => {
+    expect(draftOfPeriod(null, null, "2026-08")).toEqual({ choice: "always", start: "2026-08", end: null });
   });
 });
 

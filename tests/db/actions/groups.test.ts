@@ -1,9 +1,10 @@
-// Teste createGroup et createRemuneration (src/app/historique/actions.ts) réellement
-// appelées, base en mémoire (voir ./setup).
+// Teste createGroup (src/app/historique/actions.ts) réellement appelée, base en
+// mémoire (voir ./setup).
 import { beforeEach, expect, test, vi } from "vitest";
 import type Database from "better-sqlite3";
 import { freshDb } from "./setup";
-import { createGroup, createRemuneration } from "../../../src/app/historique/actions";
+import { createGroup } from "../../../src/app/historique/actions";
+import { ORIGIN_MONTH } from "../../../src/lib/group-period";
 import { revalidatePath } from "next/cache";
 import { listGroups } from "../../../src/db/repositories/groups";
 import { listBudgetAmounts } from "../../../src/db/repositories/budget-amounts";
@@ -89,21 +90,56 @@ test("une dépense créée sans montant part de zéro", async () => {
   ]);
 });
 
-test("une rémunération créée a son montant lisible dès son mois de départ (2000-01, portée permanente)", async () => {
-  await createRemuneration("a1", "principal", 2500);
+// --- Les revenus se créent comme les dépenses -------------------------------
+// Avant, un compte avait droit à exactement deux revenus, nommés d'office
+// « Rémunération principale » et « Rémunération supplémentaire », permanents tous les
+// deux, et le formulaire ne demandait qu'un montant. C'était trop étroit pour ce qu'on
+// reçoit vraiment : un salaire, une rémunération extra, un don d'ami en août.
+//
+// Un revenu est donc devenu un groupe comme un autre, au sens près : son nom, son
+// montant et sa durée se demandent dans le même formulaire que ceux d'une dépense.
+test("un revenu se crée avec son nom, son montant et sa durée", async () => {
+  await createGroup({ accountId: "a1", name: "Rémunération principale", amount: 2500, startMonth: ORIGIN_MONTH, period: "from", direction: "in" });
 
-  const row = listGroups(db).find((g) => g.incomeKind === "principal")!;
+  const row = listGroups(db).find((g) => g.name === "Rémunération principale")!;
   expect(row).toBeDefined();
-  expect(row.startMonth).toBe("2000-01");
-  expect(row.endMonth).toBeNull();
-  expect(listBudgetAmounts(db).filter((b) => b.groupId === row.id)).toEqual([{ groupId: row.id, effectiveMonth: "2000-01", amount: 2500, scope: "ongoing" }]);
+  expect(row.direction).toBe("in");
+  expect([row.startMonth, row.endMonth]).toEqual([ORIGIN_MONTH, null]);
+  expect(listBudgetAmounts(db).filter((b) => b.groupId === row.id)).toEqual([
+    { groupId: row.id, effectiveMonth: ORIGIN_MONTH, amount: 2500, scope: "ongoing" },
+  ]);
 });
 
-test("créer une rémunération déjà existante ne duplique rien", async () => {
-  await createRemuneration("a1", "principal", 2500);
-  await createRemuneration("a1", "principal", 3000); // no-op silencieux : une seule principale par compte
+// Le plafond de deux tombe : c'est lui qui obligeait à entasser onze virements de
+// natures différentes derrière un seul nom.
+test("plusieurs revenus cohabitent sur un même compte", async () => {
+  await createGroup({ accountId: "a1", name: "Rémunération dirigeant", amount: 650, startMonth: "2026-01", period: "from", direction: "in" });
+  await createGroup({ accountId: "a1", name: "Rémunération extra", amount: 500, startMonth: "2026-01", period: "from", direction: "in" });
 
-  const rows = listGroups(db).filter((g) => g.incomeKind === "principal");
-  expect(rows).toHaveLength(1);
-  expect(listBudgetAmounts(db).filter((b) => b.groupId === rows[0].id)).toEqual([{ groupId: rows[0].id, effectiveMonth: "2000-01", amount: 2500, scope: "ongoing" }]);
+  expect(listGroups(db).filter((g) => g.direction === "in").map((g) => g.name).sort()).toEqual([
+    "Rémunération dirigeant", "Rémunération extra",
+  ]);
+});
+
+// Le scénario qui remplace l'ancienne « rémunération supplémentaire » : un revenu qui
+// ne se reproduit pas se dit par sa durée, et disparaît de lui-même le mois suivant.
+test("un revenu d'un seul mois ne vaut que ce mois", async () => {
+  await createGroup({ accountId: "a1", name: "Don d'ami", amount: 300, startMonth: "2026-08", period: "single", direction: "in" });
+
+  const row = listGroups(db).find((g) => g.name === "Don d'ami")!;
+  const g: Group = {
+    id: row.id, accountId: "a1", name: row.name, direction: "in",
+    monthlyAmount: null, lines: [], startMonth: row.startMonth, endMonth: row.endMonth,
+  };
+  const dated = toDatedBudgets(listBudgetAmounts(db));
+  expect(budgetVu(g, "2026-07", dated)).toBe(0);
+  expect(budgetVu(g, "2026-08", dated)).toBe(300);
+  expect(budgetVu(g, "2026-09", dated)).toBe(0);
+});
+
+// Le sens ne se devine pas : sans direction, on crée une dépense, comme avant.
+test("sans direction, le groupe créé est une dépense", async () => {
+  await createGroup({ accountId: "a1", name: "Courses", amount: 400, startMonth: "2026-01", period: "from" });
+
+  expect(listGroups(db).find((g) => g.name === "Courses")!.direction).toBe("out");
 });

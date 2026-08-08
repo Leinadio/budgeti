@@ -26,11 +26,10 @@ const rattachement = (id: string) =>
 
 const depenseEn = (mois: string, groupId: number, lineId: number | null = null) =>
   insertManualTransaction(db, {
-    accountId: "a1", date: `${mois}-12`, amount: -30, label: "PRLV", groupId, lineId, incomeKind: null,
-  });
+    accountId: "a1", date: `${mois}-12`, amount: -30, label: "PRLV", groupId, lineId, });
 
 test("pose une fin à un groupe permanent : c'est comme ça qu'on l'arrête", async () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
 
   await setGroupPeriod(gid, "2026-01", "2026-04");
 
@@ -38,7 +37,7 @@ test("pose une fin à un groupe permanent : c'est comme ça qu'on l'arrête", as
 });
 
 test("retire la fin d'un groupe borné : il redevient permanent", async () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", "2026-04");
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", "2026-04");
 
   await setGroupPeriod(gid, "2026-01", null);
 
@@ -48,7 +47,7 @@ test("retire la fin d'un groupe borné : il redevient permanent", async () => {
 // Un seul mois = début et fin au même endroit. Le formulaire ne demande alors pas de
 // mois de fin (pas de « + »), mais l'action doit accepter les deux bornes égales.
 test("accepte une durée d'un seul mois", async () => {
-  const gid = insertGroup(db, "a1", "Cadeau", "out", 80, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Cadeau", "out", 80, "2026-01", null);
 
   await setGroupPeriod(gid, "2026-04", "2026-04");
 
@@ -56,7 +55,7 @@ test("accepte une durée d'un seul mois", async () => {
 });
 
 test("refuse une fin antérieure au début, et n'écrit rien", async () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
 
   await setGroupPeriod(gid, "2026-04", "2026-02");
 
@@ -64,7 +63,7 @@ test("refuse une fin antérieure au début, et n'écrit rien", async () => {
 });
 
 test("refuse un mois mal formé", async () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
 
   await setGroupPeriod(gid, "avril", null);
 
@@ -75,7 +74,7 @@ test("refuse un mois mal formé", async () => {
 // rien poser, ils s'afficheraient à zéro. Le montant demandé à l'écran se pose au
 // nouveau mois de départ, et ne touche pas aux montants postérieurs.
 test("rallonger par le début pose le montant donné sur les mois gagnés, sans écraser la suite", async () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-04", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-04", null);
   await setGroupPeriod(gid, "2026-04", null, 300); // montant de départ, posé en avril
 
   await setGroupPeriod(gid, "2026-01", null, 250);
@@ -91,7 +90,7 @@ test("rallonger par le début pose le montant donné sur les mois gagnés, sans 
 // rallonge — il n'y a rien à demander là-dessus.
 
 test("annonce, mois par mois, les transactions qui retourneront en non catégorisés", async () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
   await setGroupPeriod(gid, "2026-01", null, 300);
   depenseEn("2026-02", gid);
   depenseEn("2026-05", gid);
@@ -109,14 +108,14 @@ test("annonce, mois par mois, les transactions qui retourneront en non catégori
 // Un mois retiré qui ne portait aucune dépense n'a rien à annoncer : son budget
 // reviendra si on rallonge, et rien ne change de place.
 test("n'annonce pas un mois retiré sans transaction", async () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
   await setGroupPeriod(gid, "2026-01", null, 300);
 
   expect((await groupPeriodImpact(gid, "2026-01", "2026-04")).months).toEqual([]);
 });
 
 test("n'annonce rien quand on rallonge", async () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-03", "2026-04");
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-03", "2026-04");
   await setGroupPeriod(gid, "2026-03", "2026-04", 300);
   depenseEn("2026-03", gid);
 
@@ -126,7 +125,7 @@ test("n'annonce rien quand on rallonge", async () => {
 // Les mois à venir ne comptent pas : rien ne s'y est encore passé, les retirer
 // n'enlève aucun chiffre déjà lu.
 test("ne compte pas les mois futurs parmi les mois perdus", async () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
   await setGroupPeriod(gid, "2026-01", null, 300);
 
   expect((await groupPeriodImpact(gid, "2026-01", "2026-06")).months).toEqual([]);
@@ -135,7 +134,7 @@ test("ne compte pas les mois futurs parmi les mois perdus", async () => {
 // --- Ce que le raccourcissement défait pour de bon --------------------------
 
 test("raccourcir détache les transactions des mois retirés, et elles seules", async () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
   const gardee = depenseEn("2026-02", gid);
   const detachee = depenseEn("2026-05", gid);
 
@@ -148,7 +147,7 @@ test("raccourcir détache les transactions des mois retirés, et elles seules", 
 // Le cœur de la règle : rallonger ne ramène rien. Le rattachement a été défait, il se
 // refait à la main depuis Transactions.
 test("rallonger ensuite ne ramène pas les transactions détachées", async () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
   const t = depenseEn("2026-05", gid);
   await setGroupPeriod(gid, "2026-01", "2026-04");
 
@@ -158,7 +157,7 @@ test("rallonger ensuite ne ramène pas les transactions détachées", async () =
 });
 
 test("raccourcir une ligne détache ses transactions, groupe parent compris", async () => {
-  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2026-01", null);
   const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
   const t = depenseEn("2026-05", gid, lid);
 
@@ -168,7 +167,7 @@ test("raccourcir une ligne détache ses transactions, groupe parent compris", as
 });
 
 test("rallonger ne détache rien", async () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-03", "2026-04");
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-03", "2026-04");
   const t = depenseEn("2026-03", gid);
 
   await setGroupPeriod(gid, "2026-01", null);
@@ -179,7 +178,7 @@ test("rallonger ne détache rien", async () => {
 // --- Les lignes d'un récurrent, même règle ----------------------------------
 
 test("arrête une ligne de récurrent sans toucher au groupe", async () => {
-  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2026-01", null);
   const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
 
   await setLinePeriod(lid, "2026-01", "2026-03");
@@ -189,7 +188,7 @@ test("arrête une ligne de récurrent sans toucher au groupe", async () => {
 });
 
 test("annonce l'impact du raccourcissement d'une ligne", async () => {
-  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2026-01", null);
   const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
   depenseEn("2026-05", gid, lid);
 
@@ -206,7 +205,7 @@ test("annonce l'impact du raccourcissement d'une ligne", async () => {
 // rattachées à un mois où plus rien ne vit les rendrait invisibles partout — comptées
 // nulle part, mais absentes des non catégorisés.
 test("raccourcir une dépense rend aussi les transactions de ses sous-postes", async () => {
-  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2026-01", null);
   const lid = await addGroupLine(gid, "Spotify", 10, "2026-01", "from");
   const juin = depenseEn("2026-06", gid, lid);   // posée sur le sous-poste
   const avril = depenseEn("2026-04", gid, null); // posée sur la dépense elle-même
@@ -224,7 +223,7 @@ test("raccourcir une dépense rend aussi les transactions de ses sous-postes", a
 // Et l'avertissement affiché avant d'écrire les compte, sinon il annoncerait moins de
 // dégâts qu'il n'en fait — la pire façon de demander une confirmation.
 test("l'avertissement compte les transactions des sous-postes", async () => {
-  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2026-01", null);
   const lid = await addGroupLine(gid, "Spotify", 10, "2026-01", "from");
   depenseEn("2026-05", gid, lid);
   depenseEn("2026-06", gid, lid);

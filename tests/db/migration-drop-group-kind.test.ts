@@ -31,7 +31,7 @@ afterEach(() => {
 function baseGarnie(path: string) {
   const db = getDb(path);
   upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  const gid = insertGroup(db, "a1", "Courses", "out", 400, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 400, "2026-01", null);
   insertLine(db, gid, "Boulangerie", 50);
   db.close();
 }

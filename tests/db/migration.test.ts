@@ -90,7 +90,7 @@ test("migrateGroupsV2 resets groups to the new schema and adds transactions.grou
   expect((db.prepare("PRAGMA table_info(transactions)").all() as { name: string }[]).filter((c) => c.name === "group_id")).toHaveLength(1);
 });
 
-test("migrateTransactionManualFields adds manual/income_kind/note idempotently", () => {
+test("migrateTransactionManualFields adds manual/note idempotently", () => {
   const db = new Database(":memory:");
   db.exec(`
     CREATE TABLE transactions (
@@ -103,8 +103,10 @@ test("migrateTransactionManualFields adds manual/income_kind/note idempotently",
   migrateTransactionManualFields(db);
   const cols = db.prepare("PRAGMA table_info(transactions)").all() as { name: string }[];
   expect(cols.some((c) => c.name === "manual")).toBe(true);
-  expect(cols.some((c) => c.name === "income_kind")).toBe(true);
   expect(cols.some((c) => c.name === "note")).toBe(true);
+  // Elle ajoutait aussi income_kind. La colonne a été retirée de la base : la rajouter
+  // ici la ferait revenir à chaque démarrage (cf. migration-drop-income-kind.test.ts).
+  expect(cols.some((c) => c.name === "income_kind")).toBe(false);
   // valeur par défaut appliquée à la ligne existante
   expect(db.prepare("SELECT manual FROM transactions WHERE id='t1'").get()).toEqual({ manual: 0 });
   // idempotent : deuxième passage sans erreur
@@ -118,80 +120,6 @@ test("migrateReconcileIgnored creates the table idempotently", () => {
   migrateReconcileIgnored(db);
   db.prepare("INSERT INTO reconcile_ignored (manual_id, synced_id) VALUES ('m1', 's1')").run();
   expect(db.prepare("SELECT COUNT(*) AS n FROM reconcile_ignored").get()).toEqual({ n: 1 });
-});
-
-import { migrateGroupIncomeKind } from "../../src/db/migrations";
-
-test("migrateGroupIncomeKind adds income_kind to groups idempotently", () => {
-  const db = new Database(":memory:");
-  db.exec(`
-    CREATE TABLE groups (
-      id INTEGER PRIMARY KEY AUTOINCREMENT, account_id TEXT NOT NULL, name TEXT NOT NULL,
-      direction TEXT NOT NULL, kind TEXT NOT NULL, monthly_amount REAL
-    );
-    INSERT INTO groups (account_id, name, direction, kind, monthly_amount)
-      VALUES ('a1', 'Courses', 'out', 'envelope', 300);
-  `);
-  migrateGroupIncomeKind(db);
-  const cols = db.prepare("PRAGMA table_info(groups)").all() as { name: string }[];
-  expect(cols.some((c) => c.name === "income_kind")).toBe(true);
-  expect(db.prepare("SELECT income_kind FROM groups WHERE name='Courses'").get()).toEqual({ income_kind: null });
-  migrateGroupIncomeKind(db); // idempotent
-  expect(db.prepare("SELECT COUNT(*) AS n FROM groups").get()).toEqual({ n: 1 });
-});
-
-import { migrateRemunerationPrincipalToEnvelope } from "../../src/db/migrations";
-
-function groupsSchemaWithIncomeKind(db: Database.Database) {
-  db.exec(`
-    CREATE TABLE accounts (id TEXT PRIMARY KEY, name TEXT);
-    CREATE TABLE groups (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      account_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      direction TEXT NOT NULL,
-      kind TEXT NOT NULL,
-      monthly_amount REAL,
-      income_kind TEXT
-    );
-    CREATE TABLE group_lines (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      group_id INTEGER NOT NULL,
-      name TEXT NOT NULL,
-      amount REAL NOT NULL,
-      day INTEGER,
-      keyword TEXT NOT NULL
-    );
-    INSERT INTO accounts (id, name) VALUES ('a1', 'Compte');
-  `);
-}
-
-test("migrateRemunerationPrincipal convertit un récurrent principal en enveloppe (montant = somme des lignes)", () => {
-  const db = new Database(":memory:");
-  groupsSchemaWithIncomeKind(db);
-  db.exec(`
-    INSERT INTO groups (id, account_id, name, direction, kind, monthly_amount, income_kind)
-      VALUES (1, 'a1', 'Rémunération principale', 'in', 'recurring', NULL, 'principal');
-    INSERT INTO group_lines (group_id, name, amount, day, keyword) VALUES
-      (1, 'Base', 500, 1, ''), (1, 'Prime', 152.09, 1, '');
-  `);
-  migrateRemunerationPrincipalToEnvelope(db);
-  const g = db.prepare("SELECT kind, monthly_amount AS m FROM groups WHERE id = 1").get() as { kind: string; m: number };
-  expect(g.kind).toBe("envelope");
-  expect(g.m).toBeCloseTo(652.09, 2);
-  const lines = db.prepare("SELECT COUNT(*) AS n FROM group_lines WHERE group_id = 1").get() as { n: number };
-  expect(lines.n).toBe(0);
-});
-
-test("migrateRemunerationPrincipal est un no-op si déjà en enveloppe", () => {
-  const db = new Database(":memory:");
-  groupsSchemaWithIncomeKind(db);
-  db.exec(`INSERT INTO groups (id, account_id, name, direction, kind, monthly_amount, income_kind)
-    VALUES (1, 'a1', 'Rémunération principale', 'in', 'envelope', 2000, 'principal');`);
-  migrateRemunerationPrincipalToEnvelope(db);
-  const g = db.prepare("SELECT kind, monthly_amount AS m FROM groups WHERE id = 1").get() as { kind: string; m: number };
-  expect(g.kind).toBe("envelope");
-  expect(g.m).toBe(2000);
 });
 
 import { migrateBudgetAmountsDropGroupFk } from "../../src/db/migrations";

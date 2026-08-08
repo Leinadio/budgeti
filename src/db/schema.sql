@@ -31,7 +31,6 @@ CREATE TABLE IF NOT EXISTS transactions (
   excluded INTEGER NOT NULL DEFAULT 0,  -- 1 = forcé « non catégorisé »
   ignored INTEGER NOT NULL DEFAULT 0,   -- 1 = non comptabilisée (invisible pour tout calcul)
   manual INTEGER NOT NULL DEFAULT 0,    -- 1 = saisie manuelle
-  income_kind TEXT,                     -- 'principal' | 'supplementary' | NULL
   note TEXT,                            -- libellé de la saisie manuelle, conservé après fusion
   comment TEXT                          -- commentaire libre de l'utilisateur, affiché sous le libellé
 );
@@ -65,7 +64,6 @@ CREATE TABLE IF NOT EXISTS groups (
   -- il ne le trouve pas : ne pas retirer sans changer ce marqueur d'abord.
   -- Conservé parce que les INSERT existants le remplissent encore ; ne pas s'en servir.
   monthly_amount REAL,
-  income_kind TEXT,                -- 'principal' | 'supplementary' | NULL (revenu)
   start_month TEXT,                -- 'YYYY-MM' : mois de départ (invisible avant)
   end_month TEXT                   -- 'YYYY-MM' ou NULL : dernier mois (NULL = permanent)
 );

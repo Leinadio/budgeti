@@ -7,7 +7,7 @@ import { listLineAmounts, setLineAmount, deleteLineAmount } from "../../src/db/r
 function seed() {
   const db = getDb(":memory:");
   upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2026-01", null);
   const lid = insertLine(db, gid, "Spotify", 12.14);
   return { db, gid, lid };
 }

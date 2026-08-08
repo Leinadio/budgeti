@@ -9,7 +9,6 @@ import {
   insertLine,
   renameLine,
   deleteLine,
-  hasIncomeGroup,
   getGroupLifespan,
   getLineLifespan,
   setGroupLifespan,
@@ -35,8 +34,10 @@ import { revalidatePath } from "next/cache";
 // Ces vérifications sont tenues ICI, côté serveur, et pas seulement à l'écran :
 // masquer un champ n'empêche pas d'appeler l'action directement.
 
-// Création inline d'un groupe (enveloppe ou récurrent) depuis le tableau de
-// l'Historique. Toujours en dépense (« out ») et sans rémunération associée.
+// Création inline d'un groupe depuis le tableau de l'Historique, dépense comme revenu.
+// Le sens est la seule chose qui les sépare : un revenu se nomme, se dote d'un montant
+// et se borne dans le temps exactement comme une dépense. Avant, il passait par une
+// action à part qui n'en autorisait que deux par compte, aux noms imposés.
 //
 // La durée de vie arrive telle que le formulaire l'a demandée — un seul mois, une
 // plage, ou un début sans fin — et c'est groupPeriod qui la traduit en bornes, ici
@@ -49,8 +50,9 @@ export async function createGroup(input: {
   startMonth: string;
   endMonth?: string;
   period: PeriodMode;
+  direction?: "in" | "out";
 }): Promise<void> {
-  const { accountId, name, amount, period } = input;
+  const { accountId, name, amount, period, direction = "out" } = input;
   const bornes = groupPeriod(period, input.startMonth, input.endMonth);
   if (!bornes) return;
   const { startMonth, endMonth } = bornes;
@@ -59,7 +61,7 @@ export async function createGroup(input: {
   const database = db();
   // Une dépense naît plate, avec son montant à elle. Si on la découpe ensuite en
   // sous-postes, c'est leur somme qui fera son budget et ce montant-ci cessera d'être lu.
-  const gid = insertGroup(database, accountId, trimmed, "out", amount ?? 0, null, startMonth, endMonth);
+  const gid = insertGroup(database, accountId, trimmed, direction, amount ?? 0, startMonth, endMonth);
   setBudgetAmount(database, gid, startMonth, amount ?? 0);
   revalidatePath("/historique");
   revalidatePath("/");
@@ -222,26 +224,6 @@ async function revalidate() {
   revalidatePath("/historique");
   revalidatePath("/transactions");
   revalidatePath("/");
-}
-
-// Création d'une rémunération (principale ou supplémentaire) depuis l'en-tête de
-// la section Rémunérations de l'Historique. Toujours en revenu (« in »), toujours
-// permanente (start_month = '2000-01', end_month = null : visible sur tout
-// l'historique et le prévisionnel) — pas de durée de vie ni de portée ponctuelle,
-// contrairement aux groupes de dépense (cf. createGroup). Une seule principale et
-// une seule supplémentaire par compte : no-op silencieux si elle existe déjà.
-export async function createRemuneration(
-  accountId: string,
-  incomeKind: "principal" | "supplementary",
-  amount: number,
-): Promise<void> {
-  if (!Number.isFinite(amount) || amount < 0) return;
-  const database = db();
-  if (hasIncomeGroup(database, accountId, incomeKind)) return; // déjà créée
-  const name = incomeKind === "principal" ? "Rémunération principale" : "Rémunération supplémentaire";
-  const gid = insertGroup(database, accountId, name, "in", amount, incomeKind, "2000-01", null);
-  setBudgetAmount(database, gid, "2000-01", amount);
-  await revalidate();
 }
 
 export async function renameGroupAction(groupId: number, name: string): Promise<void> {

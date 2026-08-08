@@ -24,7 +24,6 @@ export type Group = {
   direction: Direction;
   monthlyAmount: number | null;
   lines: GroupLine[];
-  incomeKind?: "principal" | "supplementary" | null;
   startMonth?: string | null;
   endMonth?: string | null;
 };
@@ -38,7 +37,6 @@ export type Txn = {
   groupId: number | null;
   lineId?: number | null;
   excluded?: boolean;
-  incomeKind?: "principal" | "supplementary" | null;
   // Commentaire libre de l'utilisateur, affiché sous le libellé de la banque.
   comment?: string | null;
 };
@@ -160,8 +158,6 @@ export function computeForecast(
       const nextAmount = budgetInForce(g, nextMonthKey(month), dated, datedLines);
       const spent = spentIn(g.id, month);
       const remaining = Math.max(0, amount - spent);
-      // La supplémentaire couvre le mois courant mais n'est pas projetée au mois suivant.
-      const projectNext = !(g.direction === "in" && g.incomeKind === "supplementary");
       if (aliveNow) {
         // Le sens compte : une sortie retire, une entrée ajoute.
         current += sign * remaining;
@@ -177,7 +173,7 @@ export function computeForecast(
         const prevOverspend = g.direction === "out" ? Math.max(0, prevSpent - amount) : 0;
         groupViews.push({ id: g.id, name: g.name, direction: g.direction, total: amount, spent, overspend, prevSpent, prevOverspend });
       }
-      if (aliveNext && projectNext) {
+      if (aliveNext) {
         nextDelta += sign * nextAmount;
         if (nextAmount > 0)
           nextSteps.push({

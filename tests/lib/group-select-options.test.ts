@@ -36,7 +36,7 @@ describe("groupSelectSections", () => {
 
   it("sort les rémunérations des enveloppes et les met en tête, comme le tableau", () => {
     const secs = groupSelectSections([env(1, "Courses"), rem(21, "Rémunération Principale")]);
-    expect(secs.map((s) => s.label)).toEqual(["Rémunérations", "Dépenses"]);
+    expect(secs.map((s) => s.label)).toEqual(["Revenus", "Dépenses"]);
   });
 
   it("ne laisse aucune rémunération traîner dans les dépenses", () => {
@@ -52,7 +52,7 @@ describe("groupSelectSections", () => {
   it("garde un récurrent entrant dans les rémunérations, sans le rendre choisissable", () => {
     const entrant = { id: 30, name: "Loyer perçu", direction: "in" as const, lines: [{ id: 31, name: "Studio" }] };
     const [sec] = groupSelectSections([entrant]);
-    expect(sec.label).toBe("Rémunérations");
+    expect(sec.label).toBe("Revenus");
     expect(sec.items).toEqual([
       { type: "group", id: 30, name: "Loyer perçu", selectable: false },
       { type: "line", id: 31, name: "Studio" },

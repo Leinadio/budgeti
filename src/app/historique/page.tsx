@@ -46,7 +46,6 @@ export default async function HistoriquePage({
     groupId: t.groupId,
     lineId: t.lineId,
     excluded: t.excluded,
-    incomeKind: t.incomeKind,
     comment: t.comment,
   });
   // Les transactions des calculs : listTransactions écarte les non comptabilisées.

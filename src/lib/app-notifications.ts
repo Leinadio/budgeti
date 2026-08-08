@@ -25,7 +25,7 @@ export function appNotifications(): Notification[] {
   const datedLines = toDatedLineAmounts(listLineAmounts(database));
   const txns: Txn[] = listTransactions(database).map((t) => ({
     id: t.id, date: t.date, amount: t.amount, label: t.label, accountId: t.accountId,
-    groupId: t.groupId, lineId: t.lineId, excluded: t.excluded, incomeKind: t.incomeKind,
+    groupId: t.groupId, lineId: t.lineId, excluded: t.excluded,
   }));
   return overspendNotifications(
     listAccounts(database).map((a) => ({

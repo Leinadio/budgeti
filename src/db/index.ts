@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import { mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { migrateBudgets, migrateAccountCustomName, migrateGroupsV2, migrateTransactionExcluded, migrateTransactionIgnored, migrateTransactionLineId, migrateTransactionManualFields, migrateTransactionComment, migrateReconcileIgnored, migrateGroupIncomeKind, migrateRemunerationPrincipalToEnvelope, migrateGroupLifespan, migrateLineLifespan, migrateDropLineDay, migrateBudgetAmountsDropGroupFk, migrateOverspendWrites, migrateOverspendDecisionLine, migrateBudgetAmountScope, migrateDismissedNotifications, migrateSeedDatedAmounts, migrateDropGroupKind } from "./migrations";
+import { migrateBudgets, migrateAccountCustomName, migrateGroupsV2, migrateTransactionExcluded, migrateTransactionIgnored, migrateTransactionLineId, migrateTransactionManualFields, migrateTransactionComment, migrateReconcileIgnored, migrateGroupLifespan, migrateLineLifespan, migrateDropLineDay, migrateBudgetAmountsDropGroupFk, migrateOverspendWrites, migrateOverspendDecisionLine, migrateBudgetAmountScope, migrateDismissedNotifications, migrateSeedDatedAmounts, migrateDropGroupKind, migrateDropIncomeKind } from "./migrations";
 
 const SCHEMA = readFileSync(join(process.cwd(), "src/db/schema.sql"), "utf8");
 
@@ -22,8 +22,6 @@ export function getDb(path = join(process.cwd(), "data/budget.db")): Database.Da
   migrateTransactionManualFields(db);
   migrateTransactionComment(db);
   migrateReconcileIgnored(db);
-  migrateGroupIncomeKind(db);
-  migrateRemunerationPrincipalToEnvelope(db);
   migrateGroupLifespan(db);
   migrateLineLifespan(db);
   migrateDropLineDay(db);
@@ -33,8 +31,11 @@ export function getDb(path = join(process.cwd(), "data/budget.db")): Database.Da
   migrateBudgetAmountScope(db);
   migrateDismissedNotifications(db);
   migrateSeedDatedAmounts(db);
-  // En dernier : tout ce qui lit encore la nature d'un groupe doit être passé avant.
+  // En dernier : tout ce qui lit encore la nature d'un groupe, ou sa classe de revenu,
+  // doit être passé avant. Une migration qui rajouterait l'une de ces colonnes après
+  // coup la ferait revenir à chaque démarrage.
   migrateDropGroupKind(db);
+  migrateDropIncomeKind(db);
   return db;
 }
 

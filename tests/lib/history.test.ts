@@ -109,12 +109,10 @@ describe("Montants affichés dans le tableau de l'historique", () => {
   it("devrait afficher les rémunérations dans un bloc à part, en haut, séparé des dépenses", () => {
     const remuRec: Group = {
       id: 30, accountId: "a1", name: "Salaire", direction: "in",
-      monthlyAmount: null, lines: [], incomeKind: "principal",
-    };
+      monthlyAmount: null, lines: [], };
     const remuEnv: Group = {
       id: 31, accountId: "a1", name: "Prime", direction: "in",
-      monthlyAmount: null, lines: [], incomeKind: "supplementary",
-    };
+      monthlyAmount: null, lines: [], };
     const txns = [
       tx({ id: "1", date: "2026-07-01", amount: 2000, label: "SAL", groupId: 30 }),
       tx({ id: "2", date: "2026-07-02", amount: 300, label: "PRIME", groupId: 31 }),
@@ -169,7 +167,7 @@ describe("Montants affichés dans le tableau de l'historique", () => {
   });
 
   it("devrait réunir tous les blocs dans les totaux du mois, dépenses comme rémunérations", () => {
-    const income: Group = { id: 9, accountId: "a1", name: "Salaire", direction: "in", monthlyAmount: null, lines: [{ id: 91, name: "Paie", amount: 2000 }], incomeKind: "principal" };
+    const income: Group = { id: 9, accountId: "a1", name: "Salaire", direction: "in", monthlyAmount: null, lines: [{ id: 91, name: "Paie", amount: 2000 }] };
     const txns = [
       tx({ id: "1", date: "2026-07-10", amount: -120, label: "CARREFOUR", groupId: 1 }),
       tx({ id: "2", date: "2026-07-01", amount: 2000, label: "VIR REMU", groupId: 9 }),
@@ -191,41 +189,28 @@ describe("Montants affichés dans le tableau de l'historique", () => {
     expect(monthlyOverspend(sections, 1)).toEqual([150]);
   });
 
-  it("devrait ne pas compter la rémunération principale comme reçue dans le futur, mais continuer d'afficher son montant attendu", () => {
-    const principal: Group = {
-      id: 30, accountId: "a1", name: "Rémunération principale", direction: "in", monthlyAmount: 2000, lines: [], incomeKind: "principal",
-    };
-    const sections = hist([principal], [], ["2026-07", "2026-08"], "2026-07");
+  it("devrait ne pas compter un revenu comme reçu dans le futur, mais continuer d'afficher son montant attendu", () => {
+    const salaire: Group = {
+      id: 30, accountId: "a1", name: "Rémunération dirigeant", direction: "in", monthlyAmount: 2000, lines: [], };
+    const sections = hist([salaire], [], ["2026-07", "2026-08"], "2026-07");
     const row = sections.find((s) => s.kind === "income")!.rows[0];
-    expect(row.incomeKind).toBe("principal");
     expect(row.cells[1].recu).toBe(0); // mois futur : rien de reçu encore
     expect(row.cells[1].budgeted).toBe(2000); // le montant attendu reste affiché
   });
 
-  it("devrait ne pas afficher la rémunération supplémentaire comme reçue dans un mois futur", () => {
-    const supp: Group = {
-      id: 31, accountId: "a1", name: "Rémunération supplémentaire", direction: "in", monthlyAmount: 500, lines: [], incomeKind: "supplementary",
-    };
-    const sections = hist([supp], [], ["2026-07", "2026-08"], "2026-07");
-    const row = sections.find((s) => s.kind === "income")!.rows[0];
-    expect(row.incomeKind).toBe("supplementary");
-    expect(row.cells[1].recu).toBe(0); // mois futur : rien
-    expect(row.cells[1].budgeted).toBe(500); // le montant reste stocké (masqué à l'affichage)
-  });
-
-  it("devrait ne compter que la rémunération principale dans le total du budget des rémunérations, pas la supplémentaire", () => {
-    const principal: Group = {
-      id: 40, accountId: "a1", name: "Rémunération principale", direction: "in", monthlyAmount: 2000, lines: [], incomeKind: "principal",
-    };
-    const supplementaire: Group = {
-      id: 41, accountId: "a1", name: "Rémunération supplémentaire", direction: "in", monthlyAmount: 500, lines: [], incomeKind: "supplementary",
-    };
-    const sections = hist([principal, supplementaire], [], ["2026-07"], "2026-07");
+  // Le total portait avant sur la seule « rémunération principale » : un compte qui
+  // attendait 2000 de salaire et 500 de prime affichait 2000. Tous les revenus vivants
+  // y entrent, et un revenu fini vaut déjà 0 par sa durée.
+  it("devrait compter tous les revenus dans le total du budget des revenus", () => {
+    const salaire: Group = {
+      id: 40, accountId: "a1", name: "Rémunération dirigeant", direction: "in", monthlyAmount: 2000, lines: [], };
+    const extra: Group = {
+      id: 41, accountId: "a1", name: "Rémunération extra", direction: "in", monthlyAmount: 500, lines: [], };
+    const sections = hist([salaire, extra], [], ["2026-07"], "2026-07");
     const income = sections.find((s) => s.kind === "income")!;
-    // Le total du bloc rémunérations n'inclut que le budget de la principale.
-    expect(income.totals[0].budgeted).toBe(2000);
+    expect(income.totals[0].budgeted).toBe(2500);
     // Le total général (« Solde actuel ») suit la même règle.
-    expect(grandTotals(sections, 1)[0].budgeted).toBe(2000);
+    expect(grandTotals(sections, 1)[0].budgeted).toBe(2500);
   });
 });
 
@@ -437,8 +422,8 @@ describe("La ligne de solde courant", () => {
 describe("Les soldes prévisionnels", () => {
   it("devrait calculer le solde prévu comme départ + rémunérations − budget, avec une seconde ligne qui enlève aussi les dépassements", () => {
     // Rémunération principale 2000 (in), une dépense budget 300 dont on a dépensé 350 ce mois (dépassement 50).
-    const principal: Group = { id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", monthlyAmount: 2000, lines: [], incomeKind: "principal" };
-    const courses2: Group = { id: 2, accountId: "a1", name: "Courses", direction: "out", monthlyAmount: 300, lines: [], incomeKind: null };
+    const principal: Group = { id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", monthlyAmount: 2000, lines: [] };
+    const courses2: Group = { id: 2, accountId: "a1", name: "Courses", direction: "out", monthlyAmount: 300, lines: [] };
     const txns = [
       tx({ id: "s", date: "2026-07-01", amount: 2000, label: "REMU", groupId: 1 }),
       tx({ id: "c", date: "2026-07-10", amount: -350, label: "CARREFOUR", groupId: 2 }),
@@ -517,20 +502,23 @@ describe("Les soldes prévisionnels", () => {
     expect(p.prevuClosings[0]! - p.depassClosings[0]!).toBeCloseTo(300, 2);
   });
 
-  it("devrait compter la rémunération supplémentaire dans le mois en cours, mais ne jamais la projeter dans le futur", () => {
-    const supp: Group = { id: 3, accountId: "a1", name: "Rémunération supplémentaire", direction: "in", monthlyAmount: 500, lines: [], incomeKind: "supplementary" };
+  // Un revenu borné à ce mois-ci pèse sur son mois et disparaît ensuite. C'est ce qui
+  // remplace l'ancienne « rémunération supplémentaire », jamais projetée où qu'elle
+  // soit : ici la durée dit exactement quel mois elle concerne.
+  it("devrait compter un revenu borné dans son mois, et plus rien après", () => {
+    const don: Group = { id: 3, accountId: "a1", name: "Don d'ami", direction: "in", monthlyAmount: 500, lines: [], startMonth: "2026-07", endMonth: "2026-07" };
     const months = ["2026-07", "2026-08"];
-    const sections = hist([supp], [], months, "2026-07");
+    const sections = hist([don], [], months, "2026-07");
     const solde = computeSolde(sections, months, "2026-07", 1000);
     const p = computePlannedSoldes(sections, months, "2026-07", solde.openings);
     const open = solde.openings[0];
     expect(p.prevuClosings[0]).toBeCloseTo(open + 500, 2); // courant : +500
-    expect(p.prevuClosings[1]).toBeCloseTo(open + 500, 2); // futur : +0 (pas de projection)
+    expect(p.prevuClosings[1]).toBeCloseTo(open + 500, 2); // futur : +0, le don a fini
   });
 
   it("devrait ne rien reporter sur les mois suivants : le « si dépassement » futur rejoint le « prévu »", () => {
-    const principal: Group = { id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", monthlyAmount: 2000, lines: [], incomeKind: "principal" };
-    const courses2: Group = { id: 2, accountId: "a1", name: "Courses", direction: "out", monthlyAmount: 300, lines: [], incomeKind: null };
+    const principal: Group = { id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", monthlyAmount: 2000, lines: [] };
+    const courses2: Group = { id: 2, accountId: "a1", name: "Courses", direction: "out", monthlyAmount: 300, lines: [] };
     const txns = [
       tx({ id: "s", date: "2026-07-01", amount: 2000, label: "REMU", groupId: 1 }),
       tx({ id: "c", date: "2026-07-10", amount: -350, label: "CARREFOUR", groupId: 2 }), // dépassement courant : 50
@@ -551,9 +539,9 @@ describe("Les soldes prévisionnels", () => {
   });
 
   it("devrait cumuler le « si dépassement » d'un seul tenant : une enveloppe hérite des dépassements des sections du dessus", () => {
-    const principal: Group = { id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", monthlyAmount: 2000, lines: [], incomeKind: "principal" };
-    const loyer: Group = { id: 2, accountId: "a1", name: "Loyer", direction: "out", monthlyAmount: null, lines: [{ id: 21, name: "Loyer", amount: 100 }], incomeKind: null };
-    const courses2: Group = { id: 3, accountId: "a1", name: "Courses", direction: "out", monthlyAmount: 100, lines: [], incomeKind: null };
+    const principal: Group = { id: 1, accountId: "a1", name: "Rémunération principale", direction: "in", monthlyAmount: 2000, lines: [] };
+    const loyer: Group = { id: 2, accountId: "a1", name: "Loyer", direction: "out", monthlyAmount: null, lines: [{ id: 21, name: "Loyer", amount: 100 }] };
+    const courses2: Group = { id: 3, accountId: "a1", name: "Courses", direction: "out", monthlyAmount: 100, lines: [] };
     const txns = [
       tx({ id: "s", date: "2026-07-01", amount: 2000, label: "REMU", groupId: 1 }),
       tx({ id: "l", date: "2026-07-05", amount: -150, label: "LOYER", groupId: 2 }), // budget 100 -> dépassement 50 (section Récurrents)
@@ -718,8 +706,7 @@ describe("Rappels d'argent dépensé au-delà du budget", () => {
     // qui est ce qui porte un budget et donc ce qui peut déborder.
     const loyer: Group = {
       id: 2, accountId: "a1", name: "Loyer", direction: "out",
-      monthlyAmount: null, lines: [{ id: 21, name: "Loyer", amount: 100 }], incomeKind: null,
-    };
+      monthlyAmount: null, lines: [{ id: 21, name: "Loyer", amount: 100 }], };
     const txns = [
       tx({ id: "1", date: "2026-07-10", amount: -350, label: "CARREFOUR", groupId: 1 }), // enveloppe : 50
       tx({ id: "2", date: "2026-07-05", amount: -130, label: "LOYER", groupId: 2, lineId: 21 }), // ligne : 30
@@ -755,8 +742,7 @@ describe("Le dépassement d'un récurrent se constate ligne par ligne", () => {
   const assurance = { id: 32, name: "Direct Assurance", amount: 80 };
   const abonnements: Group = {
     id: 3, accountId: "a1", name: "Abonnements", direction: "out",
-    monthlyAmount: null, lines: [sosh, assurance], startMonth: "2026-01", endMonth: null, incomeKind: null,
-  };
+    monthlyAmount: null, lines: [sosh, assurance], startMonth: "2026-01", endMonth: null, };
   const datedLines = toDatedLineAmounts([
     { lineId: 31, effectiveMonth: "2026-01", amount: 30 },
     { lineId: 32, effectiveMonth: "2026-01", amount: 80 },
@@ -1022,26 +1008,20 @@ describe("Durée de vie d'un groupe", () => {
 // détail n'additionnerait plus le chiffre de la case qu'il prétend expliquer.
 describe("Ce qu'une ligne apporte au plan du mois", () => {
   const row = (p: Partial<HistoryRow>): HistoryRow => ({
-    id: 1, name: "L", direction: "out", incomeKind: null,
-    cells: [{ budgeted: 100, depense: 0, recu: 0, balance: 100 }],
+    id: 1, name: "L", direction: "out", cells: [{ budgeted: 100, depense: 0, recu: 0, balance: 100 }],
     aliveMonths: [true], subRows: [], txns: [], ...p,
   });
 
-  it("devrait projeter une rémunération principale sur tous les mois", () => {
-    const r = row({ direction: "in", incomeKind: "principal", cells: [{ budgeted: 2000, depense: 0, recu: 0, balance: 0 }] });
-    expect(rowRevenus(r, 0, true)).toBe(2000);
-    expect(rowRevenus(r, 0, false)).toBe(2000);
-  });
-
-  it("ne devrait projeter une rémunération supplémentaire que sur le mois courant", () => {
-    // Un coup de pouce ponctuel ne se parie pas sur les mois suivants.
-    const r = row({ direction: "in", incomeKind: "supplementary", cells: [{ budgeted: 500, depense: 0, recu: 0, balance: 0 }] });
-    expect(rowRevenus(r, 0, true)).toBe(500);
-    expect(rowRevenus(r, 0, false)).toBe(0);
+  // Un revenu vaut son budget du mois, sans exception : celle qui existait ici
+  // (« la supplémentaire ne compte qu'au mois courant ») est passée dans la durée du
+  // revenu, où elle dit en plus DE QUEL mois il s'agit (cf. revenus.test.ts).
+  it("devrait projeter un revenu sur les mois où il vit", () => {
+    const r = row({ direction: "in", cells: [{ budgeted: 2000, depense: 0, recu: 0, balance: 0 }] });
+    expect(rowRevenus(r, 0)).toBe(2000);
   });
 
   it("ne devrait attendre aucune rentrée d'une ligne de dépense", () => {
-    expect(rowRevenus(row({}), 0, true)).toBe(0);
+    expect(rowRevenus(row({}), 0)).toBe(0);
   });
 
   it("devrait mesurer le dépassement d'une dépense par la part sortie au-delà du budget", () => {

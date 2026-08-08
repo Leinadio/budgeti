@@ -6,10 +6,14 @@ import { MonthField } from "@/components/month-field";
 import { minEndMonth, fitEndMonth, type PeriodDraft } from "@/lib/group-period";
 import { cn } from "@/lib/utils";
 
-// La durée de vie, telle qu'on la demande à l'écran : deux choix, et un « + » pour
+// La durée de vie, telle qu'on la demande à l'écran : trois choix, et un « + » pour
 // ajouter un mois de fin. Un seul composant pour les quatre endroits où la question se
 // pose (créer un groupe, créer une ligne, modifier l'un ou l'autre) : ce sont les mêmes
 // mots et les mêmes mois, il n'y a aucune raison qu'ils diffèrent d'un écran à l'autre.
+//
+// Chaque choix ne montre que ce qu'il reste à décider : « depuis toujours » n'affiche
+// rien, « à partir d'un mois » un début, « des mois précis » un début et, au besoin,
+// une fin. Un champ qui ne décide rien vaut mieux caché qu'affiché grisé.
 //
 // Sans mois de fin, « des mois précis » vaut pour CE mois seulement : c'est le sens du
 // « + », qui ajoute une fin plutôt que de la demander d'emblée (cf. draftMode).
@@ -34,18 +38,23 @@ export function PeriodFields({ draft, onChange, stripMin, stripMax, compact = fa
           onChange={(e) => onChange({ ...draft, choice: e.target.value as PeriodDraft["choice"] })}
           className={cn("rounded-md border bg-transparent px-2 text-sm", compact ? "h-8" : "h-9")}
         >
-          <option value="permanent">Permanent</option>
+          <option value="always">Depuis toujours</option>
+          <option value="from">À partir d&apos;un mois, sans fin</option>
           <option value="dates">Sur des mois précis</option>
         </select>
       </div>
-      <MonthField
-        label={choice === "permanent" ? "À partir de" : end === null ? "Mois" : "Du mois"}
-        value={start}
-        onChange={changeStart}
-        min={stripMin}
-        max={stripMax}
-        className={champ}
-      />
+      {/* « Depuis toujours » ne demande aucun mois : le champ disparaît plutôt que de
+          rester à l'écran sans rien décider. C'est draftStart qui pose l'origine. */}
+      {choice !== "always" && (
+        <MonthField
+          label={choice === "from" ? "À partir de" : end === null ? "Mois" : "Du mois"}
+          value={start}
+          onChange={changeStart}
+          min={stripMin}
+          max={stripMax}
+          className={champ}
+        />
+      )}
       {choice === "dates" &&
         (end === null ? (
           // Pas de fin = ce mois seulement. Le « + » est le geste qui étale la durée

@@ -22,7 +22,6 @@ export type TxnView = {
   excluded: boolean;
   ignored: boolean;
   manual: boolean;
-  incomeKind: "principal" | "supplementary" | null;
   note: string | null;
   // Commentaire libre de l'utilisateur, affiché sous le libellé (cf. src/lib/txn-comment.ts).
   comment: string | null;
@@ -63,7 +62,7 @@ export function listTransactions(
 ): TxnView[] {
   let sql =
     `SELECT t.id, t.date, t.amount, t.label, t.group_id AS groupId, t.line_id AS lineId, t.excluded AS excluded,
-            t.ignored AS ignored, t.manual AS manual, t.income_kind AS incomeKind, t.note AS note,
+            t.ignored AS ignored, t.manual AS manual, t.note AS note,
             t.comment AS comment,
             t.account_id AS accountId,
             COALESCE(COALESCE(a.custom_name, a.name) || ' ' || a.iban_masked, COALESCE(a.custom_name, a.name)) AS accountLabel
@@ -80,13 +79,12 @@ export function listTransactions(
   sql += " ORDER BY t.date DESC";
   const stmt = db.prepare(sql);
   // better-sqlite3 refuse un objet de paramètres quand la requête n'en attend aucun.
-  const rows = (Object.keys(params).length ? stmt.all(params) : stmt.all()) as (Omit<TxnView, "excluded" | "ignored" | "manual" | "incomeKind"> & { excluded: number; ignored: number; manual: number; incomeKind: string | null })[];
+  const rows = (Object.keys(params).length ? stmt.all(params) : stmt.all()) as (Omit<TxnView, "excluded" | "ignored" | "manual"> & { excluded: number; ignored: number; manual: number })[];
   return rows.map((r) => ({
     ...r,
     excluded: r.excluded === 1,
     ignored: r.ignored === 1,
     manual: r.manual === 1,
-    incomeKind: r.incomeKind === "principal" || r.incomeKind === "supplementary" ? r.incomeKind : null,
   }));
 }
 
@@ -165,15 +163,14 @@ export type ManualTxnInput = {
   label: string;
   groupId: number | null;
   lineId: number | null;
-  incomeKind: "principal" | "supplementary" | null;
 };
 
 // Insère une transaction saisie à la main. id préfixé "manual:", manual = 1.
 export function insertManualTransaction(db: Database.Database, input: ManualTxnInput): string {
   const id = `manual:${randomUUID()}`;
   db.prepare(
-    `INSERT INTO transactions (id, account_id, date, amount, label, category_id, group_id, line_id, excluded, manual, income_kind, note)
-     VALUES (@id, @account_id, @date, @amount, @label, NULL, @group_id, @line_id, 0, 1, @income_kind, NULL)`,
+    `INSERT INTO transactions (id, account_id, date, amount, label, category_id, group_id, line_id, excluded, manual, note)
+     VALUES (@id, @account_id, @date, @amount, @label, NULL, @group_id, @line_id, 0, 1, NULL)`,
   ).run({
     id,
     account_id: input.accountId,
@@ -182,7 +179,6 @@ export function insertManualTransaction(db: Database.Database, input: ManualTxnI
     label: input.label,
     group_id: input.groupId,
     line_id: input.lineId,
-    income_kind: input.incomeKind,
   });
   return id;
 }
@@ -194,7 +190,7 @@ export function updateManualTransaction(
   input: Omit<ManualTxnInput, "accountId">,
 ): void {
   db.prepare(
-    `UPDATE transactions SET date=@date, amount=@amount, label=@label, group_id=@group_id, line_id=@line_id, income_kind=@income_kind
+    `UPDATE transactions SET date=@date, amount=@amount, label=@label, group_id=@group_id, line_id=@line_id
      WHERE id=@id AND manual=1`,
   ).run({
     id,
@@ -203,7 +199,6 @@ export function updateManualTransaction(
     label: input.label,
     group_id: input.groupId,
     line_id: input.lineId,
-    income_kind: input.incomeKind,
   });
 }
 
@@ -251,13 +246,13 @@ export function mergeTransactions(
 ): void {
   const run = db.transaction(() => {
     const m = db
-      .prepare("SELECT label, group_id AS groupId, line_id AS lineId, income_kind AS incomeKind FROM transactions WHERE id=? AND manual=1")
-      .get(manualId) as { label: string; groupId: number | null; lineId: number | null; incomeKind: string | null } | undefined;
+      .prepare("SELECT label, group_id AS groupId, line_id AS lineId FROM transactions WHERE id=? AND manual=1")
+      .get(manualId) as { label: string; groupId: number | null; lineId: number | null } | undefined;
     if (!m) return;
     const res = db.prepare(
-      `UPDATE transactions SET group_id=@group_id, line_id=@line_id, income_kind=@income_kind, note=@note
+      `UPDATE transactions SET group_id=@group_id, line_id=@line_id, note=@note
        WHERE id=@id AND manual=0`,
-    ).run({ id: syncedId, group_id: m.groupId, line_id: m.lineId, income_kind: m.incomeKind, note: m.label });
+    ).run({ id: syncedId, group_id: m.groupId, line_id: m.lineId, note: m.label });
     if (res.changes === 0) return; // cible synchronisée introuvable : on ne supprime pas la saisie manuelle
     db.prepare("DELETE FROM transactions WHERE id=? AND manual=1").run(manualId);
   });

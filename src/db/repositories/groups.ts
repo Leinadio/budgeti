@@ -17,7 +17,6 @@ export type GroupRow = {
   name: string;
   direction: "in" | "out";
   monthlyAmount: number | null;
-  incomeKind: "principal" | "supplementary" | null;
   startMonth: string | null;
   endMonth: string | null;
   lines: GroupLineRow[];
@@ -72,54 +71,40 @@ export function listGroups(db: Database.Database): GroupRow[] {
   const groups = db
     .prepare(
       `SELECT id, account_id AS accountId, name, direction, monthly_amount AS monthlyAmount,
-              income_kind AS incomeKind, start_month AS startMonth, end_month AS endMonth
+              start_month AS startMonth, end_month AS endMonth
        FROM groups ORDER BY name`,
     )
-    .all() as (Omit<GroupRow, "lines" | "incomeKind"> & { incomeKind: string | null })[];
+    .all() as Omit<GroupRow, "lines">[];
   const lineStmt = db.prepare(
     `SELECT id, name, amount, start_month AS startMonth, end_month AS endMonth
      FROM group_lines WHERE group_id = ? ORDER BY id`,
   );
   return groups.map((g) => ({
     ...g,
-    incomeKind: g.incomeKind === "principal" || g.incomeKind === "supplementary" ? g.incomeKind : null,
     lines: lineStmt.all(g.id) as GroupLineRow[],
   }));
 }
 
-// Crée un groupe : une dépense, ou une rémunération quand direction vaut « in ». Une
-// seule fonction depuis que la nature a disparu — un groupe naît plat, avec son montant
-// à lui, et se découpe ensuite en sous-postes si on veut (c'est alors leur somme qui
-// fait son budget).
+// Crée un groupe : une dépense, ou un revenu quand direction vaut « in ». Une seule
+// fonction, et le sens est tout ce qui les sépare — un groupe naît plat, avec son
+// montant à lui, et se découpe ensuite en sous-postes si on veut (c'est alors leur
+// somme qui fait son budget).
 export function insertGroup(
   db: Database.Database,
   accountId: string,
   name: string,
   direction: "in" | "out",
   monthlyAmount: number,
-  incomeKind: "principal" | "supplementary" | null = null,
   startMonth: string,
   endMonth: string | null,
 ): number {
   const info = db
     .prepare(
-      `INSERT INTO groups (account_id, name, direction, monthly_amount, income_kind, start_month, end_month)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO groups (account_id, name, direction, monthly_amount, start_month, end_month)
+       VALUES (?, ?, ?, ?, ?, ?)`,
     )
-    .run(accountId, name, direction, monthlyAmount, incomeKind, startMonth, endMonth);
+    .run(accountId, name, direction, monthlyAmount, startMonth, endMonth);
   return Number(info.lastInsertRowid);
-}
-
-// Vrai si le compte possède déjà une rémunération de ce type (principal / supplémentaire).
-export function hasIncomeGroup(
-  db: Database.Database,
-  accountId: string,
-  incomeKind: "principal" | "supplementary",
-): boolean {
-  const row = db
-    .prepare(`SELECT 1 FROM groups WHERE account_id = ? AND income_kind = ? LIMIT 1`)
-    .get(accountId, incomeKind);
-  return row !== undefined;
 }
 
 export function deleteGroup(db: Database.Database, id: number): void {

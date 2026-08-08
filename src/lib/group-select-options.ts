@@ -46,7 +46,7 @@ export function groupSelectSections(groups: GroupLike[]): ChoiceSection[] {
   // Les entrants d'abord, quelle que soit leur nature : le tableau les met en haut,
   // et un récurrent entrant reste un revenu avant d'être un récurrent.
   return [
-    section("Rémunérations", (g) => g.direction === "in"),
+    section("Revenus", (g) => g.direction === "in"),
     section("Dépenses", (g) => g.direction === "out"),
   ].filter((s): s is ChoiceSection => s !== null);
 }

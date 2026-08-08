@@ -37,8 +37,8 @@ describe("GroupSelectField", () => {
 
   it("donne aux rémunérations leur propre section, en tête", () => {
     const html = rendu([courses, sosh, salaire]);
-    expect(html).toContain('<optgroup label="Rémunérations">');
-    expect(html.indexOf('label="Rémunérations"')).toBeLessThan(html.indexOf('label="Dépenses"'));
+    expect(html).toContain('<optgroup label="Revenus">');
+    expect(html.indexOf('label="Revenus"')).toBeLessThan(html.indexOf('label="Dépenses"'));
     // Et elle ne traîne plus au milieu des dépenses.
     expect(html.indexOf("Rémunération Principale")).toBeLessThan(html.indexOf("Courses"));
   });

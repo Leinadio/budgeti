@@ -17,7 +17,7 @@ type GroupOpt = {
 };
 type EditData = {
   id: string; accountId: string; date: string; direction: "in" | "out";
-  amount: number; label: string; groupId: number | null; incomeKind: "principal" | "supplementary" | null;
+  amount: number; label: string; groupId: number | null;
 };
 
 export function AddTransactionSheet({ accounts, groups, edit }: { accounts: AccountOpt[]; groups: GroupOpt[]; edit?: EditData }) {
@@ -42,7 +42,7 @@ export function AddTransactionSheet({ accounts, groups, edit }: { accounts: Acco
   const submit = () => {
     const form: ManualFormInput = {
       accountId, date, direction, amount: Number(amount.replace(",", ".")),
-      label, groupId, lineId: null, incomeKind: null,
+      label, groupId, lineId: null,
     };
     startTransition(async () => {
       if (edit) await editTransaction(edit.id, form);

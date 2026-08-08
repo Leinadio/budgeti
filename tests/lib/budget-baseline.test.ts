@@ -46,7 +46,7 @@ const vetement: Group = {
 };
 const remuneration: Group = {
   id: 21, accountId: "a1", name: "Rémunération Principale", direction: "in",
-  monthlyAmount: 652.09, lines: [], incomeKind: "principal", startMonth: "2000-01", endMonth: null,
+  monthlyAmount: 652.09, lines: [], startMonth: "2000-01", endMonth: null,
 };
 const GROUPS = [abonnements, impots, carburant, activites, vetement, remuneration];
 

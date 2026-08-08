@@ -18,7 +18,7 @@ beforeEach(() => {
 });
 
 test("setGroupAmount « à partir de ce mois » vaut pour les mois suivants", async () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
   setBudgetAmount(db, gid, "2026-01", 300);
 
   await setGroupAmount(gid, "2026-06", 350, "ongoing");
@@ -35,7 +35,7 @@ test("setGroupAmount « à partir de ce mois » vaut pour les mois suivants", as
 // écriture dans un mois que personne n'avait demandé à changer, qui se relisait
 // ensuite dans la frise comme un changement jamais fait.
 test("setGroupAmount « ce mois seulement » ne vaut que pour son mois, sans rien écrire au mois suivant", async () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
   setBudgetAmount(db, gid, "2026-01", 300);
 
   await setGroupAmount(gid, "2026-06", 350, "once");
@@ -54,7 +54,7 @@ test("setGroupAmount « ce mois seulement » ne vaut que pour son mois, sans rie
 // Le montant permanent qui commence le même mois doit survivre à l'exception : sans
 // portée dans la clé, l'un écraserait l'autre et juillet retomberait sur 300.
 test("setGroupAmount garde le permanent et l'exception du même mois côte à côte", async () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
   setBudgetAmount(db, gid, "2026-01", 300);
 
   await setGroupAmount(gid, "2026-06", 320, "ongoing");
@@ -88,7 +88,7 @@ test("setUncatProvision « ce mois seulement » ne vaut que pour son mois", asyn
 });
 
 test("removeGroupAmount refuse de supprimer le montant de départ", async () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
   setBudgetAmount(db, gid, "2026-01", 300);
 
   await removeGroupAmount(gid, "2026-01");
@@ -97,7 +97,7 @@ test("removeGroupAmount refuse de supprimer le montant de départ", async () => 
 });
 
 test("removeGroupAmount accepte de supprimer un changement postérieur au montant de départ", async () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
   setBudgetAmount(db, gid, "2026-01", 300);
   setBudgetAmount(db, gid, "2026-06", 350);
 
@@ -107,7 +107,7 @@ test("removeGroupAmount accepte de supprimer un changement postérieur au montan
 });
 
 test("removeLineAmount refuse de supprimer le montant de départ d'une ligne", async () => {
-  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2026-01", null);
   const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
 
   await removeLineAmount(lid, "2026-01");
@@ -116,7 +116,7 @@ test("removeLineAmount refuse de supprimer le montant de départ d'une ligne", a
 });
 
 test("removeLineAmount accepte de supprimer un changement postérieur au montant de départ d'une ligne", async () => {
-  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2026-01", null);
   const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
   await setGroupLineAmount(lid, "2026-06", 15, "ongoing");
 
@@ -132,7 +132,7 @@ test("removeLineAmount accepte de supprimer un changement postérieur au montant
 // composant puisse la réafficher sans recalculer les écritures lui-même (une
 // seconde fois, avec le risque de diverger de ce que le serveur vient de poser).
 test("setGroupAmount renvoie la vie du budget à jour du groupe", async () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
   setBudgetAmount(db, gid, "2026-01", 300);
 
   const changes = await setGroupAmount(gid, "2026-06", 350, "ongoing");
@@ -144,7 +144,7 @@ test("setGroupAmount renvoie la vie du budget à jour du groupe", async () => {
 });
 
 test("removeGroupAmount renvoie la vie du budget à jour du groupe, y compris quand la suppression est refusée", async () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
   setBudgetAmount(db, gid, "2026-01", 300);
   setBudgetAmount(db, gid, "2026-06", 350);
 
@@ -158,7 +158,7 @@ test("removeGroupAmount renvoie la vie du budget à jour du groupe, y compris qu
 });
 
 test("removeLineAmount renvoie la vie du budget à jour de la ligne", async () => {
-  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2026-01", null);
   const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
   await setGroupLineAmount(lid, "2026-06", 15, "ongoing");
 
@@ -171,7 +171,7 @@ test("removeLineAmount renvoie la vie du budget à jour de la ligne", async () =
 // juillet ne doit pas emporter le montant durable qui commence le même mois. Sans ça,
 // les mois suivants retomberaient sur un montant plus ancien que le bon.
 test("removeGroupAmount ne retire que la portée visée", async () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
   setBudgetAmount(db, gid, "2026-01", 300);
   await setGroupAmount(gid, "2026-06", 320, "ongoing");
   await setGroupAmount(gid, "2026-06", 500, "once");
@@ -186,7 +186,7 @@ test("removeGroupAmount ne retire que la portée visée", async () => {
 
 // Une exception ne sert de socle à personne : elle se retire toujours, même seule.
 test("removeGroupAmount retire une exception même quand c'est la seule entrée", async () => {
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
   await setGroupAmount(gid, "2026-06", 500, "once");
 
   await removeGroupAmount(gid, "2026-06", "once");
@@ -205,7 +205,7 @@ test("removeGroupAmount retire une exception même quand c'est la seule entrée"
 // souffre pas d'exception, sinon la réponse ne veut pas dire ce qu'elle dit.
 describe("propager un montant aux mois suivants", () => {
   test("rend le montant durable et retire l'exception du mois", async () => {
-    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
     await setGroupAmount(gid, "2026-06", 350, "once");
 
@@ -222,7 +222,7 @@ describe("propager un montant aux mois suivants", () => {
   });
 
   test("aligne les mois suivants même quand ils portaient déjà un montant à eux", async () => {
-    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
     setBudgetAmount(db, gid, "2026-09", 250);          // un changement durable prévu plus tard
     setBudgetAmount(db, gid, "2026-10", 100, "once");  // et une exception encore plus tard
@@ -242,7 +242,7 @@ describe("propager un montant aux mois suivants", () => {
   // Les mois d'AVANT ne bougent pas : la propagation regarde devant, quel que soit
   // le mois d'où elle part.
   test("ne touche à aucun mois antérieur", async () => {
-    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
     setBudgetAmount(db, gid, "2026-04", 320);
 
@@ -257,7 +257,7 @@ describe("propager un montant aux mois suivants", () => {
   // Partir d'un mois passé ne change rien à la règle : le montant devient durable à
   // partir de là, et tout ce qui suit est effacé, y compris un changement futur.
   test("propage depuis un mois passé", async () => {
-    const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
     setBudgetAmount(db, gid, "2026-01", 300);
     setBudgetAmount(db, gid, "2026-09", 250);
     at("2026-07");
@@ -271,7 +271,7 @@ describe("propager un montant aux mois suivants", () => {
   });
 
   test("propage aussi le montant d'une ligne de récurrent, en écrasant ce qui suit", async () => {
-    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-01", null);
+    const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2026-01", null);
     const lid = await addGroupLine(gid, "Spotify", 10, "2026-01");
     await setGroupLineAmount(lid, "2026-09", 18, "ongoing");
     await setGroupLineAmount(lid, "2026-06", 25, "once");

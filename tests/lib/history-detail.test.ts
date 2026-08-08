@@ -16,7 +16,6 @@ const courses: HistoryRow = {
   id: 1,
   name: "Courses",
   direction: "out",
-  incomeKind: null,
   cells: [cell({ budgeted: 300, depense: 0, balance: 300 }), cell({ budgeted: 300, depense: 350, balance: -50 })],
   aliveMonths: [true, true],
   subRows: [],
@@ -28,7 +27,6 @@ const salaire: HistoryRow = {
   id: 9,
   name: "Salaire",
   direction: "in",
-  incomeKind: "principal",
   cells: [cell({ budgeted: 2000, recu: 2000 }), cell({ budgeted: 2000, recu: 0 })],
   aliveMonths: [true, true],
   subRows: [],
@@ -129,7 +127,7 @@ describe("Un groupe vu comme une ligne du calcul affiché dans le panneau", () =
 
 describe("Une section vue comme une ligne du calcul", () => {
   it("devrait nommer chaque section comme le tableau la nomme", () => {
-    expect(labelOfSection("income")).toBe("Rémunérations");
+    expect(labelOfSection("income")).toBe("Revenus");
     expect(labelOfSection("expense")).toBe("Dépenses");
     expect(labelOfSection("uncategorized")).toBe("Non catégorisés");
   });
@@ -233,7 +231,7 @@ describe("Le détail du Solde actuel", () => {
     expect(d.title).toBe("Solde actuel");
     expect(d.nodes.map((n) => n.label)).toEqual([
       "Argent de départ",
-      "Rémunérations",
+      "Revenus",
       "Dépenses",
       "Non catégorisés",
     ]);

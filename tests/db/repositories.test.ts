@@ -3,7 +3,7 @@ import { getDb } from "../../src/db/index";
 import { upsertTransaction, listTransactions, setTransactionGroup } from "../../src/db/repositories/transactions";
 import { upsertAccount, totalBalance, setAccountAlias, listAccounts, deleteAccount } from "../../src/db/repositories/accounts";
 import { setSetting, getSetting } from "../../src/db/repositories/settings";
-import { listGroups, insertGroup, deleteGroup, insertLine, deleteLine, hasIncomeGroup, renameGroup } from "../../src/db/repositories/groups";
+import { listGroups, insertGroup, deleteGroup, insertLine, deleteLine, renameGroup } from "../../src/db/repositories/groups";
 import { setBudgetAmount, listBudgetAmounts } from "../../src/db/repositories/budget-amounts";
 import { toDatedBudgets, budgetInForce } from "../../src/lib/history";
 import type { Group } from "../../src/lib/forecast";
@@ -29,7 +29,7 @@ test("settings round-trip", () => {
 test("une dépense découpée : ses sous-postes se lisent, et la suppression les emporte", () => {
   const db = getDb(":memory:");
   upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2000-01", null);
+  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2000-01", null);
   insertLine(db, gid, "Spotify", 10);
   insertLine(db, gid, "Netflix", 15);
   const g = listGroups(db)[0];
@@ -49,7 +49,7 @@ test("une dépense découpée : ses sous-postes se lisent, et la suppression les
 test("deleteGroup purge aussi les budgets datés (budget_amounts) du groupe", () => {
   const db = getDb(":memory:");
   upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2000-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2000-01", null);
   setBudgetAmount(db, gid, "2026-08", 350);
   expect(listBudgetAmounts(db).filter((b) => b.groupId === gid)).toHaveLength(1);
   deleteGroup(db, gid);
@@ -62,7 +62,7 @@ test("deleteGroup purge aussi les budgets datés (budget_amounts) du groupe", ()
 test("insertLine pose les bornes de mois de la ligne, listGroups les rend", () => {
   const db = getDb(":memory:");
   upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2000-01", null);
+  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2000-01", null);
 
   const borne = insertLine(db, gid, "Stage", 200, "2026-03", "2026-05");
   const permanente = insertLine(db, gid, "Spotify", 10);
@@ -79,7 +79,7 @@ test("insertLine pose les bornes de mois de la ligne, listGroups les rend", () =
 test("insertLine renvoie le vrai id, réutilisable par deleteLine", () => {
   const db = getDb(":memory:");
   upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2000-01", null);
+  const gid = insertGroup(db, "a1", "Abonnements", "out", 0, "2000-01", null);
   const lineId = insertLine(db, gid, "Spotify", 10);
   expect(lineId).toBeGreaterThan(0);
   expect(listGroups(db)[0].lines.map((l) => l.id)).toEqual([lineId]);
@@ -113,9 +113,9 @@ test("deleteAccount removes the account, its transactions, its groups+lines, and
   upsertAccount(db, { id: "a2", name: "CIC", iban_masked: null, balance: 50, currency: "EUR", last_synced: null });
   upsertTransaction(db, { id: "t1", account_id: "a1", date: "2026-07-01", amount: -10, label: "X", category_id: null });
   upsertTransaction(db, { id: "t2", account_id: "a2", date: "2026-07-01", amount: -20, label: "Y", category_id: null });
-  const g1 = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2000-01", null);
+  const g1 = insertGroup(db, "a1", "Abonnements", "out", 0, "2000-01", null);
   insertLine(db, g1, "Spotify", 10);
-  const g2 = insertGroup(db, "a2", "Courses", "out", 0, null, "2000-01", null);
+  const g2 = insertGroup(db, "a2", "Courses", "out", 0, "2000-01", null);
   setSetting(db, "account_uids", JSON.stringify(["a1", "a2"]));
 
   deleteAccount(db, "a1");
@@ -132,7 +132,7 @@ test("deleteAccount removes the account, its transactions, its groups+lines, and
 test("setTransactionGroup attaches and detaches", () => {
   const db = getDb(":memory:");
   upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  const gid = insertGroup(db, "a1", "Courses", "out", 300, null, "2000-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 300, "2000-01", null);
   upsertTransaction(db, { id: "t1", account_id: "a1", date: "2026-07-01", amount: -30, label: "X", category_id: null });
   setTransactionGroup(db, "t1", gid);
   expect(listTransactions(db)[0].groupId).toBe(gid);
@@ -140,34 +140,24 @@ test("setTransactionGroup attaches and detaches", () => {
   expect(listTransactions(db)[0].groupId).toBeNull();
 });
 
-test("groups carry income_kind for income classification", () => {
+// Un compte accepte autant de revenus qu'on veut : la limite d'un seul exemplaire par
+// type est tombée avec les types eux-mêmes (hasIncomeGroup, supprimée).
+test("plusieurs revenus cohabitent sur un même compte", () => {
   const db = getDb(":memory:");
   upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  const p = insertGroup(db, "a1", "Rémunération principale", "in", 0, "principal", "2000-01", null);
-  const s = insertGroup(db, "a1", "Rémunération supplémentaire", "in", 0, "supplementary", "2000-01", null);
-  const c = insertGroup(db, "a1", "Courses", "out", 300, null, "2000-01", null);
-  const byId = Object.fromEntries(listGroups(db).map((g) => [g.id, g]));
-  expect(byId[p].incomeKind).toBe("principal");
-  expect(byId[s].incomeKind).toBe("supplementary");
-  expect(byId[c].incomeKind).toBeNull();
-});
+  insertGroup(db, "a1", "Rémunération dirigeant", "in", 650, "2026-01", null);
+  insertGroup(db, "a1", "Rémunération extra", "in", 500, "2026-01", null);
+  insertGroup(db, "a1", "Don d'ami", "in", 300, "2026-08", "2026-08");
 
-test("hasIncomeGroup détecte une rémunération existante du même type", () => {
-  const db = getDb(":memory:");
-  upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  upsertAccount(db, { id: "a2", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  insertGroup(db, "a1", "Rémunération principale", "in", 2000, "principal", "2000-01", null);
-  expect(hasIncomeGroup(db, "a1", "principal")).toBe(true);
-  expect(hasIncomeGroup(db, "a1", "supplementary")).toBe(false);
-  expect(hasIncomeGroup(db, "a2", "principal")).toBe(false);
+  expect(listGroups(db).filter((g) => g.direction === "in")).toHaveLength(3);
 });
 
 test("stocke et relit la durée de vie d'un groupe (start_month / end_month)", () => {
   const db = getDb(":memory:");
   upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  const permanent = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-07", null);
-  const ponctuel = insertGroup(db, "a1", "Cadeau", "out", 50, null, "2026-08", "2026-08");
-  const rec = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2026-07", null);
+  const permanent = insertGroup(db, "a1", "Courses", "out", 300, "2026-07", null);
+  const ponctuel = insertGroup(db, "a1", "Cadeau", "out", 50, "2026-08", "2026-08");
+  const rec = insertGroup(db, "a1", "Abonnements", "out", 0, "2026-07", null);
   const groups = listGroups(db);
   const byId = (id: number) => groups.find((g) => g.id === id)!;
   expect(byId(permanent).startMonth).toBe("2026-07");
@@ -179,7 +169,7 @@ test("stocke et relit la durée de vie d'un groupe (start_month / end_month)", (
 test("renomme un groupe sans toucher au reste", () => {
   const db = getDb(":memory:");
   upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  const id = insertGroup(db, "a1", "Ancien", "out", 100, null, "2026-07", null);
+  const id = insertGroup(db, "a1", "Ancien", "out", 100, "2026-07", null);
   renameGroup(db, id, "Nouveau");
   expect(listGroups(db).find((g) => g.id === id)!.name).toBe("Nouveau");
 });
@@ -187,7 +177,7 @@ test("renomme un groupe sans toucher au reste", () => {
 test("setGroupAmount 'once' n'affecte que le mois visé", () => {
   const db = getDb(":memory:");
   upsertAccount(db, { id: "a1", name: "CIC", iban_masked: null, balance: 0, currency: "EUR", last_synced: null });
-  const id = insertGroup(db, "a1", "Courses", "out", 300, null, "2026-01", null);
+  const id = insertGroup(db, "a1", "Courses", "out", 300, "2026-01", null);
   // Simule l'action 'once' : montant à juillet, restauration du précédent en août.
   const prev = 300; // budget en vigueur avant juillet (monthlyAmount)
   setBudgetAmount(db, id, "2026-07", 500);

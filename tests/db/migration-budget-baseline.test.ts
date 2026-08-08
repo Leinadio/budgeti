@@ -60,23 +60,23 @@ test("les budgets calculés par computeHistory sont égaux au centime avant/apr�
   // Semé dans les ANCIENNES colonnes seulement (monthly_amount / group_lines.amount),
   // comme une vraie base avant reprise : ces fonctions n'écrivent jamais
   // budget_amounts ni line_amounts (voir src/db/repositories/groups.ts).
-  const abo = insertGroup(db, "a1", "Abonnements", "out", 0, null, "2000-01", null);
+  const abo = insertGroup(db, "a1", "Abonnements", "out", 0, "2000-01", null);
   const directAssurance = insertLine(db, abo, "Direct Assurance voiture", 81.84);
   const soshInternet = insertLine(db, abo, "Sosh Internet", 30.99);
   insertLine(db, abo, "Sosh Mobile", 15.99);
   const spotify = insertLine(db, abo, "Spotify", 12.14);
   const icloud = insertLine(db, abo, "iCloud", 9.99);
   const fitnessPark = insertLine(db, abo, "Fitness Park", 19.99);
-  const impots = insertGroup(db, "a1", "Impôts", "out", 0, null, "2000-01", null);
+  const impots = insertGroup(db, "a1", "Impôts", "out", 0, "2000-01", null);
   const prelevement = insertLine(db, impots, "Prélèvement à la source", 49);
-  const carburant = insertGroup(db, "a1", "Carburant voiture", "out", 85, null, "2000-01", null);
-  const activites = insertGroup(db, "a1", "Activités", "out", 250, null, "2000-01", null);
-  insertGroup(db, "a1", "Vêtement", "out", 0, null, "2000-01", null);
-  insertGroup(db, "a1", "Rémunération Principale", "in", 652.09, "principal", "2000-01", null);
+  const carburant = insertGroup(db, "a1", "Carburant voiture", "out", 85, "2000-01", null);
+  const activites = insertGroup(db, "a1", "Activités", "out", 250, "2000-01", null);
+  insertGroup(db, "a1", "Vêtement", "out", 0, "2000-01", null);
+  insertGroup(db, "a1", "Rémunération Principale", "in", 652.09, "2000-01", null);
 
   // Mêmes transactions que tests/lib/budget-baseline.test.ts.
   const txn = (id: string, date: string, amount: number, label: string, groupId: number, lineId: number | null) =>
-    insertManualTransaction(db, { accountId: "a1", date, amount, label, groupId, lineId, incomeKind: null });
+    insertManualTransaction(db, { accountId: "a1", date, amount, label, groupId, lineId });
   txn("t1", "2026-07-05", -151.84, "DIRECT ASSURANCE", abo, directAssurance);
   txn("t2", "2026-07-08", -30.99, "SOSH INTERNET", abo, soshInternet);
   txn("t3", "2026-07-12", -12.14, "SPOTIFY", abo, spotify);
@@ -106,7 +106,6 @@ test("les budgets calculés par computeHistory sont égaux au centime avant/apr�
     groupId: t.groupId,
     lineId: t.lineId,
     excluded: t.excluded,
-    incomeKind: t.incomeKind,
   }));
 
   const sections = computeHistory(groups, txns, MONTHS, "2026-07", dated, datedLines);

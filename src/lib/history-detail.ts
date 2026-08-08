@@ -92,7 +92,7 @@ export function sectionRowKey(sec: HistorySection): string {
 export function labelOfSection(kind: HistorySection["kind"]): string {
   switch (kind) {
     case "income":
-      return "Rémunérations";
+      return "Revenus";
     case "expense":
       return "Dépenses";
     case "uncategorized":

@@ -50,7 +50,6 @@ export type HistoryRow = {
   id: number;
   name: string;
   direction: "in" | "out";
-  incomeKind: "principal" | "supplementary" | null; // classe de revenu (null hors rémunération)
   cells: MonthCell[]; // alignées sur la liste des mois passée à computeHistory
   aliveMonths: boolean[]; // aligné sur months : le groupe est-il vivant ce mois-là
   subRows: HistorySubRow[]; // sous-postes de la dépense (vide si elle est plate)
@@ -216,7 +215,7 @@ export function computeHistory(
     // récurrent dont la transaction ne matche aucune ligne.
     const groupTxns = mine.filter((t) => lineOf(g, t) === null && inRange(t)).map(toHistoryTxn);
 
-    return { id: g.id, name: g.name, direction: g.direction, incomeKind: g.incomeKind ?? null, cells, aliveMonths, subRows, txns: groupTxns };
+    return { id: g.id, name: g.name, direction: g.direction, cells, aliveMonths, subRows, txns: groupTxns };
   };
 
   const sumRows = (rows: HistoryRow[]): MonthCell[] =>
@@ -232,24 +231,21 @@ export function computeHistory(
       }, emptyCell()),
     );
 
-  // Rémunérations (sens « in ») : présentées au niveau des sections, tout en haut
-  // du tableau, principale avant supplémentaire.
-  const incomeRank = (g: Group) => (g.incomeKind === "principal" ? 0 : g.incomeKind === "supplementary" ? 1 : 2);
+  // Les revenus (sens « in ») : présentés au niveau des sections, tout en haut du
+  // tableau, dans l'ordre reçu — celui du nom, déjà trié par listGroups, comme les
+  // dépenses. Il y avait avant un ordre imposé, principale puis supplémentaire, qui
+  // n'avait de sens que tant qu'un compte n'avait droit qu'à ces deux-là.
   const incomeSection = (): HistorySection | null => {
     const rows = groups
       .filter((g) => g.direction === "in")
       .filter((g) => months.some((m) => isGroupAlive(g, m)))
-      .sort((a, b) => incomeRank(a) - incomeRank(b))
       .map(rowFor);
     if (rows.length === 0) return null;
-    // Le Budget du total de la section ne porte que la rémunération principale
-    // (cf. Global Constraints : colonne Budget, supplémentaire = vide). Les
-    // autres colonnes (dépensé/reçu/reste) restent la somme de toutes les lignes.
-    const totals = sumRows(rows).map((c, i) => ({
-      ...c,
-      budgeted: rows.filter((r) => r.incomeKind === "principal").reduce((s, r) => s + r.cells[i].budgeted, 0),
-    }));
-    return { kind: "income", rows, totals };
+    // Tous les revenus vivants entrent dans le total, budget compris. La
+    // « supplémentaire » en était retirée : on lisait 2000 là où le mois en attendait
+    // 2300. Ce qu'un revenu ne se reproduise pas se dit maintenant par sa durée, et
+    // hors de sa durée son budget vaut déjà 0 — il n'y a plus rien à retrancher ici.
+    return { kind: "income", rows, totals: sumRows(rows) };
   };
 
   // La section des dépenses : tous les groupes de sortie, dans l'ordre reçu (celui
@@ -459,14 +455,15 @@ export function computeSolde(
   return { openings, closings, rowRunning, uncategorizedRunning };
 }
 
-// Revenu projeté d'une ligne pour un mois : montant de la principale (tous mois),
-// montant de la supplémentaire au mois courant seulement, 0 pour une dépense.
+// Revenu projeté d'une ligne pour un mois : son budget de ce mois-là, 0 pour une
+// dépense. Il y avait ici une exception — la « supplémentaire » ne comptait qu'au mois
+// courant — dont le mois courant n'était pourtant pas la vraie question : ce qu'on
+// voulait dire, c'est que ce revenu ne se reproduit pas. Sa durée le dit mieux, et hors
+// de sa durée son budget vaut déjà 0.
 // Exportée : la grille et le side panel doivent projeter EXACTEMENT la même règle
 // que les chaînes de solde ci-dessous, sinon le détail ne retombe pas sur la case.
-export function rowRevenus(r: HistoryRow, i: number, isCurrent: boolean): number {
-  if (r.direction !== "in") return 0;
-  if (r.incomeKind === "supplementary") return isCurrent ? r.cells[i].budgeted : 0;
-  return r.cells[i].budgeted;
+export function rowRevenus(r: HistoryRow, i: number): number {
+  return r.direction === "in" ? r.cells[i].budgeted : 0;
 }
 
 // Budget de dépense d'une ligne (0 pour une entrée), au mois d'index i : il varie
@@ -564,7 +561,7 @@ export function computeTableEstimate(
   for (const sec of sections) {
     for (const r of sec.rows) {
       if (r.direction === "in") {
-        const due = rowRevenus(r, ci, true) - r.cells[ci].recu;
+        const due = rowRevenus(r, ci) - r.cells[ci].recu;
         if (due > 0.005) incomeSteps.push({ id: r.id, name: r.name, amount: due });
       } else {
         const rest = r.cells[ci].balance;
@@ -725,7 +722,6 @@ export function computePlannedSoldes(
     return { prevuClosings, depassClosings, prevuRowRunning, depassRowRunning, uncatPrevuRunning, uncatDepassRunning };
 
   for (let i = 0; i < n; i++) {
-    const isCurrent = months[i] === currentMonth;
     // Passé / courant : ancre sur l'ouverture réelle du mois, dépassement du mois.
     // Futur : chaîne sur la clôture du plan, dépassement du mois courant maintenu.
     const anchored = i <= ci;
@@ -757,7 +753,7 @@ export function computePlannedSoldes(
         (uncatDepassRunning[dir] ??= new Array<number | null>(n).fill(null))[i] = runD;
       } else {
         for (const r of sec.rows) {
-          const net = rowRevenus(r, i, isCurrent) - rowBudget(r, i);
+          const net = rowRevenus(r, i) - rowBudget(r, i);
           runP += net;
           // Ancré (passé / courant) : dépassement réel du mois. Futur : aucun report.
           const os = anchored ? rowOverspend(r, osMonth) : 0;

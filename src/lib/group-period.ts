@@ -12,6 +12,12 @@ import { isMonthKey, nextMonthKey } from "./history";
 
 export type PeriodMode = "single" | "range" | "from";
 
+// Le début du monde. Un groupe ancré là ne « démarre » pas en janvier 2000 : il vaut
+// pour tous les mois, ceux d'avant aujourd'hui comme ceux d'après. C'est le seul mois
+// qui ne se choisit pas dans un calendrier, d'où cette constante plutôt qu'un littéral
+// recopié à chaque endroit qui en a besoin.
+export const ORIGIN_MONTH = "2000-01";
+
 // Le plus tôt qu'une fin de plage puisse tomber : le mois SUIVANT le début. Une
 // plage qui commence et finit le même mois décrit « un seul mois », qui a son propre
 // choix dans le formulaire — deux façons d'écrire la même chose, dont l'une passe par
@@ -31,29 +37,52 @@ export function fitEndMonth(startMonth: string, endMonth: string): string {
 }
 
 // --- Ce que le formulaire demande, et ce que ça vaut -------------------------
-// À l'écran, la durée ne pose que DEUX questions : permanent, ou des mois précis ?
-// Et dans le second cas, un « + » ajoute un mois de fin. Parce que « un seul mois » et
-// « d'un mois à un autre » ne sont pas deux natures différentes : c'est la même chose
-// avec ou sans fin, et en faire deux entrées de menu obligeait à choisir avant de
-// savoir. Les trois modes ci-dessus restent le langage de la base ; la traduction
-// entre les deux se fait ici, une fois, plutôt que dans chaque formulaire.
-export type PeriodChoice = "permanent" | "dates";
+// À l'écran, la durée pose TROIS questions : depuis toujours, à partir d'un mois sans
+// fin, ou des mois précis ? Et dans le dernier cas, un « + » ajoute un mois de fin.
+// Parce que « un seul mois » et « d'un mois à un autre » ne sont pas deux natures
+// différentes : c'est la même chose avec ou sans fin, et en faire deux entrées de menu
+// obligeait à choisir avant de savoir.
+//
+// Les deux premiers choix ne diffèrent que par leur début, pas par leur fin : ils
+// donnent tous deux le mode « from ». « Depuis toujours » ne demande donc aucun mois —
+// c'est draftStart qui le pose, plutôt qu'un champ qu'il faudrait remplir pour dire
+// une évidence.
+//
+// Les trois modes ci-dessus restent le langage de la base ; la traduction entre les
+// deux se fait ici, une fois, plutôt que dans chaque formulaire.
+export type PeriodChoice = "always" | "from" | "dates";
 export type PeriodDraft = { choice: PeriodChoice; start: string; end: string | null };
 
 export function draftMode(d: PeriodDraft): PeriodMode {
-  if (d.choice === "permanent") return "from";
+  if (d.choice === "always" || d.choice === "from") return "from";
   return d.end === null ? "single" : "range";
 }
 
+// Le mois de départ qui entre en base. « Depuis toujours » écrase ce que le brouillon
+// garde en réserve : l'écran ne montre pas de champ dans ce cas, donc le mois qui y
+// traîne (celui d'un aller-retour dans le menu, ou le mois par défaut) n'a jamais été
+// choisi et ne doit pas ressortir.
+export function draftStart(d: PeriodDraft): string {
+  return d.choice === "always" ? ORIGIN_MONTH : d.start;
+}
+
 // L'inverse : ouvrir le formulaire d'un groupe qui existe déjà sur ce qu'il est.
-// `defaut` sert de mois de départ aux groupes hérités, qui n'en ont pas.
+// `defaut` sert de mois de départ aux groupes hérités, qui n'en ont pas — il reste dans
+// le brouillon pour le cas où l'on bascule sur un autre choix, même quand le groupe
+// vaut depuis toujours et que le champ est caché.
 export function draftOfPeriod(
   startMonth: string | null | undefined,
   endMonth: string | null | undefined,
   defaut = "",
 ): PeriodDraft {
   const start = startMonth ?? defaut;
-  if (endMonth == null) return { choice: "permanent", start, end: null };
+  if (endMonth == null) {
+    // Sans mois de départ, rien n'a jamais borné le groupe : il vaut depuis toujours,
+    // au même titre que celui qu'on a explicitement ancré à l'origine. Le « <= » plutôt
+    // qu'une égalité stricte couvre les rares groupes ancrés encore plus tôt.
+    const toujours = startMonth == null || startMonth <= ORIGIN_MONTH;
+    return { choice: toujours ? "always" : "from", start, end: null };
+  }
   return { choice: "dates", start, end: endMonth === start ? null : endMonth };
 }
 

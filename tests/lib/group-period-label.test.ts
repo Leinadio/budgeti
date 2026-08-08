@@ -5,10 +5,21 @@ import { describe, expect, it } from "vitest";
 import { groupPeriodLabel } from "../../src/lib/group-period-label";
 
 describe("groupPeriodLabel", () => {
-  it("dit permanent quand le groupe n'a pas de fin", () => {
-    expect(groupPeriodLabel("2000-01", null)).toBe("permanent");
-    expect(groupPeriodLabel("2026-07", null)).toBe("permanent");
-    expect(groupPeriodLabel(null, null)).toBe("permanent");
+  // Sans fin, il reste à dire depuis quand. Le formulaire distingue maintenant deux
+  // façons de n'avoir pas de fin — depuis toujours, ou à partir d'un mois — et la
+  // colonne doit dire la même chose que lui, sinon on lit deux durées différentes
+  // pour un même groupe selon qu'on ouvre sa fiche ou non.
+  it("dit depuis toujours quand le groupe est ancré à l'origine", () => {
+    expect(groupPeriodLabel("2000-01", null)).toBe("depuis toujours");
+  });
+
+  it("dit le mois de départ quand il y en a un", () => {
+    expect(groupPeriodLabel("2026-07", null)).toBe("depuis juillet 2026");
+  });
+
+  // Un groupe hérité, sans mois de départ ni fin : rien ne l'a jamais borné.
+  it("dit depuis toujours quand le départ est inconnu", () => {
+    expect(groupPeriodLabel(null, null)).toBe("depuis toujours");
   });
 
   // Le cas des enveloppes créées pour un seul mois (vacances, sucreries d'été).

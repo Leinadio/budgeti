@@ -59,7 +59,7 @@ test("une transaction non comptabilisée ne pèse plus sur le total du mois", ()
 
 test("une transaction non comptabilisée garde son rattachement de groupe", () => {
   const db = seed();
-  const gid = insertGroup(db, "a1", "Courses", "out", 200, null, "2000-01", null);
+  const gid = insertGroup(db, "a1", "Courses", "out", 200, "2000-01", null);
   setTransactionGroup(db, "t2", gid);
   setTransactionIgnored(db, "t2", true);
   setTransactionIgnored(db, "t2", false);

@@ -13,8 +13,7 @@ function txn(id: string): HistoryTxn {
 
 function row(p: Partial<HistoryRow> & { id: number }): HistoryRow {
   return {
-    name: `G${p.id}`, direction: "out", incomeKind: null,
-    cells: [cell()], aliveMonths: [true], subRows: [], txns: [], ...p,
+    name: `G${p.id}`, direction: "out", cells: [cell()], aliveMonths: [true], subRows: [], txns: [], ...p,
   };
 }
 

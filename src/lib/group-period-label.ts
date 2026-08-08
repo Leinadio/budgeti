@@ -4,8 +4,9 @@
 // enveloppe de vacances et une enveloppe de courses se ressemblent trait pour
 // trait, et rien ne dit pourquoi l'une disparaît le mois suivant.
 //
-// Les trois cas sont ceux du formulaire de création (cf. group-period.ts) : un
-// seul mois, sans fin, ou une plage.
+// Les cas sont ceux du formulaire de création (cf. group-period.ts) : depuis
+// toujours, à partir d'un mois, un seul mois, ou une plage.
+import { ORIGIN_MONTH } from "./group-period";
 
 const MOIS = new Intl.DateTimeFormat("fr-FR", { month: "long", timeZone: "UTC" });
 
@@ -17,10 +18,15 @@ function nomDuMois(m: string): string {
 const annee = (m: string) => m.slice(0, 4);
 
 export function groupPeriodLabel(startMonth?: string | null, endMonth?: string | null): string {
-  // Pas de fin : le groupe court tant qu'on ne l'arrête pas. Son mois de départ
-  // n'est pas dit — il est souvent très ancien (groupes hérités, ancrés en 2000-01)
-  // et ne renseignerait sur rien.
-  if (!endMonth) return "permanent";
+  // Pas de fin : le groupe court tant qu'on ne l'arrête pas, et il ne reste qu'à dire
+  // depuis quand. Le formulaire distingue deux façons de n'avoir pas de fin — depuis
+  // toujours, ou à partir d'un mois — et la colonne dit la même chose que lui : sinon
+  // on lit deux durées différentes pour un même groupe selon qu'on ouvre sa fiche.
+  // Sans mois de départ (groupes hérités), rien ne l'a jamais borné : depuis toujours.
+  if (!endMonth) {
+    if (!startMonth || startMonth <= ORIGIN_MONTH) return "depuis toujours";
+    return `depuis ${nomDuMois(startMonth)} ${annee(startMonth)}`;
+  }
   if (!startMonth) return `jusqu'à ${nomDuMois(endMonth)} ${annee(endMonth)}`;
   // Un seul mois : inutile de le nommer, on le lit en haut du tableau où il vit.
   if (startMonth === endMonth) return "ce mois uniquement";

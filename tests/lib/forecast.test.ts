@@ -203,20 +203,21 @@ test("next month starts from current estimate and applies full amounts", () => {
   expect(f.nextEstimate).toBe(4350);
 });
 
-test("rémunération principale : ajoutée à l'estimé du mois courant ET du mois suivant", () => {
-  const principal: Group = {
-    id: 40, accountId: "a1", name: "Rémunération principale", direction: "in", monthlyAmount: 2000, lines: [], incomeKind: "principal",
-  };
-  const f = fc("a1", 100, [principal], [], "2026-07");
+test("un revenu sans fin : ajouté à l'estimé du mois courant ET du mois suivant", () => {
+  const salaire: Group = {
+    id: 40, accountId: "a1", name: "Rémunération dirigeant", direction: "in", monthlyAmount: 2000, lines: [], };
+  const f = fc("a1", 100, [salaire], [], "2026-07");
   expect(f.currentEstimate).toBe(2100); // 100 + 2000 attendus
   expect(f.nextEstimate).toBe(4100); // + 2000 le mois suivant
 });
 
-test("rémunération supplémentaire : mois courant seulement, pas de projection au mois suivant", () => {
-  const supp: Group = {
-    id: 41, accountId: "a1", name: "Rémunération supplémentaire", direction: "in", monthlyAmount: 500, lines: [], incomeKind: "supplementary",
-  };
-  const f = fc("a1", 100, [supp], [], "2026-07");
+// L'ancienne « rémunération supplémentaire », dite par sa durée : c'est le fait de
+// finir ce mois-ci qui l'écarte du mois prochain, pas une étiquette posée à sa création.
+test("un revenu qui finit ce mois-ci : mois courant seulement, pas de projection au mois suivant", () => {
+  const don: Group = {
+    id: 41, accountId: "a1", name: "Don d'ami", direction: "in", monthlyAmount: 500, lines: [],
+    startMonth: "2026-07", endMonth: "2026-07" };
+  const f = fc("a1", 100, [don], [], "2026-07");
   expect(f.currentEstimate).toBe(600); // 100 + 500 attendus ce mois
   expect(f.nextEstimate).toBe(600); // pas d'ajout au mois suivant
 });

@@ -17,7 +17,6 @@ import { TxnCommentField } from "@/components/txn-comment-field";
 import { GroupSelectField } from "@/components/group-select-field";
 import { IgnoreTxnToggle } from "@/components/ignore-txn-toggle";
 import { NewGroupInline } from "@/components/new-group-inline";
-import { NewRemunerationInline } from "@/components/new-remuneration-inline";
 import { type ColKey, monthType, monthColumns, COL_LABEL, COL_INFO } from "@/lib/history-columns";
 import { computeRevealKeys, computePrevDisplayed, rowOpenKey, lineOpenKey, uncatOpenKey, highlightedCells, rowKeyOf, withRevealed, openKeyIn, monthIndexOf } from "@/lib/history-nav";
 import {
@@ -362,7 +361,7 @@ function plannedSoldeCell(
 type OnlyMonth = { only?: number };
 const skipMonth = (only: number | undefined, i: number) => only != null && i !== only;
 
-function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, subtitleOf, detailRow, months, currentMonth, rowKey, selCellKey, prevDisp, incomeKind, budgetEditOf, signaleDepassement, noticeOf, only }: OnlyMonth & {
+function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, subtitleOf, detailRow, months, currentMonth, rowKey, selCellKey, prevDisp, budgetEditOf, signaleDepassement, noticeOf, only }: OnlyMonth & {
   cells: MonthCell[];
   mode: "out" | "in" | "total";
   solde?: (number | null)[];
@@ -384,7 +383,6 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
   // « Solde précédent » depuis le side panel.
   prevDisp?: { solde?: (string | undefined)[]; soldePrevu?: (string | undefined)[]; soldeDepass?: (string | undefined)[] };
   // Classe de revenu (pour les colonnes Budg./Revenus des rémunérations).
-  incomeKind?: "principal" | "supplementary" | null;
   // Ce que la case « Budget dép. » de cette ligne laisse modifier, au mois donné, ou
   // null si rien (groupe récurrent, dont le budget est la somme de ses lignes). Calculé
   // par l'appelant, seul à savoir s'il rend une enveloppe, un récurrent ou une de ses
@@ -473,13 +471,11 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
             : null;
 
         // --- Détails des colonnes de projection (mois courant / futurs) ---------
-        const isCurrent = month === currentMonth;
 
         // Budget rémunération (ce qui rentre) : montant de la rémunération. Principale
-        // sur tous les mois ; supplémentaire au mois courant seulement (— sinon, non
-        // projetée) ; — pour une dépense. Clé de case « revenus ».
-        const budgetRemVal: number | null =
-          mode === "in" ? (incomeKind === "supplementary" ? (isCurrent ? c.budgeted : null) : c.budgeted) : null;
+        // sur tous les mois où le revenu vit ; — pour une dépense. Hors de sa durée, le
+        // budget d'un revenu vaut déjà 0. Clé de case « revenus ».
+        const budgetRemVal: number | null = mode === "in" ? c.budgeted : null;
         const budgetRemDetail: CellDetail | null =
           budgetRemVal != null && r
             ? makeDetail("Budget rémunération", [{ label: r.name, amount: budgetRemVal, ref: ck("revenus") }], { subtitle, result: budgetRemVal })
@@ -508,7 +504,7 @@ function AmountCells({ cells, mode, solde, soldePrevu, soldeDepass, onSelect, su
 
         // Mouvement prévu du mois de cette ligne = revenus projeté − budget (même
         // net que la chaîne « solde prévu »).
-        const revenusProj = mode === "in" ? (incomeKind === "supplementary" ? (isCurrent ? c.budgeted : 0) : c.budgeted) : 0;
+        const revenusProj = mode === "in" ? c.budgeted : 0;
         const budgetProj = mode === "out" ? c.budgeted : 0;
         const mouvementPrevu = revenusProj - budgetProj;
         // Décomposition du mouvement prévu : pour une dépense, les postes du budget
@@ -893,19 +889,18 @@ function IncomeTotalCells({ sec, months, currentMonth, onSelect, selCellKey, onl
         const type = monthType(months[i], currentMonth);
         const cols = monthColumns(type);
         const month = months[i];
-        const subtitle = `Rémunérations · ${monthLabel(month)}`;
+        const subtitle = `Revenus · ${monthLabel(month)}`;
         // Reçu toujours affiché → toujours cliquable (décomposition par rémunération).
         const recuDetail: CellDetail = makeDetail(
-          "Rémunérations",
+          "Revenus",
           sec.rows.map((r) => groupNode(r, i, month, "recu")).filter((n) => n.amount !== 0),
           { subtitle, result: c.recu },
         );
         // Budget rémunération total = somme des rémunérations affichées (principale
         // tous mois, supplémentaire au mois courant seulement), décomposé par ligne.
-        const isCur = month === currentMonth;
-        const budgetRemTotal = sec.rows.reduce((s, r) => s + rowRevenus(r, i, isCur), 0);
+        const budgetRemTotal = sec.rows.reduce((s, r) => s + rowRevenus(r, i), 0);
         const budgetRemNodes = sec.rows
-          .map((r): DetailNode => ({ label: r.name, amount: rowRevenus(r, i, isCur), ref: cellKey(groupRow(r.id), "revenus", i) }))
+          .map((r): DetailNode => ({ label: r.name, amount: rowRevenus(r, i), ref: cellKey(groupRow(r.id), "revenus", i) }))
           .filter((n) => n.amount !== 0);
         const budgetRemDetail: CellDetail = makeDetail("Budget rémunération", budgetRemNodes, { subtitle, result: budgetRemTotal });
 
@@ -968,9 +963,8 @@ function GrandTotalsCells({ sections, grand, solde, planned, months, currentMont
         const ck = (col: Col) => cellKey("grand", col, i);
         // Budget rémunération total = somme des rémunérations affichées (principale
         // tous mois, supplémentaire au mois courant seulement).
-        const isCur = month === currentMonth;
         const allRows = sections.flatMap((s) => s.rows);
-        const budgetRemTotal = allRows.reduce((a, r) => a + rowRevenus(r, i, isCur), 0);
+        const budgetRemTotal = allRows.reduce((a, r) => a + rowRevenus(r, i), 0);
 
         // Budget des dépenses seulement (enveloppes + récurrents, hors rémunérations).
         const expenseBudget = sections.reduce((s, sec) => s + (sec.kind === "income" ? 0 : sec.totals[i].budgeted), 0);
@@ -1002,7 +996,7 @@ function GrandTotalsCells({ sections, grand, solde, planned, months, currentMont
         // Détail du budget rémunération : un nœud par rémunération affichée.
         const budgetRemNodes = allRows
           .filter((r) => r.direction === "in")
-          .map((r): DetailNode => ({ label: r.name, amount: rowRevenus(r, i, isCur), ref: cellKey(groupRow(r.id), "revenus", i) }))
+          .map((r): DetailNode => ({ label: r.name, amount: rowRevenus(r, i), ref: cellKey(groupRow(r.id), "revenus", i) }))
           .filter((n) => n.amount !== 0);
         const budgetRemDetail: CellDetail = makeDetail("Budget rémunération", budgetRemNodes, { subtitle, result: budgetRemTotal });
         // Mois de référence des dépassements maintenus (mois courant en projection).
@@ -1023,7 +1017,7 @@ function GrandTotalsCells({ sections, grand, solde, planned, months, currentMont
         // Décomposition du mouvement prévu du mois = revenus prévus − budget de dépenses.
         const revenusChildren = allRows
           .filter((r) => r.direction === "in")
-          .map((r): DetailNode => ({ label: r.name, amount: rowRevenus(r, i, isCur), ref: cellKey(groupRow(r.id), "revenus", i) }))
+          .map((r): DetailNode => ({ label: r.name, amount: rowRevenus(r, i), ref: cellKey(groupRow(r.id), "revenus", i) }))
           .filter((n) => n.amount !== 0);
         const budgetChildren = sections
           .filter((sec) => sec.kind !== "income")
@@ -1351,11 +1345,11 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
     });
 
   // Section dont le formulaire de création inline est ouvert, ou null si aucun
-  // (Task 5). Un seul formulaire ouvert à la fois. "principal" / "supplementary"
-  // ouvrent le mini-formulaire de rémunération (Task 7), qui réutilise le même état.
+  // (Task 5). Un seul formulaire ouvert à la fois, et c'est le même formulaire des
+  // deux côtés : seul le sens change.
   // Le mois en fait partie : chaque tableau de mois porte ses propres boutons
   // d'ajout, et sans lui le même formulaire s'ouvrirait dans tous les mois à la fois.
-  type Adding = { kind: "expense" | "principal" | "supplementary"; month: string };
+  type Adding = { kind: "expense" | "income"; month: string };
   const [adding, setAdding] = useState<Adding | null>(null);
   // Ouvre le formulaire de cette section dans CE tableau, ou le referme si c'est
   // déjà lui qui est ouvert.
@@ -1497,8 +1491,9 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
               <ArrowDownRight className="size-4 shrink-0 text-muted-foreground" />
             )}
             <span className="min-w-0 truncate font-medium">{r.name}</span>
-            {/* Durée de vie du groupe, dite en clair : « ce mois uniquement »,
-                « permanent », ou la plage. Sans elle, une dépense de vacances
+            {/* Durée de vie du groupe, dite en clair : « depuis toujours »,
+                « depuis juillet 2026 », « ce mois uniquement », ou la plage.
+                Sans elle, une dépense de vacances
                 et une dépense de courses se ressemblent trait pour trait, et
                 rien ne dit pourquoi l'une disparaît le mois suivant. Même
                 micro-typographie que la mention « projection » des en-têtes de
@@ -1536,7 +1531,6 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
             rowKey={selfKey}
             selCellKey={selCellKey}
             prevDisp={{ solde: prevDisplayedByCol.solde.get(selfKey), soldePrevu: prevDisplayedByCol.soldePrevu.get(selfKey), soldeDepass: prevDisplayedByCol.soldeDepass.get(selfKey) }}
-            incomeKind={r.incomeKind}
             budgetEditOf={(m) => budgetEditOfGroup(sg, m, currentMonth)}
             signaleDepassement={(m) => groupeEnDepassement.has(`${r.id}::${m}`)}
             noticeOf={noticeDe(r.id, null)}
@@ -1556,7 +1550,6 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
                 id: sub.id,
                 name: sub.name,
                 direction: r.direction,
-                incomeKind: null,
                 cells: sub.cells,
                 // La vie propre de la ligne (sub.aliveMonths), pas celle du groupe
                 // (r.aliveMonths) : une ligne ajoutée après le début d'un groupe
@@ -1627,7 +1620,6 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
                       currentMonth={currentMonth}
                       rowKey={subRow(sub.id)}
                       selCellKey={selCellKey}
-                      incomeKind={r.incomeKind}
                       budgetEditOf={(m) => budgetEditOfLine(sgLine, m, currentMonth)}
                       signaleDepassement={(m) => depassementDeCase.has(`${r.id}::${sub.id}::${m}`)}
                       noticeOf={noticeDe(r.id, sub.id)}
@@ -1840,37 +1832,33 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
       </>
     );
 
-    // En-tête des rémunérations : un bouton par type encore absent du compte —
-    // au plus une principale et une supplémentaire.
-    const enTeteRemuneration = (hasPrincipal: boolean, hasSupplementary: boolean) => (
+    // En-tête de la section des revenus, jumelle de celle des dépenses : un seul
+    // bouton, toujours là. Avant, il y en avait deux — « principale » et
+    // « supplémentaire » — qui disparaissaient une fois cliqués, parce qu'un compte
+    // n'avait droit qu'à un exemplaire de chaque. On peut maintenant en créer autant
+    // qu'on en reçoit, et c'est leur durée qui dit lesquels se reproduisent.
+    const enTeteRevenu = () => (
       <>
-        {(!hasPrincipal || !hasSupplementary) && (
-          <TableRow className="hover:bg-transparent">
-            <TableCell colSpan={totalCols} className="p-0">
-              <div className="font-sans bg-background flex w-fit items-center gap-3 py-0.5 pr-3 pl-1">
-                {!hasPrincipal && (
-                  <Button type="button" size="xs" variant="outline" onClick={() => toggleAdding("principal", m)}>
-                    <Plus />
-                    Rémunération principale
-                  </Button>
-                )}
-                {!hasSupplementary && (
-                  <Button type="button" size="xs" variant="outline" onClick={() => toggleAdding("supplementary", m)}>
-                    <Plus />
-                    Rémunération supplémentaire
-                  </Button>
-                )}
-              </div>
-            </TableCell>
-          </TableRow>
-        )}
-        {(addingHere(m) === "principal" || addingHere(m) === "supplementary") && (
+        <TableRow className="hover:bg-transparent">
+          <TableCell colSpan={totalCols} className="p-0">
+            <div className="font-sans bg-background flex w-fit items-center py-1 pr-3 pl-1">
+              <Button type="button" size="xs" variant="outline" onClick={() => toggleAdding("income", m)}>
+                <Plus />
+                Revenu
+              </Button>
+            </div>
+          </TableCell>
+        </TableRow>
+        {addingHere(m) === "income" && (
           <TableRow className="hover:bg-transparent">
             <TableCell colSpan={totalCols} className="p-0">
               <div className="font-sans bg-background w-fit">
-                <NewRemunerationInline
+                <NewGroupInline
                   accountId={accountId}
-                  incomeKind={addingHere(m) as "principal" | "supplementary"}
+                  direction="in"
+                  stripMin={stripMin}
+                  stripMax={stripMax}
+                  defaultMonth={m}
                   onDone={() => setAdding(null)}
                 />
               </div>
@@ -2095,27 +2083,24 @@ export function HistoryGrid({ months, currentMonth, stripMin, stripMax, forecast
             return (
               <Fragment key={`vide-${slot.sectionKind}`}>
                 {spacer}
-                {slot.sectionKind === "income" ? enTeteRemuneration(false, false) : enTeteDepense()}
+                {slot.sectionKind === "income" ? enTeteRevenu() : enTeteDepense()}
               </Fragment>
             );
           }
           const sec = slot.section;
           if (sec.kind === "income") {
-            // Rémunérations : lignes au niveau des sections, tout en haut, puis les
-            // reçus non catégorisés, puis une ligne « Total rémunérations »
-            // (principale + supplémentaire).
+            // Revenus : lignes au niveau des sections, tout en haut, puis les reçus
+            // non catégorisés, puis une ligne « Total revenus ».
             const uncatIn = secs.find((s) => s.kind === "uncategorized" && s.uncatDirection === "in");
-            const hasPrincipal = sec.rows.some((r) => r.incomeKind === "principal");
-            const hasSupplementary = sec.rows.some((r) => r.incomeKind === "supplementary");
             return (
               <Fragment key={sec.kind}>
                 {spacer}
-                {enTeteRemuneration(hasPrincipal, hasSupplementary)}
+                {enTeteRevenu()}
                 {sec.rows.map((r) => renderGroup(r, mi, true))}
                 {uncatIn && renderUncatRows(uncatIn, secs, mi)}
                 <TableRow className="font-medium">
                   <TableCell className="h-px p-0">
-                    <FirstColBox>Total rémunérations</FirstColBox>
+                    <FirstColBox>Total revenus</FirstColBox>
                   </TableCell>
                   <IncomeTotalCells sec={sec} months={months} currentMonth={currentMonth} onSelect={onSelect} selCellKey={selCellKey} only={mi} />
                 </TableRow>

@@ -21,7 +21,7 @@ export function ManualTxnActions({ txn, accounts, groups }: { txn: TxnView; acco
         edit={{
           id: txn.id, accountId: txn.accountId, date: txn.date,
           direction: txn.amount >= 0 ? "in" : "out", amount: txn.amount,
-          label: txn.label, groupId: txn.groupId, incomeKind: txn.incomeKind,
+          label: txn.label, groupId: txn.groupId,
         }}
       />
       <Button variant="ghost" size="sm" disabled={isPending}

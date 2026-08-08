@@ -30,7 +30,7 @@ import {
 } from "@/app/historique/actions";
 import { toast } from "sonner";
 import { groupPeriodLabel } from "@/lib/group-period-label";
-import { draftMode, draftOfPeriod, type PeriodDraft } from "@/lib/group-period";
+import { draftMode, draftOfPeriod, draftStart, type PeriodDraft } from "@/lib/group-period";
 import { PeriodFields } from "@/components/period-fields";
 import { Sidebar, SidebarHeader, SidebarContent } from "@/components/ui/sidebar";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
@@ -365,8 +365,8 @@ function PeriodEditBlock({ current, month, stripMin, stripMax, changes, askAmoun
   // par mois de ce qui va retourner en non catégorisés.
   const [impact, setImpact] = useState<PeriodImpact["months"] | null>(null);
 
-  const start = draft.start;
-  const end = draft.choice === "permanent" ? null : draft.end ?? draft.start;
+  const start = draftStart(draft);
+  const end = draft.choice === "dates" ? draft.end ?? draft.start : null;
   const change = start !== debutActuel || end !== finActuelle;
   // Rallonger vers le passé ouvre des mois où le groupe n'a jamais eu de montant :
   // sans en poser un, ils s'afficheraient à zéro.
@@ -454,10 +454,10 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
   // Durée de la ligne à ajouter. Elle part du mois où le panneau se place — celui de
   // la colonne cliquée — parce que c'est déjà de là qu'une ligne ajoutée compte ; on
   // peut la déplacer, la frise du compte entière est proposée.
-  const [draft, setDraft] = useState<PeriodDraft>({ choice: "permanent", start: info.month, end: null });
+  const [draft, setDraft] = useState<PeriodDraft>({ choice: "from", start: info.month, end: null });
   // Durée du groupe, en état local : `info` est un instantané capturé à l'ouverture du
   // panneau que router.refresh() ne remplace pas. Sans ça, l'étiquette du titre
-  // continuerait d'annoncer « permanent » juste après qu'on l'a arrêté.
+  // continuerait d'annoncer « depuis toujours » juste après qu'on l'a arrêté.
   const [periode, setPeriode] = useState({ startMonth: info.startMonth, endMonth: info.endMonth });
   // Liste des lignes affichée, en état local optimiste : `info.lines` est un
   // instantané capturé à l'ouverture du panneau, que router.refresh() ne met pas à
@@ -479,7 +479,8 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
             <p className="text-muted-foreground text-sm">Gérer le groupe</p>
             <h2 className="font-semibold">{info.name}</h2>
             {/* Sa durée de vie, dite comme dans la colonne de gauche du tableau :
-                « ce mois uniquement », « permanent », ou la plage. */}
+                « depuis toujours », « depuis juillet 2026 », « ce mois uniquement »,
+                ou la plage. */}
             <p className="text-muted-foreground/70 text-[10px] tracking-[0.12em] uppercase">
               {groupPeriodLabel(periode.startMonth, periode.endMonth)}
             </p>
@@ -564,7 +565,7 @@ function GroupManageBlock({ info, onClose }: { info: GroupManageInfo; onClose: (
                   const n = newName.trim();
                   const a = parseFloat(newAmount) || 0;
                   const id = await addGroupLine(
-                    info.groupId, n, a, draft.start, draftMode(draft), draft.end ?? draft.start,
+                    info.groupId, n, a, draftStart(draft), draftMode(draft), draft.end ?? draft.start,
                   );
                   // On n'ajoute la ligne optimiste qu'avec le vrai id en base : sinon
                   // une suppression/édition immédiate (sans refermer le panneau)
